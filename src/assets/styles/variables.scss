@@ -1,0 +1,48 @@
+// SCSS 主题变量 - Titanium 保险核心管理后台
+// 主色：深蓝（保险行业专业感）
+$primary-color: #1a3a6b;
+$primary-light: #2d5aa0;
+$primary-lighter: #4a7cc9;
+
+// 侧边栏配色
+$sidebar-bg: #0f1e3d;
+$sidebar-active: #1a3a6b;
+$sidebar-text: #c0ccda;
+$sidebar-active-text: #ffffff;
+$sidebar-hover-bg: rgba(255, 255, 255, 0.08);
+$sidebar-width: 200px;
+$sidebar-collapsed-width: 64px;
+
+// 顶栏配色
+$topbar-bg: linear-gradient(135deg, #0f1e3d 0%, #1a3a6b 100%);
+$topbar-height: 60px;
+
+// 功能色
+$success-color: #67c23a;
+$warning-color: #e6a23c;
+$danger-color: #f56c6c;
+$info-color: #909399;
+
+// 内容区配色
+$content-bg: #f5f7fa;
+$card-bg: #ffffff;
+$border-color: #ebeef5;
+$border-radius: 8px;
+
+// 阴影
+$card-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+$card-shadow-hover: 0 4px 20px rgba(0, 0, 0, 0.12);
+
+// 底部 AI 助手
+$ai-chat-height: 80px;
+$ai-chat-expanded-height: 400px;
+
+// 右侧数据面板
+$data-panel-width: 280px;
+
+// 字体
+$font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+  'Microsoft YaHei', sans-serif;
+$font-size-base: 14px;
+$font-size-sm: 12px;
+$font-size-lg: 16px;
