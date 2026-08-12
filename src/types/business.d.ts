@@ -3,8 +3,8 @@
 /** 保险险种分类 */
 export type InsuranceCategory = 'AUTO' | 'LIFE' | 'PET' | 'ACCIDENT' | 'HEALTH' | 'PROPERTY'
 
-/** 产品状态 */
-export type ProductStatus = 'DRAFT' | 'PENDING' | 'ACTIVE' | 'INACTIVE'
+/** 产品状态（对齐产品域状态机 ProductEnum.ProductStatus：草稿→审核中→已生效→已下架，无独立"发布/上架"态） */
+export type ProductStatus = 'DRAFT' | 'AUDITING' | 'EFFECTIVE' | 'INVALID'
 
 /** 保单状态（含寿险生命周期全状态） */
 export type PolicyStatus =
@@ -35,12 +35,63 @@ export interface ProductVO {
   code: string
   category: InsuranceCategory
   status: ProductStatus
+  /** 二级险种（后端 InsuranceProductType 常量名，如 MEDICAL/WHOLE_LIFE） */
+  insuranceType?: string
   description?: string
   minPremium?: number
   maxCoverage?: number
   createdBy: string
   createdAt: string
   updatedAt: string
+}
+
+/** 投保条件（详情展示） */
+export interface InsureConditionView {
+  minAge?: number
+  maxAge?: number
+  minGroupSize?: number
+  maxGroupSize?: number
+  minInsuredAmount?: number
+  maxInsuredAmount?: number
+  waitingPeriodDays?: number
+  hesitationPeriodDays?: number
+  healthNotice?: string
+}
+
+/** 定价基础规则（详情展示） */
+export interface PricingBasicRuleView {
+  pricingType?: string
+  baseRate?: number
+  minPremium?: number
+  maxPremium?: number
+}
+
+/**
+ * 产品详情视图：在列表 ProductVO 基础上补充后端 ProductResponse 返回的结构化配置，
+ * 供详情页完整呈现产品形态、投保条件、费率规则等（列表页不消费这些字段，故独立扩展）。
+ */
+export interface ProductDetailVO extends ProductVO {
+  /** 原始细分险种码（如 MEDICAL），用于展示补充 */
+  insuranceType?: string
+  /** 产品形态 GROUP/INDIVIDUAL */
+  form?: string
+  /** 产品类别 MAIN/RIDER */
+  productCategory?: string
+  /** 产品版本 */
+  version?: string
+  /** 所属模板ID */
+  templateId?: string
+  /** 定价模式 */
+  pricingMode?: string
+  /** 生效时间 */
+  effectiveTime?: string
+  /** 销售起止时间 */
+  saleStartTime?: string
+  saleEndTime?: string
+  /** 投保条件 */
+  insureCondition?: InsureConditionView
+  /** 定价基础规则 */
+  pricingBasicRule?: PricingBasicRuleView
 }
 
 /** 保单信息 */
@@ -50,7 +101,7 @@ export interface PolicyVO {
   proposalNo?: string
   productName: string
   productCode: string
-  holderName: string
+  policyHolderName: string  // 后端返回policyHolderName
   holderIdNo: string
   holderMobile: string
   insuredName: string
@@ -112,6 +163,17 @@ export interface TenantVO {
   contactMobile: string
   contactEmail?: string
   status: 'ACTIVE' | 'INACTIVE' | 'TRIAL'
+  /** 国家/地区代码（ISO 3166-1 alpha-2） */
+  country?: string
+  /** 默认语言（BCP 47 语言标签） */
+  language?: string
+  /** 默认币种（ISO 4217） */
+  currency?: string
+  /** 时区（IANA） */
+  timezone?: string
+  logo?: string
+  themeColor?: string
+  remark?: string
   expireAt?: string
   createdAt: string
 }

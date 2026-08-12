@@ -38,6 +38,12 @@ export const dynamicRoutes: RouteRecordRaw[] = [
             component: () => import('@/views/product/detail/index.vue'),
             meta: { title: '产品详情', permission: 'product:detail', hidden: true },
           },
+          {
+            path: 'config/:id',
+            name: 'ProductTemplateConfig',
+            component: () => import('@/views/product/template-config/index.vue'),
+            meta: { title: '产品配置', permission: 'product:config', hidden: true },
+          },
         ],
       },
       // 保单管理
@@ -58,6 +64,18 @@ export const dynamicRoutes: RouteRecordRaw[] = [
             component: () => import('@/views/policy/detail/index.vue'),
             meta: { title: '保单详情', permission: 'policy:detail', hidden: true },
           },
+          {
+            path: 'application',
+            name: 'PolicyApplication',
+            component: () => import('@/views/policy/application/index.vue'),
+            meta: { title: '投保单查询', permission: 'policy:application' },
+          },
+          {
+            path: 'intention',
+            name: 'PolicyIntention',
+            component: () => import('@/views/policy/intention/index.vue'),
+            meta: { title: '意向单查询', permission: 'policy:intention' },
+          },
         ],
       },
       // 条款管理
@@ -77,6 +95,12 @@ export const dynamicRoutes: RouteRecordRaw[] = [
             name: 'ClauseEdit',
             component: () => import('@/views/clause/edit/index.vue'),
             meta: { title: '条款编辑', permission: 'clause:edit', hidden: true },
+          },
+          {
+            path: 'detail/:id',
+            name: 'ClauseDetail',
+            component: () => import('@/views/clause/detail/index.vue'),
+            meta: { title: '条款详情', permission: 'clause:detail', hidden: true },
           },
         ],
       },
@@ -277,6 +301,12 @@ export const dynamicRoutes: RouteRecordRaw[] = [
             name: 'Log',
             component: () => import('@/views/system/log/index.vue'),
             meta: { title: '操作日志', permission: 'system:log' },
+          },
+          {
+            path: 'config',
+            name: 'SystemConfig',
+            component: () => import('@/views/system/config/index.vue'),
+            meta: { title: '系统配置', permission: 'system:config' },
           },
         ],
       },

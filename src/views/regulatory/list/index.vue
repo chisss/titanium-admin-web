@@ -35,7 +35,7 @@
     </div>
 
     <TiTable
-      :data="tableData.value"
+      :data="tableData"
       :total="pagination.total"
       :page-num="pagination.pageNum"
       :page-size="pagination.pageSize"
@@ -43,7 +43,11 @@
       @page-change="onPageChange"
       @size-change="onSizeChange"
     >
-      <el-table-column prop="reportNo" label="报告编号" width="180" />
+      <el-table-column prop="reportNo" label="报告编号" width="180" class-name="ti-code-column">
+        <template #default="{ row }">
+          <TiCopyText :text="row.reportNo" />
+        </template>
+      </el-table-column>
       <el-table-column prop="reportType" label="报告类型" min-width="160" show-overflow-tooltip>
         <template #default="{ row }">{{ row.reportTypeLabel || row.reportType }}</template>
       </el-table-column>
@@ -58,12 +62,12 @@
           <TiStatusTag :value="row.status" :color="STATUS_COLOR[row.status]" :label="STATUS_LABEL[row.status]" />
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="220" fixed="right">
+      <el-table-column label="操作" min-width="220" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
-          <el-button text size="small" :icon="View" @click="handleView(row)">查看</el-button>
+          <el-button size="small" :icon="View" @click="handleView(row)">查看</el-button>
           <el-button
             v-if="row.status === 'DRAFT'"
-            text size="small" type="primary"
+            size="small" type="primary"
             v-permission="'regulatory:submit'"
             @click="handleSubmit(row)"
           >
@@ -71,7 +75,7 @@
           </el-button>
           <el-button
             v-if="row.status === 'SUBMITTED'"
-            text size="small" type="success"
+            size="small" type="success"
             v-permission="'regulatory:approve'"
             @click="handleApprove(row)"
           >
@@ -79,7 +83,7 @@
           </el-button>
           <el-button
             v-if="row.status === 'SUBMITTED'"
-            text size="small" type="danger"
+            size="small" type="danger"
             v-permission="'regulatory:approve'"
             @click="handleReject(row)"
           >
@@ -122,6 +126,7 @@ import TiTable from '@/components/TiTable/index.vue'
 import TiSearchForm from '@/components/TiSearchForm/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
+import TiCopyText from '@/components/TiCopyText/index.vue'
 
 /** 状态标签颜色映射 */
 const STATUS_COLOR: Record<string, string> = {

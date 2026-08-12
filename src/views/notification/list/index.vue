@@ -39,7 +39,7 @@
     </div>
 
     <TiTable
-      :data="tableData.value"
+      :data="tableData"
       :total="pagination.total"
       :page-num="pagination.pageNum"
       :page-size="pagination.pageSize"
@@ -72,7 +72,7 @@
       </el-table-column>
       <el-table-column label="操作" width="90" fixed="right">
         <template #default="{ row }">
-          <el-button text size="small" :icon="View" @click="handleView(row)">详情</el-button>
+          <el-button size="small" :icon="View" @click="handleView(row)">详情</el-button>
         </template>
       </el-table-column>
     </TiTable>

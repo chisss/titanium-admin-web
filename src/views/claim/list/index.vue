@@ -44,7 +44,7 @@
       <el-table-column prop="reportTime" label="报案时间" width="160" />
       <el-table-column label="操作" width="100" fixed="right">
         <template #default>
-          <el-button text size="small" :icon="View">详情</el-button>
+          <el-button size="small" :icon="View">详情</el-button>
         </template>
       </el-table-column>
     </TiTable>

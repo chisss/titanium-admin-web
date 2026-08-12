@@ -3,24 +3,31 @@ import http from './http'
 import type { PolicyVO } from '@/types/business.d'
 import type { PageParams, PageResult } from '@/types/api.d'
 
-/** 查询保单列表 */
-export function getPolicyList(params?: Partial<PageParams> & Record<string, unknown>): Promise<PageResult<PolicyVO>> {
-  return http.get('/web/v1/policies', { params })
+/** 查询保单列表（包装后端List响应为PageResult） */
+export async function getPolicyList(params?: Partial<PageParams> & Record<string, unknown>): Promise<PageResult<PolicyVO>> {
+  const list = await http.get<PolicyVO[]>('/web/v1/proxy/policies', { params })
+  // 后端返回纯List，前端包装成PageResult
+  return {
+    list: Array.isArray(list) ? list : [],
+    total: Array.isArray(list) ? list.length : 0,
+    pageNum: params?.pageNum || 1,
+    pageSize: params?.pageSize || 20,
+  }
 }
 
 /** 获取保单详情 */
 export function getPolicyDetail(id: string): Promise<PolicyVO> {
-  return http.get(`/web/v1/policies/${id}`)
+  return http.get(`/web/v1/proxy/policies/${id}`)
 }
 
 /** 根据保单号查询 */
 export function getPolicyByNo(policyNo: string): Promise<PolicyVO> {
-  return http.get(`/web/v1/policies/by-no/${policyNo}`)
+  return http.get(`/web/v1/proxy/policies/by-no/${policyNo}`)
 }
 
 /** 导出保单列表 */
 export function exportPolicies(params?: Record<string, unknown>): Promise<Blob> {
-  return http.get('/web/v1/policies/export', { params, responseType: 'blob' })
+  return http.get('/web/v1/proxy/policies/export', { params, responseType: 'blob' })
 }
 
 // ===== 寿险生命周期操作（通过 admin proxy 层调用）=====

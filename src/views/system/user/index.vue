@@ -25,7 +25,7 @@
     </div>
 
     <TiTable
-      :data="tableData.value"
+      :data="tableData"
       :total="pagination.total"
       :page-num="pagination.pageNum"
       :page-size="pagination.pageSize"
@@ -35,6 +35,11 @@
     >
       <el-table-column prop="username" label="用户名" width="140" />
       <el-table-column prop="nickname" label="昵称" width="120" />
+      <el-table-column prop="deptId" label="部门" width="120">
+        <template #default="{ row }">
+          {{ getDeptName(row.deptId) }}
+        </template>
+      </el-table-column>
       <el-table-column prop="email" label="邮箱" min-width="180" show-overflow-tooltip />
       <el-table-column prop="mobile" label="手机号" width="130" />
       <el-table-column prop="status" label="状态" width="90">
@@ -43,12 +48,12 @@
         </template>
       </el-table-column>
       <el-table-column prop="createdAt" label="创建时间" width="160" />
-      <el-table-column label="操作" width="200" fixed="right">
+      <el-table-column label="操作" min-width="200" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
-          <el-button text size="small" :icon="Edit" v-permission="'system:user:edit'" @click="openDialog(row)">编辑</el-button>
-          <el-button text size="small" v-permission="'system:user:reset-pwd'" @click="handleResetPwd(row)">重置密码</el-button>
+          <el-button size="small" :icon="Edit" v-permission="'system:user:edit'" @click="openDialog(row)">编辑</el-button>
+          <el-button size="small" v-permission="'system:user:reset-pwd'" @click="handleResetPwd(row)">重置密码</el-button>
           <el-button
-            text size="small"
+            size="small"
             :type="row.status === 'ACTIVE' ? 'danger' : 'success'"
             v-permission="'system:user:toggle'"
             @click="handleToggle(row)"
@@ -77,6 +82,16 @@
         <el-form-item label="邮箱">
           <el-input v-model="form.email" />
         </el-form-item>
+        <el-form-item label="部门">
+          <el-select v-model="form.deptId" clearable placeholder="请选择部门" style="width: 100%">
+            <el-option v-for="dept in deptOptions" :key="dept.id" :label="dept.deptName" :value="dept.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="角色">
+          <el-select v-model="form.roleIds" multiple clearable placeholder="请选择角色" style="width: 100%">
+            <el-option v-for="role in roleOptions" :key="role.id" :label="role.name" :value="role.id" />
+          </el-select>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -91,8 +106,10 @@ import { ref, reactive } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Edit } from '@element-plus/icons-vue'
 import type { FormInstance, FormRules } from 'element-plus'
-import { getUserList, createUser, updateUser, toggleUserStatus, resetPassword } from '@/api/user'
+import { getUserList, createUser, updateUser, toggleUserStatus, resetPassword, assignRoles } from '@/api/user'
 import type { UserListItem } from '@/api/user'
+import { getDeptSimpleList, type DeptSimpleItem } from '@/api/dept'
+import { getRoleList, type RoleVO } from '@/api/role'
 import { useTable } from '@/composables/useTable'
 import TiTable from '@/components/TiTable/index.vue'
 import TiSearchForm from '@/components/TiSearchForm/index.vue'
@@ -110,7 +127,10 @@ const editId = ref<string | null>(null)
 const saving = ref(false)
 const formRef = ref<FormInstance>()
 
-const form = reactive({ username: '', password: '', nickname: '', mobile: '', email: '' })
+const deptOptions = ref<DeptSimpleItem[]>([])
+const roleOptions = ref<RoleVO[]>([])
+
+const form = reactive({ username: '', password: '', nickname: '', mobile: '', email: '', deptId: '', roleIds: [] as string[] })
 
 const rules: FormRules = {
   username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
@@ -118,9 +138,19 @@ const rules: FormRules = {
   nickname: [{ required: true, message: '请输入昵称', trigger: 'blur' }],
 }
 
-const openDialog = (row?: UserListItem) => {
+const openDialog = async (row?: UserListItem) => {
   editId.value = row?.id ?? null
-  Object.assign(form, row ?? { username: '', password: '', nickname: '', mobile: '', email: '' })
+  Object.assign(form, row ?? { username: '', password: '', nickname: '', mobile: '', email: '', deptId: '', roleIds: [] })
+
+  // 首次打开时加载选项
+  if (!deptOptions.value.length) {
+    deptOptions.value = await getDeptSimpleList()
+  }
+  if (!roleOptions.value.length) {
+    const res = await getRoleList({ pageNum: 1, pageSize: 100 })
+    roleOptions.value = res.list
+  }
+
   dialogVisible.value = true
 }
 
@@ -129,7 +159,19 @@ const handleSave = async () => {
   if (!valid) return
   saving.value = true
   try {
-    if (editId.value) { await updateUser(editId.value, form) } else { await createUser(form) }
+    if (editId.value) {
+      await updateUser(editId.value, form)
+      // 编辑时也分配角色
+      if (form.roleIds.length > 0) {
+        await assignRoles(editId.value, form.roleIds)
+      }
+    } else {
+      const createdUser = await createUser(form)
+      // 创建后立即分配角色
+      if (form.roleIds.length > 0 && createdUser.id) {
+        await assignRoles(createdUser.id, form.roleIds)
+      }
+    }
     ElMessage.success('保存成功')
     dialogVisible.value = false
     fetchData()
@@ -155,5 +197,11 @@ const handleToggle = async (row: UserListItem) => {
   await toggleUserStatus(row.id, nextStatus)
   ElMessage.success('操作成功')
   fetchData()
+}
+
+const getDeptName = (deptId?: string) => {
+  if (!deptId) return '-'
+  const dept = deptOptions.value.find(d => d.id === deptId)
+  return dept?.deptName ?? deptId
 }
 </script>

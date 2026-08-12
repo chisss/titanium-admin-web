@@ -10,8 +10,9 @@ export interface UserListItem {
   email?: string
   mobile?: string
   status: 'ACTIVE' | 'INACTIVE'
-  roles: string[]
+  roleIds: string[]  // 改名与后端对齐
   tenantId: string
+  deptId?: string    // 新增
   createdAt: string
 }
 
@@ -21,7 +22,7 @@ export function getUserList(params?: Partial<PageParams> & Record<string, unknow
 }
 
 /** 新增用户 */
-export function createUser(data: Partial<UserListItem> & { password: string }): Promise<void> {
+export function createUser(data: Partial<UserListItem> & { password: string }): Promise<UserListItem> {
   return http.post('/web/v1/users', data)
 }
 
@@ -43,4 +44,9 @@ export function toggleUserStatus(id: string, status: string): Promise<void> {
 /** 删除用户 */
 export function deleteUser(id: string): Promise<void> {
   return http.delete(`/web/v1/users/${id}`)
+}
+
+/** 分配角色 */
+export function assignRoles(userId: string, roleIds: string[]): Promise<void> {
+  return http.put(`/web/v1/users/${userId}/roles`, { roleIds })
 }

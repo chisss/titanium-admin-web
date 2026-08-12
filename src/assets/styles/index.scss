@@ -101,6 +101,28 @@ body {
   margin-top: 16px;
 }
 
+// 操作列：全站统一——按钮横向排布、绝不换行；配合足够列宽实现"动态宽度"观感
+.ti-action-column {
+  .cell {
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+
+    // 相邻按钮默认 margin 与 gap 叠加会产生额外间距，统一交给 gap 控制
+    .el-button + .el-button {
+      margin-left: 0;
+    }
+  }
+}
+
+// 编码列：全站统一——不换行，避免编码被挤成多行
+.ti-code-column {
+  .cell {
+    white-space: nowrap;
+  }
+}
+
 // 状态标签颜色
 .status-tag {
   &--draft {

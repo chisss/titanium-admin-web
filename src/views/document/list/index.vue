@@ -21,7 +21,7 @@
     </TiSearchForm>
 
     <TiTable
-      :data="tableData.value"
+      :data="tableData"
       :total="pagination.total"
       :page-num="pagination.pageNum"
       :page-size="pagination.pageSize"
@@ -29,9 +29,13 @@
       @page-change="onPageChange"
       @size-change="onSizeChange"
     >
-      <el-table-column prop="documentNo" label="文档编号" width="180" />
+      <el-table-column prop="documentNo" label="文档编号" width="180" class-name="ti-code-column">
+        <template #default="{ row }">
+          <TiCopyText :text="row.documentNo" />
+        </template>
+      </el-table-column>
       <el-table-column prop="documentType" label="文档类型" width="140" />
-      <el-table-column prop="policyNo" label="关联保单号" width="160">
+      <el-table-column prop="policyNo" label="关联保单号" width="160" class-name="ti-code-column">
         <template #default="{ row }">{{ row.policyNo || '-' }}</template>
       </el-table-column>
       <el-table-column prop="customerName" label="客户" width="140">
@@ -43,12 +47,12 @@
         </template>
       </el-table-column>
       <el-table-column prop="createdAt" label="创建时间" width="160" />
-      <el-table-column label="操作" width="150" fixed="right">
+      <el-table-column label="操作" min-width="150" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
-          <el-button text size="small" :icon="View" @click="handleView(row)">详情</el-button>
+          <el-button size="small" :icon="View" @click="handleView(row)">详情</el-button>
           <el-button
             v-if="row.status === 'SIGNED' || row.status === 'ARCHIVED'"
-            text size="small" type="primary"
+            size="small" type="primary"
             :icon="Download"
             @click="handleDownload(row)"
           >
@@ -71,6 +75,7 @@ import TiTable from '@/components/TiTable/index.vue'
 import TiSearchForm from '@/components/TiSearchForm/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
+import TiCopyText from '@/components/TiCopyText/index.vue'
 
 /** 状态标签颜色映射 */
 const STATUS_COLOR: Record<string, string> = {

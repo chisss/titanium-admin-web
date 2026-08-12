@@ -29,7 +29,7 @@
     </TiSearchForm>
 
     <TiTable
-      :data="tableData.value"
+      :data="tableData"
       :total="pagination.total"
       :page-num="pagination.pageNum"
       :page-size="pagination.pageSize"
@@ -37,8 +37,16 @@
       @page-change="onPageChange"
       @size-change="onSizeChange"
     >
-      <el-table-column prop="caseNo" label="案件号" width="180" />
-      <el-table-column prop="policyNo" label="保单号" width="160" />
+      <el-table-column prop="caseNo" label="案件号" width="180" class-name="ti-code-column">
+        <template #default="{ row }">
+          <TiCopyText :text="row.caseNo" />
+        </template>
+      </el-table-column>
+      <el-table-column prop="policyNo" label="保单号" width="160" class-name="ti-code-column">
+        <template #default="{ row }">
+          <TiCopyText :text="row.policyNo" />
+        </template>
+      </el-table-column>
       <el-table-column prop="insuredName" label="被保人" width="100" />
       <el-table-column prop="productName" label="产品名称" min-width="160" show-overflow-tooltip />
       <el-table-column prop="sumInsured" label="保额" width="120">
@@ -53,9 +61,9 @@
       <el-table-column prop="decisionTime" label="决策时间" width="160">
         <template #default="{ row }">{{ row.decisionTime || '-' }}</template>
       </el-table-column>
-      <el-table-column label="操作" width="140" fixed="right">
+      <el-table-column label="操作" min-width="140" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
-          <el-button text size="small" :icon="View" @click="toDetail(row.id)">详情</el-button>
+          <el-button size="small" :icon="View" @click="toDetail(row.id)">详情</el-button>
           <el-button
             v-if="row.status === 'MANUAL_REVIEWING'"
             text
@@ -82,6 +90,7 @@ import { useTable } from '@/composables/useTable'
 import TiTable from '@/components/TiTable/index.vue'
 import TiSearchForm from '@/components/TiSearchForm/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
+import TiCopyText from '@/components/TiCopyText/index.vue'
 import type { PageResult } from '@/types/api.d'
 
 const router = useRouter()

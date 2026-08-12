@@ -23,9 +23,32 @@ export function deleteDictType(id: string): Promise<void> {
   return http.delete(`/web/v1/dicts/types/${id}`)
 }
 
-/** 根据类型编码获取字典数据（含 i18n） */
-export function getDictDataByType(typeCode: string): Promise<DictData[]> {
-  return http.get(`/web/v1/dicts/${typeCode}/items`)
+/** 后端字典数据原始结构（DictController 返回 DictDataVO） */
+interface DictDataRaw {
+  id: string
+  dictType: string
+  dictValue: string
+  dictLabel: string
+  dictSort?: number
+  status?: string
+}
+
+/**
+ * 根据类型编码获取字典数据
+ * 后端入口为 GET /web/v1/dicts/{dictType}/data，返回 {dictValue,dictLabel,dictSort,status}，
+ * 此处映射为前端 DictData 结构（value/label/sort）供 useDict 使用
+ */
+export async function getDictDataByType(typeCode: string): Promise<DictData[]> {
+  const raw = (await http.get(`/web/v1/dicts/${typeCode}/data`)) as unknown as DictDataRaw[]
+  return (raw || []).map((it) => ({
+    id: it.id,
+    dictTypeId: '',
+    dictTypeCode: it.dictType ?? typeCode,
+    value: it.dictValue,
+    label: it.dictLabel,
+    sort: it.dictSort ?? 0,
+    status: (it.status === '0' ? 'ACTIVE' : 'INACTIVE') as DictData['status'],
+  }))
 }
 
 /** 新增字典数据 */

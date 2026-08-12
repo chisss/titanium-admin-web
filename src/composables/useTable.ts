@@ -1,5 +1,5 @@
 // useTable 组合式函数 - 表格通用逻辑封装
-import { ref, reactive } from 'vue'
+import { ref, reactive, type Ref } from 'vue'
 import { usePagination } from './usePagination'
 import type { PageResult } from '@/types/api.d'
 
@@ -11,7 +11,9 @@ export function useTable<T, P extends Record<string, unknown>>(
   fetchFn: (params: P & { pageNum: number; pageSize: number }) => Promise<PageResult<T>>,
   externalQueryParams?: P,
 ) {
-  const tableData = ref<T[]>([]) as { value: T[] }
+  // 保持为真正的 Ref<T[]>：模板中 `:data="tableData"` 自动解包为数组，脚本中 `tableData.value` 读写；
+  // 旧的 `as { value: T[] }` 断言会让模板侧丢失 ref 自动解包的类型推断，导致 vue-tsc 报错
+  const tableData: Ref<T[]> = ref<T[]>([]) as Ref<T[]>
   const tableLoading = ref(false)
   const { pagination, handleCurrentChange, handleSizeChange, resetPage, setTotal } = usePagination()
 

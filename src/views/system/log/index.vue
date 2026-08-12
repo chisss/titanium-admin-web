@@ -26,7 +26,7 @@
     </TiSearchForm>
 
     <TiTable
-      :data="tableData.value"
+      :data="tableData"
       :total="pagination.total"
       :page-num="pagination.pageNum"
       :page-size="pagination.pageSize"
@@ -54,7 +54,7 @@
       <el-table-column prop="createdAt" label="操作时间" width="160" />
       <el-table-column label="操作" width="80" fixed="right">
         <template #default="{ row }">
-          <el-button text size="small" :icon="View" @click="viewDetail(row)">详情</el-button>
+          <el-button size="small" :icon="View" @click="viewDetail(row)">详情</el-button>
         </template>
       </el-table-column>
     </TiTable>

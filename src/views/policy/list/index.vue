@@ -90,7 +90,7 @@
 
     <!-- 表格 -->
     <TiTable
-      :data="tableData.value"
+      :data="tableData"
       :total="pagination.total"
       :page-num="pagination.pageNum"
       :page-size="pagination.pageSize"
@@ -99,7 +99,7 @@
       @page-change="onPageChange"
       @size-change="onSizeChange"
     >
-      <el-table-column prop="policyNo" label="保单号" width="160" fixed="left">
+      <el-table-column prop="policyNo" label="保单号" width="160" fixed="left" class-name="ti-code-column">
         <template #default="{ row }">
           <span class="policy-no">{{ row.policyNo }}</span>
           <el-icon
@@ -111,9 +111,11 @@
           </el-icon>
         </template>
       </el-table-column>
-      <el-table-column prop="holderName" label="投保人" width="100" />
-      <el-table-column prop="insuredName" label="被保人" width="100" />
-      <el-table-column prop="productName" label="产品名称" min-width="160" show-overflow-tooltip />
+      <el-table-column prop="policyHolderName" label="投保人" width="120" />
+      <el-table-column prop="insuredName" label="被保人" width="120" />
+      <el-table-column prop="productName" label="产品名称" min-width="180" show-overflow-tooltip>
+        <template #default="{ row }">{{ row.productName || row.productCode || '-' }}</template>
+      </el-table-column>
       <el-table-column prop="premium" label="保费" width="110">
         <template #default="{ row }">¥{{ row.premium?.toLocaleString() }}</template>
       </el-table-column>
@@ -122,14 +124,18 @@
       </el-table-column>
       <el-table-column prop="status" label="状态" width="110">
         <template #default="{ row }">
-          <TiStatusTag :value="row.status" />
+          <TiStatusTag :value="row.status" :label="POLICY_STATUS_MAP[row.status] || row.status" />
         </template>
       </el-table-column>
-      <el-table-column prop="effectiveDate" label="起保日期" width="110" />
-      <el-table-column prop="expiryDate" label="到期日期" width="110" />
-      <el-table-column label="操作" width="100" fixed="right">
+      <el-table-column prop="effectiveDate" label="起保日期" width="110">
+        <template #default="{ row }">{{ formatDate(row.effectiveDate) }}</template>
+      </el-table-column>
+      <el-table-column prop="expiryDate" label="到期日期" width="110">
+        <template #default="{ row }">{{ formatDate(row.expiryDate) }}</template>
+      </el-table-column>
+      <el-table-column label="操作" min-width="100" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
-          <el-button text size="small" :icon="View" @click="goDetail(row.id)">详情</el-button>
+          <el-button size="small" :icon="View" @click="goDetail(row.id)">详情</el-button>
         </template>
       </el-table-column>
     </TiTable>
@@ -137,7 +143,7 @@
 </template>
 
 <script setup lang="ts">
-import { reactive } from 'vue'
+import { reactive, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Download, View, CopyDocument } from '@element-plus/icons-vue'
@@ -148,6 +154,26 @@ import TiSearchForm from '@/components/TiSearchForm/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
 import type { PolicyVO } from '@/types/business.d'
+
+// 保单状态映射
+const POLICY_STATUS_MAP: Record<string, string> = {
+  PENDING_EFFECTIVE: '待生效',
+  EFFECTIVE: '保单生效',
+  EXPIRED: '保单到期',
+  TERMINATED: '提前终止',
+  SUSPENDED: '暂时中止',
+  CANCELLED: '保单撤销',
+  LAPSED: '保单失效',
+  PROPOSAL: '投保中',
+  PENDING: '待审核',
+  PENDING_PAYMENT: '待缴费',
+  ACTIVE: '生效中',
+}
+
+const formatDate = (dateStr: string | undefined) => {
+  if (!dateStr) return '-'
+  return dateStr.split('T')[0] // YYYY-MM-DD
+}
 
 const router = useRouter()
 

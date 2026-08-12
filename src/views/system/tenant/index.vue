@@ -26,7 +26,7 @@
     </div>
 
     <TiTable
-      :data="tableData.value"
+      :data="tableData"
       :total="pagination.total"
       :page-num="pagination.pageNum"
       :page-size="pagination.pageSize"
@@ -34,7 +34,11 @@
       @page-change="onPageChange"
       @size-change="onSizeChange"
     >
-      <el-table-column prop="code" label="租户编码" width="140" />
+      <el-table-column prop="code" label="租户编码" width="140" class-name="ti-code-column">
+        <template #default="{ row }">
+          <TiCopyText :text="row.code" />
+        </template>
+      </el-table-column>
       <el-table-column prop="name" label="租户名称" min-width="160" />
       <el-table-column prop="contactName" label="联系人" width="100" />
       <el-table-column prop="contactMobile" label="联系电话" width="130" />
@@ -43,13 +47,18 @@
           <TiStatusTag :value="row.status" />
         </template>
       </el-table-column>
+      <el-table-column label="国家/币种" width="130">
+        <template #default="{ row }">
+          {{ countryLabel(row.country) }}<span v-if="row.currency"> / {{ row.currency }}</span>
+        </template>
+      </el-table-column>
       <el-table-column prop="expireAt" label="到期时间" width="110" />
       <el-table-column prop="createdAt" label="创建时间" width="160" />
-      <el-table-column label="操作" width="160" fixed="right">
+      <el-table-column label="操作" min-width="160" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
-          <el-button text size="small" :icon="Edit" @click="openDialog(row)">编辑</el-button>
+          <el-button size="small" :icon="Edit" @click="openDialog(row)">编辑</el-button>
           <el-button
-            text size="small"
+            size="small"
             :type="row.status === 'ACTIVE' ? 'danger' : 'success'"
             @click="handleToggleStatus(row)"
           >
@@ -77,8 +86,25 @@
         <el-form-item label="联系邮箱">
           <el-input v-model="form.contactEmail" />
         </el-form-item>
-        <el-form-item label="到期时间">
-          <el-date-picker v-model="form.expireAt" value-format="YYYY-MM-DD" style="width: 100%" />
+        <el-form-item label="国家/地区">
+          <el-select v-model="form.country" clearable placeholder="选择国家/地区" style="width: 100%" @change="onCountryChange">
+            <el-option v-for="opt in COUNTRY_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="默认语言">
+          <el-select v-model="form.language" clearable placeholder="选择默认语言" style="width: 100%">
+            <el-option v-for="opt in LANGUAGE_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="默认币种">
+          <el-select v-model="form.currency" clearable placeholder="选择默认币种" style="width: 100%">
+            <el-option v-for="opt in CURRENCY_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="时区">
+          <el-select v-model="form.timezone" clearable filterable placeholder="选择时区" style="width: 100%">
+            <el-option v-for="opt in TIMEZONE_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
+          </el-select>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -99,7 +125,15 @@ import { useTable } from '@/composables/useTable'
 import TiTable from '@/components/TiTable/index.vue'
 import TiSearchForm from '@/components/TiSearchForm/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
+import TiCopyText from '@/components/TiCopyText/index.vue'
 import type { TenantVO } from '@/types/business.d'
+import {
+  COUNTRY_OPTIONS,
+  LANGUAGE_OPTIONS,
+  CURRENCY_OPTIONS,
+  TIMEZONE_OPTIONS,
+  COUNTRY_DEFAULT_CURRENCY,
+} from '@/constants/locale'
 
 const queryParams = reactive({ name: '', code: '', status: undefined as string | undefined })
 
@@ -113,9 +147,27 @@ const editId = ref<string | null>(null)
 const saving = ref(false)
 const formRef = ref<FormInstance>()
 
-const form = reactive({
-  code: '', name: '', contactName: '', contactMobile: '', contactEmail: '', expireAt: undefined as string | undefined,
+const defaultForm = () => ({
+  code: '', name: '', contactName: '', contactMobile: '', contactEmail: '',
+  country: undefined as string | undefined,
+  language: undefined as string | undefined,
+  currency: undefined as string | undefined,
+  timezone: undefined as string | undefined,
+  expireAt: undefined as string | undefined,
 })
+
+const form = reactive(defaultForm())
+
+/** 国家码 → 中文名 */
+const countryLabel = (code?: string) =>
+  COUNTRY_OPTIONS.find((o) => o.value === code)?.label ?? code ?? '-'
+
+/** 选国家时自动带出该国默认币种（未手动选过币种时） */
+const onCountryChange = (country: string) => {
+  if (country && !form.currency) {
+    form.currency = COUNTRY_DEFAULT_CURRENCY[country]
+  }
+}
 
 const rules: FormRules = {
   code: [{ required: true, message: '请输入租户编码', trigger: 'blur' }],
@@ -126,7 +178,7 @@ const rules: FormRules = {
 
 const openDialog = (row?: TenantVO) => {
   editId.value = row?.id ?? null
-  Object.assign(form, row ?? { code: '', name: '', contactName: '', contactMobile: '', contactEmail: '', expireAt: undefined })
+  Object.assign(form, defaultForm(), row ?? {})
   dialogVisible.value = true
 }
 

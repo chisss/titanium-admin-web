@@ -34,15 +34,15 @@ export function getBillList(
   }> &
     PageParams,
 ): Promise<PageResult<BillVO>> {
-  return http.get('/web/v1/proxy/billing/bills', { params }) as Promise<PageResult<BillVO>>
+  return http.get('/web/v1/proxy/billing', { params }) as Promise<PageResult<BillVO>>
 }
 
 /** 账单详情 */
 export function getBillDetail(id: string): Promise<BillVO> {
-  return http.get(`/web/v1/proxy/billing/bills/${id}`) as Promise<BillVO>
+  return http.get(`/web/v1/proxy/billing/${id}`) as Promise<BillVO>
 }
 
 /** 缴费计划 */
 export function getPremiumSchedule(policyId: string): Promise<PremiumScheduleVO[]> {
-  return http.get(`/web/v1/proxy/billing/policies/${policyId}/schedule`) as Promise<PremiumScheduleVO[]>
+  return http.get(`/web/v1/proxy/billing/${policyId}/premium-schedule`) as Promise<PremiumScheduleVO[]>
 }

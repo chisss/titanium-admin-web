@@ -23,7 +23,7 @@
     </TiSearchForm>
 
     <TiTable
-      :data="tableData.value"
+      :data="tableData"
       :total="pagination.total"
       :page-num="pagination.pageNum"
       :page-size="pagination.pageSize"
@@ -31,20 +31,27 @@
       @page-change="onPageChange"
       @size-change="onSizeChange"
     >
-      <el-table-column prop="name" label="客户姓名" width="120" />
-      <el-table-column prop="idType" label="证件类型" width="100" />
-      <el-table-column prop="idNo" label="证件号码" width="180" />
-      <el-table-column prop="mobile" label="手机号" width="130" />
-      <el-table-column prop="gender" label="性别" width="70">
+      <el-table-column prop="fullName" label="客户姓名" width="140" />
+      <el-table-column prop="idType" label="证件类型" width="130">
+        <template #default="{ row }">
+          {{ row.idType === 'CHINA_ID_CARD' ? '居民身份证' : row.idType }}
+        </template>
+      </el-table-column>
+      <el-table-column prop="idNo" label="证件号码" width="200" />
+      <el-table-column prop="phoneNumber" label="手机号" width="150" />
+      <el-table-column prop="gender" label="性别" width="80">
         <template #default="{ row }">
           {{ row.gender === 'MALE' ? '男' : row.gender === 'FEMALE' ? '女' : '-' }}
         </template>
       </el-table-column>
-      <el-table-column prop="birthday" label="出生日期" width="110" />
-      <el-table-column prop="createdAt" label="注册时间" width="160" />
-      <el-table-column label="操作" width="100" fixed="right">
-        <template #default>
-          <el-button text size="small" :icon="View">详情</el-button>
+      <el-table-column prop="createTime" label="注册时间" width="180">
+        <template #default="{ row }">
+          {{ row.createTime ? new Date(row.createTime).toLocaleString('zh-CN') : '-' }}
+        </template>
+      </el-table-column>
+      <el-table-column label="操作" width="120" fixed="right">
+        <template #default="{ row }">
+          <el-button size="small" :icon="View" @click="handleViewDetail(row.customerId)">详情</el-button>
         </template>
       </el-table-column>
     </TiTable>
@@ -53,6 +60,7 @@
 
 <script setup lang="ts">
 import { reactive } from 'vue'
+import { ElMessage } from 'element-plus'
 import { View } from '@element-plus/icons-vue'
 import { getCustomerList } from '@/api/customer'
 import { useTable } from '@/composables/useTable'
@@ -73,6 +81,11 @@ const { tableData, tableLoading, pagination, fetchData, handleSearch, handleRese
     const { dateRange, ...rest } = params
     return getCustomerList({ ...rest, dateRange }) as Promise<PageResult<CustomerVO>>
   }, queryParams)
+
+const handleViewDetail = (customerId: string) => {
+  // TODO: 客户详情页待实现，先提示
+  ElMessage.info(`客户详情: ${customerId}`)
+}
 
 fetchData()
 </script>

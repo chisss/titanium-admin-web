@@ -29,7 +29,7 @@
     </div>
 
     <TiTable
-      :data="tableData.value"
+      :data="tableData"
       :total="pagination.total"
       :page-num="pagination.pageNum"
       :page-size="pagination.pageSize"
@@ -37,9 +37,20 @@
       @page-change="onPageChange"
       @size-change="onSizeChange"
     >
-      <el-table-column prop="code" label="条款编码" width="160" />
-      <el-table-column prop="name" label="条款名称" min-width="200" show-overflow-tooltip />
-      <el-table-column prop="category" label="险种分类" width="110" />
+      <el-table-column type="index" label="序号" width="60" align="center" fixed="left" />
+      <el-table-column prop="code" label="条款编码" width="180" class-name="ti-code-column">
+        <template #default="{ row }">
+          <TiCopyText :text="row.code" />
+        </template>
+      </el-table-column>
+      <el-table-column prop="name" label="条款名称" min-width="200" show-overflow-tooltip>
+        <template #default="{ row }">
+          <el-button link type="primary" @click="goDetail(row.id)">{{ row.name }}</el-button>
+        </template>
+      </el-table-column>
+      <el-table-column prop="category" label="险种分类" width="110">
+        <template #default="{ row }">{{ getCategoryLabel(row.category) || row.category || '-' }}</template>
+      </el-table-column>
       <el-table-column prop="version" label="版本" width="80" />
       <el-table-column prop="status" label="状态" width="100">
         <template #default="{ row }">
@@ -48,14 +59,14 @@
       </el-table-column>
       <el-table-column prop="effectiveDate" label="生效日期" width="110" />
       <el-table-column prop="createdAt" label="创建时间" width="160" />
-      <el-table-column label="操作" width="180" fixed="right">
+      <el-table-column label="操作" min-width="200" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
-          <el-button text size="small" :icon="Edit" v-permission="'clause:edit'" @click="goEdit(row.id)">
+          <el-button size="small" :icon="Edit" v-permission="'clause:edit'" @click="goEdit(row.id)">
             编辑
           </el-button>
           <el-button
             v-if="row.status === 'DRAFT'"
-            text size="small" type="success"
+            size="small" type="success"
             v-permission="'clause:activate'"
             @click="handleActivate(row)"
           >
@@ -63,7 +74,7 @@
           </el-button>
           <el-button
             v-if="row.status === 'ACTIVE'"
-            text size="small" type="danger"
+            size="small" type="danger"
             v-permission="'clause:deactivate'"
             @click="handleDeactivate(row)"
           >
@@ -87,8 +98,13 @@ import TiTable from '@/components/TiTable/index.vue'
 import TiSearchForm from '@/components/TiSearchForm/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
+import TiCopyText from '@/components/TiCopyText/index.vue'
+import { useDict } from '@/composables/useDict'
 
 const router = useRouter()
+
+// 险种分类编码 → 中文标签（与产品详情页同口径，避免列表直显原始码）
+const { getLabel: getCategoryLabel } = useDict('INSURANCE_CATEGORY')
 
 const queryParams = reactive({
   name: '',
@@ -103,6 +119,7 @@ const { tableData, tableLoading, pagination, fetchData, handleSearch, handleRese
 fetchData()
 
 const goEdit = (id?: string) => router.push(id ? `/clause/edit/${id}` : '/clause/edit')
+const goDetail = (id: string) => router.push(`/clause/detail/${id}`)
 
 const handleActivate = async (row: ClauseVO) => {
   await ElMessageBox.confirm(`确认启用条款"${row.name}"？`, '提示', { type: 'warning' })

@@ -9,8 +9,12 @@
       </div>
     </div>
 
-    <TiTable :data="tableData.value" :total="pagination.total" :loading="tableLoading" @page-change="onPageChange" @size-change="onSizeChange">
-      <el-table-column prop="code" label="角色编码" width="160" />
+    <TiTable :data="tableData" :total="pagination.total" :loading="tableLoading" @page-change="onPageChange" @size-change="onSizeChange">
+      <el-table-column prop="code" label="角色编码" width="160" class-name="ti-code-column">
+        <template #default="{ row }">
+          <TiCopyText :text="row.code" />
+        </template>
+      </el-table-column>
       <el-table-column prop="name" label="角色名称" min-width="160" />
       <el-table-column prop="description" label="描述" min-width="200" show-overflow-tooltip />
       <el-table-column prop="status" label="状态" width="90">
@@ -19,10 +23,10 @@
         </template>
       </el-table-column>
       <el-table-column prop="createdAt" label="创建时间" width="160" />
-      <el-table-column label="操作" width="160" fixed="right">
+      <el-table-column label="操作" min-width="160" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
-          <el-button text size="small" :icon="Edit" v-permission="'system:role:edit'" @click="openDialog(row)">编辑</el-button>
-          <el-button text size="small" type="warning" v-permission="'system:role:assign'" @click="openPermDialog(row)">分配权限</el-button>
+          <el-button size="small" :icon="Edit" v-permission="'system:role:edit'" @click="openDialog(row)">编辑</el-button>
+          <el-button size="small" type="warning" v-permission="'system:role:assign'" @click="openPermDialog(row)">分配权限</el-button>
         </template>
       </el-table-column>
     </TiTable>
@@ -71,9 +75,11 @@ import { Plus, Edit } from '@element-plus/icons-vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import { getRoleList, createRole, updateRole, assignPermissions } from '@/api/role'
 import type { RoleVO } from '@/api/role'
+import { getPermissionTree, type PermissionTreeNode } from '@/api/permission'
 import { useTable } from '@/composables/useTable'
 import TiTable from '@/components/TiTable/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
+import TiCopyText from '@/components/TiCopyText/index.vue'
 
 const { tableData, tableLoading, pagination, fetchData, onPageChange, onSizeChange } =
   useTable<RoleVO, Record<string, unknown>>((params) => getRoleList(params))
@@ -116,27 +122,17 @@ const permDialogVisible = ref(false)
 const permTreeRef = ref()
 const currentRoleId = ref<string | null>(null)
 const currentPerms = ref<string[]>([])
-// 模拟权限树（实际从接口获取）
-const permTree = [
-  { id: 'policy', label: '保单管理', children: [
-    { id: 'policy:list', label: '保单查询' },
-    { id: 'policy:detail', label: '保单详情' },
-  ]},
-  { id: 'product', label: '产品管理', children: [
-    { id: 'product:list', label: '产品列表' },
-    { id: 'product:create', label: '新建产品' },
-    { id: 'product:edit', label: '编辑产品' },
-  ]},
-  { id: 'system', label: '系统管理', children: [
-    { id: 'system:user', label: '用户管理' },
-    { id: 'system:role:create', label: '新增角色' },
-  ]},
-]
+const permTree = ref<PermissionTreeNode[]>([])
 
-const openPermDialog = (row: RoleVO) => {
+/** 打开权限分配对话框,加载真实权限树 */
+const openPermDialog = async (row: RoleVO) => {
   currentRoleId.value = row.id
   currentPerms.value = row.permissions || []
   permDialogVisible.value = true
+  // 首次打开或树为空时加载权限树
+  if (!permTree.value.length) {
+    permTree.value = await getPermissionTree()
+  }
 }
 
 const handleAssignPerms = async () => {

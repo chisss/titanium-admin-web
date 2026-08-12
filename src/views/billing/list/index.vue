@@ -31,7 +31,7 @@
     </TiSearchForm>
 
     <TiTable
-      :data="tableData.value"
+      :data="tableData"
       :total="pagination.total"
       :page-num="pagination.pageNum"
       :page-size="pagination.pageSize"
@@ -39,8 +39,16 @@
       @page-change="onPageChange"
       @size-change="onSizeChange"
     >
-      <el-table-column prop="billNo" label="账单号" width="180" />
-      <el-table-column prop="policyNo" label="保单号" width="160" />
+      <el-table-column prop="billNo" label="账单号" width="180" class-name="ti-code-column">
+        <template #default="{ row }">
+          <TiCopyText :text="row.billNo" />
+        </template>
+      </el-table-column>
+      <el-table-column prop="policyNo" label="保单号" width="160" class-name="ti-code-column">
+        <template #default="{ row }">
+          <TiCopyText :text="row.policyNo" />
+        </template>
+      </el-table-column>
       <el-table-column prop="holderName" label="投保人" width="100" />
       <el-table-column prop="amount" label="金额" width="120">
         <template #default="{ row }">¥{{ row.amount?.toLocaleString() }}</template>
@@ -55,9 +63,9 @@
         <template #default="{ row }">{{ row.paidDate || '-' }}</template>
       </el-table-column>
       <el-table-column prop="createdAt" label="创建时间" width="160" />
-      <el-table-column label="操作" width="100" fixed="right">
+      <el-table-column label="操作" min-width="100" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
-          <el-button text size="small" :icon="View" @click="toDetail(row.id)">详情</el-button>
+          <el-button size="small" :icon="View" @click="toDetail(row.id)">详情</el-button>
         </template>
       </el-table-column>
     </TiTable>
@@ -74,6 +82,7 @@ import { useTable } from '@/composables/useTable'
 import TiTable from '@/components/TiTable/index.vue'
 import TiSearchForm from '@/components/TiSearchForm/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
+import TiCopyText from '@/components/TiCopyText/index.vue'
 import type { PageResult } from '@/types/api.d'
 
 const router = useRouter()

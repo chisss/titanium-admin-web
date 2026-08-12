@@ -23,8 +23,8 @@
                 <span class="dict-type-item__code">{{ type.code }}</span>
               </div>
               <div class="dict-type-item__actions">
-                <el-button text size="small" :icon="Edit" @click.stop="openTypeDialog(type)" />
-                <el-button text size="small" type="danger" :icon="Delete" @click.stop="handleDeleteType(type)" />
+                <el-button size="small" :icon="Edit" @click.stop="openTypeDialog(type)" />
+                <el-button size="small" type="danger" :icon="Delete" @click.stop="handleDeleteType(type)" />
               </div>
             </div>
           </el-scrollbar>
@@ -76,8 +76,8 @@
             </el-table-column>
             <el-table-column label="操作" width="120" fixed="right">
               <template #default="{ row }">
-                <el-button text size="small" :icon="Edit" @click="openDataDialog(row)">编辑</el-button>
-                <el-button text size="small" type="danger" :icon="Delete" @click="handleDeleteData(row)">删除</el-button>
+                <el-button size="small" :icon="Edit" @click="openDataDialog(row)">编辑</el-button>
+                <el-button size="small" type="danger" :icon="Delete" @click="handleDeleteData(row)">删除</el-button>
               </template>
             </el-table-column>
           </el-table>

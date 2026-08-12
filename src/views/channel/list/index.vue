@@ -28,7 +28,7 @@
     </div>
 
     <TiTable
-      :data="tableData.value"
+      :data="tableData"
       :total="pagination.total"
       :page-num="pagination.pageNum"
       :page-size="pagination.pageSize"
@@ -36,7 +36,11 @@
       @page-change="onPageChange"
       @size-change="onSizeChange"
     >
-      <el-table-column prop="channelCode" label="渠道代码" width="150" />
+      <el-table-column prop="channelCode" label="渠道代码" width="150" class-name="ti-code-column">
+        <template #default="{ row }">
+          <TiCopyText :text="row.channelCode" />
+        </template>
+      </el-table-column>
       <el-table-column prop="channelName" label="渠道名称" min-width="180" show-overflow-tooltip />
       <el-table-column prop="channelType" label="类型" width="120" />
       <el-table-column prop="contactName" label="联系人" width="110">
@@ -53,15 +57,15 @@
         </template>
       </el-table-column>
       <el-table-column prop="createdAt" label="创建时间" width="160" />
-      <el-table-column label="操作" width="200" fixed="right">
+      <el-table-column label="操作" min-width="200" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
-          <el-button text size="small" :icon="View" @click="handleView(row)">详情</el-button>
-          <el-button text size="small" :icon="Edit" v-permission="'channel:edit'" @click="openDialog(row)">
+          <el-button size="small" :icon="View" @click="handleView(row)">详情</el-button>
+          <el-button size="small" :icon="Edit" v-permission="'channel:edit'" @click="openDialog(row)">
             编辑
           </el-button>
           <el-button
             v-if="row.status === 'INACTIVE'"
-            text size="small" type="success"
+            size="small" type="success"
             v-permission="'channel:activate'"
             @click="handleActivate(row)"
           >
@@ -69,7 +73,7 @@
           </el-button>
           <el-button
             v-if="row.status === 'ACTIVE'"
-            text size="small" type="danger"
+            size="small" type="danger"
             v-permission="'channel:deactivate'"
             @click="handleDeactivate(row)"
           >
@@ -123,6 +127,7 @@ import TiTable from '@/components/TiTable/index.vue'
 import TiSearchForm from '@/components/TiSearchForm/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
+import TiCopyText from '@/components/TiCopyText/index.vue'
 
 const queryParams = reactive({
   channelName: '',
