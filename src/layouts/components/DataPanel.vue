@@ -48,6 +48,7 @@ defineEmits<{ collapse: []; expand: [] }>()
 
 const chartRef = ref<HTMLElement>()
 let chartInstance: echarts.ECharts | null = null
+const resizeChart = () => chartInstance?.resize()
 
 // 模拟指标数据
 const metricCards = [
@@ -104,12 +105,12 @@ const initChart = () => {
 
 onMounted(() => {
   initChart()
-  window.addEventListener('resize', () => chartInstance?.resize())
+  window.addEventListener('resize', resizeChart)
 })
 
 onUnmounted(() => {
   chartInstance?.dispose()
-  window.removeEventListener('resize', () => chartInstance?.resize())
+  window.removeEventListener('resize', resizeChart)
 })
 </script>
 

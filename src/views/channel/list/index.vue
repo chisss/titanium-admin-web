@@ -43,12 +43,12 @@
       </el-table-column>
       <el-table-column prop="channelName" label="渠道名称" min-width="180" show-overflow-tooltip />
       <el-table-column prop="channelType" label="类型" width="120" />
-      <el-table-column prop="contactName" label="联系人" width="110">
-        <template #default="{ row }">{{ row.contactName || '-' }}</template>
+      <el-table-column prop="contactPerson" label="联系人" width="110">
+        <template #default="{ row }">{{ row.contactPerson || '-' }}</template>
       </el-table-column>
-      <el-table-column prop="commissionRate" label="佣金比例" width="110">
+      <el-table-column prop="defaultCommissionRate" label="佣金比例" width="110">
         <template #default="{ row }">
-          {{ row.commissionRate != null ? `${row.commissionRate}%` : '-' }}
+          {{ row.defaultCommissionRate != null ? `${(row.defaultCommissionRate * 100).toFixed(2)}%` : '-' }}
         </template>
       </el-table-column>
       <el-table-column prop="status" label="状态" width="100">
@@ -57,6 +57,7 @@
         </template>
       </el-table-column>
       <el-table-column prop="createdAt" label="创建时间" width="160" />
+      <!-- @vue-generic {ChannelVO} -->
       <el-table-column label="操作" min-width="200" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
           <el-button size="small" :icon="View" @click="handleView(row)">详情</el-button>
@@ -96,13 +97,13 @@
           <TiDictSelect v-model="form.channelType" dict-type="CHANNEL_TYPE" style="width: 100%" />
         </el-form-item>
         <el-form-item label="联系人">
-          <el-input v-model="form.contactName" />
+          <el-input v-model="form.contactPerson" />
         </el-form-item>
         <el-form-item label="联系电话">
           <el-input v-model="form.contactPhone" />
         </el-form-item>
         <el-form-item label="佣金比例">
-          <el-input-number v-model="form.commissionRate" :min="0" :max="100" :precision="2" style="width: 100%" />
+          <el-input-number v-model="form.defaultCommissionRate" :min="0" :max="1" :step="0.01" :precision="4" style="width: 100%" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -151,9 +152,9 @@ const defaultForm = () => ({
   channelCode: '',
   channelName: '',
   channelType: undefined as string | undefined,
-  contactName: '',
+  contactPerson: '',
   contactPhone: '',
-  commissionRate: undefined as number | undefined,
+  defaultCommissionRate: undefined as number | undefined,
 })
 
 const form = reactive(defaultForm())
@@ -166,7 +167,7 @@ const rules: FormRules = {
 
 /** 打开对话框（新建或编辑） */
 const openDialog = (row?: ChannelVO) => {
-  editId.value = row?.id ?? null
+  editId.value = row?.channelId ?? null
   Object.assign(form, defaultForm(), row ?? {})
   dialogVisible.value = true
 }
@@ -198,7 +199,7 @@ const handleView = (row: ChannelVO) => {
 /** 激活渠道 */
 const handleActivate = async (row: ChannelVO) => {
   await ElMessageBox.confirm(`确认激活渠道"${row.channelName}"？`, '提示', { type: 'warning' })
-  await activateChannel(row.id)
+  await activateChannel(row.channelId)
   ElMessage.success('激活成功')
   fetchData()
 }
@@ -206,7 +207,7 @@ const handleActivate = async (row: ChannelVO) => {
 /** 停用渠道 */
 const handleDeactivate = async (row: ChannelVO) => {
   await ElMessageBox.confirm(`确认停用渠道"${row.channelName}"？`, '警告', { type: 'warning' })
-  await deactivateChannel(row.id)
+  await deactivateChannel(row.channelId)
   ElMessage.success('停用成功')
   fetchData()
 }

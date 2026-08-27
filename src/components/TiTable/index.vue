@@ -10,6 +10,9 @@
       style="width: 100%"
     >
       <slot />
+      <template #empty>
+        <slot name="empty" />
+      </template>
     </el-table>
     <div v-if="total > 0" class="ti-pagination">
       <el-pagination
@@ -30,7 +33,7 @@
 /** TiTable 属性 */
 interface Props {
   /** 表格数据 */
-  data: unknown[]
+  data: any[]
   /** 总条数 */
   total?: number
   /** 当前页 */

@@ -216,4 +216,26 @@ const sendMessage = async () => {
   0%, 80%, 100% { transform: scale(0.8); opacity: 0.5; }
   40% { transform: scale(1.1); opacity: 1; }
 }
+
+@media (max-width: 767px) {
+  .ai-chat {
+    &__bar {
+      gap: 4px;
+      padding: 0 8px;
+    }
+
+    &__hint {
+      display: none;
+    }
+
+    :deep(.el-button) {
+      min-width: 36px;
+      padding: 8px;
+    }
+
+    :deep(.el-button span) {
+      display: none;
+    }
+  }
+}
 </style>

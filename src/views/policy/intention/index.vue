@@ -6,34 +6,18 @@
       <el-form-item label="意向单号">
         <el-input v-model="queryParams.proposalNo" placeholder="精确查询" clearable style="width: 180px" />
       </el-form-item>
-      <el-form-item label="客户姓名">
-        <el-input v-model="queryParams.customerName" placeholder="姓名" clearable style="width: 140px" />
+      <el-form-item label="客户ID">
+        <el-input v-model="queryParams.customerId" placeholder="精确查询" clearable style="width: 180px" />
       </el-form-item>
-      <el-form-item label="手机号">
-        <el-input v-model="queryParams.mobile" placeholder="手机号码" clearable style="width: 160px" />
-      </el-form-item>
-      <el-form-item label="意向产品">
-        <el-input v-model="queryParams.productName" placeholder="模糊搜索" clearable style="width: 160px" />
+      <el-form-item label="产品编码">
+        <el-input v-model="queryParams.productCode" placeholder="精确查询" clearable style="width: 160px" />
       </el-form-item>
       <el-form-item label="意向状态">
         <el-select v-model="queryParams.status" placeholder="请选择" clearable style="width: 140px">
-          <el-option label="新建" value="NEW" />
-          <el-option label="跟进中" value="FOLLOWING" />
-          <el-option label="已报价" value="QUOTED" />
-          <el-option label="已投保" value="APPLIED" />
-          <el-option label="已成交" value="SUCCESS" />
-          <el-option label="已流失" value="LOST" />
-          <el-option label="已无效" value="INVALID" />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="渠道来源">
-        <el-select v-model="queryParams.sourceChannel" placeholder="请选择" clearable style="width: 140px">
-          <el-option label="官网" value="WEBSITE" />
-          <el-option label="APP" value="APP" />
-          <el-option label="微信" value="WECHAT" />
-          <el-option label="代理人" value="AGENT" />
-          <el-option label="电销" value="TELEMARKETING" />
-          <el-option label="其他" value="OTHER" />
+          <el-option label="草稿" value="DRAFT" />
+          <el-option label="已提交" value="SUBMITTED" />
+          <el-option label="已转投保单" value="CONVERTED_TO_APPLICATION" />
+          <el-option label="作废" value="VOIDED" />
         </el-select>
       </el-form-item>
       <el-form-item label="创建日期">
@@ -53,9 +37,6 @@
     <div class="ti-toolbar">
       <div class="ti-toolbar-left">
         <span class="toolbar-stat">共 <b>{{ pagination.total }}</b> 条意向单</span>
-        <el-button type="primary" size="small" style="margin-left: 16px" @click="handleCreate">
-          新建意向单
-        </el-button>
       </div>
       <div class="ti-toolbar-right">
         <el-button :icon="Download" @click="handleExport">导出</el-button>
@@ -69,7 +50,7 @@
       :page-num="pagination.pageNum"
       :page-size="pagination.pageSize"
       :loading="tableLoading"
-      row-key="id"
+      row-key="proposalId"
       @page-change="onPageChange"
       @size-change="onSizeChange"
     >
@@ -79,65 +60,90 @@
           <TiCopyText :text="row.proposalNo" />
         </template>
       </el-table-column>
-      <el-table-column prop="customerName" label="客户姓名" width="120" />
-      <el-table-column prop="mobile" label="手机号" width="130" />
-      <el-table-column prop="productName" label="意向产品" min-width="180" show-overflow-tooltip />
+      <el-table-column prop="customerId" label="客户ID" width="180" show-overflow-tooltip />
+      <el-table-column prop="expectedProductCode" label="产品编码" min-width="150" show-overflow-tooltip />
+      <el-table-column prop="bizNo" label="出单业务号" min-width="190" show-overflow-tooltip />
       <el-table-column prop="status" label="意向状态" width="110">
         <template #default="{ row }">
           <TiStatusTag :value="row.status" :label="getStatusLabel(row.status)" />
         </template>
       </el-table-column>
-      <el-table-column prop="sourceChannel" label="渠道来源" width="110">
+      <el-table-column prop="channel" label="销售渠道" width="110">
         <template #default="{ row }">
-          {{ getChannelLabel(row.sourceChannel) }}
+          {{ getChannelLabel(row.channel) }}
         </template>
       </el-table-column>
-      <el-table-column prop="expectedPremium" label="预估保费" width="130" align="right">
+      <el-table-column prop="intendedPremium" label="意向保费" width="130" align="right">
         <template #default="{ row }">
-          {{ row.expectedPremium ? `¥${row.expectedPremium.toLocaleString()}` : '-' }}
+          {{ row.intendedPremium != null ? `¥${row.intendedPremium.toLocaleString()}` : '-' }}
         </template>
       </el-table-column>
-      <el-table-column prop="followUpPerson" label="跟进人" width="100" />
-      <el-table-column prop="lastFollowTime" label="最后跟进" width="180">
+      <el-table-column prop="lineCount" label="险种段" width="90" align="center" />
+      <el-table-column prop="createTime" label="创建时间" width="180">
         <template #default="{ row }">
-          {{ formatDateTime(row.lastFollowTime) }}
+          {{ formatDateTime(row.createTime) }}
         </template>
       </el-table-column>
-      <el-table-column prop="createdAt" label="创建时间" width="180">
-        <template #default="{ row }">
-          {{ formatDateTime(row.createdAt) }}
-        </template>
-      </el-table-column>
+      <!-- @vue-generic {ProposalVO} -->
       <el-table-column label="操作" width="220" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" :icon="View" @click="handleDetail(row)">详情</el-button>
-          <el-button
-            v-if="row.status !== 'SUCCESS' && row.status !== 'INVALID'"
-            link
-            type="success"
-            @click="handleFollowUp(row)"
-          >
-            跟进
-          </el-button>
-          <el-button
-            v-if="row.status === 'QUOTED'"
-            link
-            type="warning"
-            @click="handleConvert(row)"
-          >
-            转投保单
-          </el-button>
         </template>
       </el-table-column>
     </TiTable>
+
+    <el-dialog
+      v-model="detailVisible"
+      title="意向单详情"
+      width="min(820px, 92vw)"
+      destroy-on-close
+    >
+      <div v-loading="detailLoading" class="detail-content">
+        <el-descriptions v-if="proposalDetail" :column="2" border>
+          <el-descriptions-item label="意向单号">{{ proposalDetail.proposalNo }}</el-descriptions-item>
+          <el-descriptions-item label="意向单ID">{{ proposalDetail.proposalId }}</el-descriptions-item>
+          <el-descriptions-item label="出单业务号">{{ proposalDetail.bizNo || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="意向状态">
+            <TiStatusTag
+              :value="proposalDetail.status"
+              :label="getStatusLabel(proposalDetail.status)"
+            />
+          </el-descriptions-item>
+          <el-descriptions-item label="客户ID">{{ proposalDetail.customerId || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="保单形态">{{ proposalDetail.policyForm || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="产品编码">
+            {{ proposalDetail.expectedProductCode || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="险种分类">{{ proposalDetail.insuranceType || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="意向保额">
+            {{ formatMoney(proposalDetail.intendedSumInsured) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="意向保费">
+            {{ formatMoney(proposalDetail.intendedPremium) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="销售渠道">{{ getChannelLabel(proposalDetail.channel) }}</el-descriptions-item>
+          <el-descriptions-item label="渠道ID">{{ proposalDetail.channelId || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="营销包ID">{{ proposalDetail.marketPackageId || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="险种段数量">{{ proposalDetail.lineCount ?? '-' }}</el-descriptions-item>
+          <el-descriptions-item label="保险起期">
+            {{ formatDateTime(proposalDetail.insurancePeriodStart) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="保险止期">
+            {{ formatDateTime(proposalDetail.insurancePeriodEnd) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="创建时间">{{ formatDateTime(proposalDetail.createTime) }}</el-descriptions-item>
+          <el-descriptions-item label="更新时间">{{ formatDateTime(proposalDetail.updateTime) }}</el-descriptions-item>
+        </el-descriptions>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { reactive } from 'vue'
+import { reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Download, View } from '@element-plus/icons-vue'
-import { getProposalList, type ProposalVO } from '@/api/insurance'
+import { getProposalDetail, getProposalList, type ProposalVO } from '@/api/insurance'
 import { useTable } from '@/composables/useTable'
 import { formatDateTime } from '@/utils/date'
 import TiTable from '@/components/TiTable/index.vue'
@@ -148,37 +154,33 @@ import TiCopyText from '@/components/TiCopyText/index.vue'
 /** 意向单查询参数 */
 const queryParams = reactive({
   proposalNo: '',
-  customerName: '',
-  mobile: '',
-  productName: '',
+  customerId: '',
+  productCode: '',
   status: undefined as string | undefined,
-  sourceChannel: undefined as string | undefined,
   dateRange: undefined as string[] | undefined,
 })
 
 /** 意向状态标签 */
 const getStatusLabel = (status: string): string => {
   const statusMap: Record<string, string> = {
-    NEW: '新建',
-    FOLLOWING: '跟进中',
-    QUOTED: '已报价',
-    APPLIED: '已投保',
-    SUCCESS: '已成交',
-    LOST: '已流失',
-    INVALID: '已无效',
+    DRAFT: '草稿',
+    SUBMITTED: '已提交',
+    CONVERTED_TO_APPLICATION: '已转投保单',
+    VOIDED: '作废',
   }
   return statusMap[status] || status
 }
 
 /** 渠道来源标签 */
-const getChannelLabel = (channel: string): string => {
+const getChannelLabel = (channel?: string): string => {
+  if (!channel) return '-'
   const channelMap: Record<string, string> = {
-    WEBSITE: '官网',
-    APP: 'APP',
-    WECHAT: '微信',
     AGENT: '代理人',
+    BANCASSURANCE: '银保',
+    ONLINE: '线上直销',
+    BROKER: '经纪人',
     TELEMARKETING: '电销',
-    OTHER: '其他',
+    GROUP_SALES: '团险直销',
   }
   return channelMap[channel] || channel
 }
@@ -194,31 +196,25 @@ const { tableData, tableLoading, pagination, fetchData, handleSearch, handleRese
 // 初始加载
 fetchData()
 
-/** 新建意向单 */
-const handleCreate = () => {
-  ElMessage.info('新建意向单功能开发中...')
-  // TODO: 路由跳转到新建页
-  // router.push('/policy/intention/create')
-}
+const detailVisible = ref(false)
+const detailLoading = ref(false)
+const proposalDetail = ref<ProposalVO>()
 
 /** 查看详情 */
-const handleDetail = (row: ProposalVO) => {
-  ElMessage.info(`查看意向单详情: ${row.proposalNo}`)
-  // TODO: 路由跳转到详情页
-  // router.push(`/policy/intention/detail/${row.id}`)
+const handleDetail = async (row: ProposalVO) => {
+  detailVisible.value = true
+  detailLoading.value = true
+  proposalDetail.value = undefined
+  try {
+    proposalDetail.value = await getProposalDetail(row.proposalId)
+  } catch {
+    detailVisible.value = false
+  } finally {
+    detailLoading.value = false
+  }
 }
 
-/** 跟进意向单 */
-const handleFollowUp = (row: ProposalVO) => {
-  ElMessage.info(`跟进意向单: ${row.proposalNo}`)
-  // TODO: 打开跟进对话框
-}
-
-/** 转投保单 */
-const handleConvert = (row: ProposalVO) => {
-  ElMessage.info(`将意向单 ${row.proposalNo} 转为投保单`)
-  // TODO: 转投保单逻辑
-}
+const formatMoney = (value?: number): string => value == null ? '-' : `¥${value.toLocaleString()}`
 
 /** 导出意向单 */
 const handleExport = () => {
@@ -236,5 +232,9 @@ const handleExport = () => {
     color: #409eff;
     font-size: 16px;
   }
+}
+
+.detail-content {
+  min-height: 180px;
 }
 </style>

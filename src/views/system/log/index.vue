@@ -52,6 +52,7 @@
       </el-table-column>
       <el-table-column prop="message" label="备注" min-width="180" show-overflow-tooltip />
       <el-table-column prop="createdAt" label="操作时间" width="160" />
+      <!-- @vue-generic {OperationLog} -->
       <el-table-column label="操作" width="80" fixed="right">
         <template #default="{ row }">
           <el-button size="small" :icon="View" @click="viewDetail(row)">详情</el-button>

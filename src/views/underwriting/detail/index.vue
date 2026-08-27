@@ -102,7 +102,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import type { FormInstance, FormRules } from 'element-plus'
+import type { FormInstance, FormRules, TagProps } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import { getUnderwritingDetail, makeDecision } from '@/api/underwriting'
 import type { UnderwritingCaseVO, DecisionRequest } from '@/api/underwriting'
@@ -134,8 +134,8 @@ const decisionForm = ref<{
 const exclusionsText = ref('')
 
 /** 决策类型对应的 Tag 颜色 */
-const decisionTagType = (result: string) => {
-  const map: Record<string, string> = {
+const decisionTagType = (result: string): TagProps['type'] => {
+  const map: Record<string, TagProps['type']> = {
     APPROVED: 'success', RATED: 'warning', EXCLUDED: 'warning', POSTPONED: 'info', DECLINED: 'danger',
   }
   return map[result] ?? 'info'

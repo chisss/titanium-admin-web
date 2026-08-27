@@ -100,6 +100,7 @@
           {{ formatDateTime(row.createdAt) }}
         </template>
       </el-table-column>
+      <!-- @vue-generic {ProductVO} -->
       <el-table-column label="操作" min-width="320" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
           <el-button size="small" :icon="View" @click="goDetail(row.id)">详情</el-button>

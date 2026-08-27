@@ -6,31 +6,58 @@ import type { PageParams, PageResult } from '@/types/api.d'
 
 /** 投保单视图对象 */
 export interface InsuranceVO {
-  id: string
+  insuranceId: string
   insuranceNo: string
-  productName?: string
-  productCode?: string
-  holderName?: string
-  holderIdNo?: string
+  proposalId?: string
+  policyForm?: string
+  insuranceType?: string
+  productId?: string
+  sumInsured?: number
+  paymentFrequency?: string
+  premiumPaymentYears?: number
+  collectionMode?: string
+  channelId?: string
+  bizNo?: string
+  marketPackageId?: string
+  lineCount?: number
+  holderId?: string
+  insuredCount?: number
   status: string
-  totalPremium?: number
-  applicantName?: string
-  createdAt?: string
-  updatedAt?: string
+  exactPremium?: number
+  currency?: string
+  insurancePeriodStart?: string
+  insurancePeriodEnd?: string
+  underwritingResultCode?: string
+  underwritingId?: string
+  issuedTime?: string
+  createTime?: string
+  updateTime?: string
 }
 
 /** 查询投保单列表 */
 export async function getInsuranceList(
   params?: Partial<PageParams> & {
     insuranceNo?: string
-    holderName?: string
-    holderIdNo?: string
-    productName?: string
+    holderId?: string
+    productId?: string
     status?: string
   },
 ): Promise<PageResult<InsuranceVO>> {
-  const res = await http.get<unknown, PageResult<InsuranceVO>>('/web/v1/proxy/insurances', { params })
-  return res
+  const { pageNum, pageSize, ...filters } = params ?? {}
+  const payload = await http.get<unknown, InsuranceVO[] | PageResult<InsuranceVO>>('/web/v1/proxy/insurances', {
+    params: {
+      ...filters,
+      page: Math.max(Number(pageNum ?? 1) - 1, 0),
+      size: pageSize ?? 20,
+    },
+  })
+  const list = Array.isArray(payload) ? payload : payload?.list
+  return {
+    list: Array.isArray(list) ? list : [],
+    total: Array.isArray(payload) ? payload.length : payload?.total ?? list?.length ?? 0,
+    pageNum: Number(pageNum ?? 1),
+    pageSize: Number(pageSize ?? 20),
+  }
 }
 
 /** 获取投保单详情 */
@@ -47,34 +74,50 @@ export async function submitInsuranceUnderwriting(id: string): Promise<void> {
 
 /** 意向单视图对象 */
 export interface ProposalVO {
-  id: string
+  proposalId: string
   proposalNo: string
-  customerName: string
-  mobile?: string
-  productName?: string
-  productCode?: string
+  policyForm?: string
+  channel?: string
+  customerId?: string
+  intendedSumInsured?: number
+  intendedPremium?: number
+  insurancePeriodStart?: string
+  insurancePeriodEnd?: string
+  expectedProductCode?: string
+  insuranceType?: string
+  bizNo?: string
+  channelId?: string
+  marketPackageId?: string
+  lineCount?: number
   status: string
-  sourceChannel?: string
-  expectedPremium?: number
-  followUpPerson?: string
-  lastFollowTime?: string
-  createdAt?: string
-  updatedAt?: string
+  createTime?: string
+  updateTime?: string
 }
 
 /** 查询意向单列表 */
 export async function getProposalList(
   params?: Partial<PageParams> & {
     proposalNo?: string
-    customerName?: string
-    mobile?: string
-    productName?: string
+    customerId?: string
+    productCode?: string
     status?: string
-    sourceChannel?: string
   },
 ): Promise<PageResult<ProposalVO>> {
-  const res = await http.get<unknown, PageResult<ProposalVO>>('/web/v1/proxy/proposals', { params })
-  return res
+  const { pageNum, pageSize, ...filters } = params ?? {}
+  const payload = await http.get<unknown, ProposalVO[] | PageResult<ProposalVO>>('/web/v1/proxy/proposals', {
+    params: {
+      ...filters,
+      page: Math.max(Number(pageNum ?? 1) - 1, 0),
+      size: pageSize ?? 20,
+    },
+  })
+  const list = Array.isArray(payload) ? payload : payload?.list
+  return {
+    list: Array.isArray(list) ? list : [],
+    total: Array.isArray(payload) ? payload.length : payload?.total ?? list?.length ?? 0,
+    pageNum: Number(pageNum ?? 1),
+    pageSize: Number(pageSize ?? 20),
+  }
 }
 
 /** 获取意向单详情 */

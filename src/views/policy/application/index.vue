@@ -6,24 +6,22 @@
       <el-form-item label="投保单号">
         <el-input v-model="queryParams.insuranceNo" placeholder="精确查询" clearable style="width: 180px" />
       </el-form-item>
-      <el-form-item label="投保人">
-        <el-input v-model="queryParams.holderName" placeholder="姓名" clearable style="width: 140px" />
+      <el-form-item label="投保人ID">
+        <el-input v-model="queryParams.holderId" placeholder="精确查询" clearable style="width: 180px" />
       </el-form-item>
-      <el-form-item label="证件号">
-        <el-input v-model="queryParams.holderIdNo" placeholder="证件号码" clearable style="width: 180px" />
-      </el-form-item>
-      <el-form-item label="产品名称">
-        <el-input v-model="queryParams.productName" placeholder="模糊搜索" clearable style="width: 160px" />
+      <el-form-item label="主险产品ID">
+        <el-input v-model="queryParams.productId" placeholder="精确查询" clearable style="width: 180px" />
       </el-form-item>
       <el-form-item label="投保状态">
         <el-select v-model="queryParams.status" placeholder="请选择" clearable style="width: 140px">
           <el-option label="草稿" value="DRAFT" />
-          <el-option label="待核保" value="PENDING_UNDERWRITING" />
+          <el-option label="已提交" value="SUBMITTED" />
           <el-option label="核保中" value="UNDERWRITING" />
-          <el-option label="核保通过" value="APPROVED" />
-          <el-option label="核保拒绝" value="REJECTED" />
-          <el-option label="已出单" value="ISSUED" />
-          <el-option label="已失效" value="EXPIRED" />
+          <el-option label="核保通过" value="UNDERWRITING_APPROVED" />
+          <el-option label="核保拒绝" value="UNDERWRITING_REJECTED" />
+          <el-option label="核保暂缓" value="UNDERWRITING_SUSPENDED" />
+          <el-option label="已承保" value="ISSUED" />
+          <el-option label="作废" value="VOIDED" />
         </el-select>
       </el-form-item>
       <el-form-item label="投保日期">
@@ -56,7 +54,7 @@
       :page-num="pagination.pageNum"
       :page-size="pagination.pageSize"
       :loading="tableLoading"
-      row-key="id"
+      row-key="insuranceId"
       @page-change="onPageChange"
       @size-change="onSizeChange"
     >
@@ -66,48 +64,94 @@
           <TiCopyText :text="row.insuranceNo" />
         </template>
       </el-table-column>
-      <el-table-column prop="productName" label="产品名称" min-width="180" show-overflow-tooltip />
-      <el-table-column prop="holderName" label="投保人" width="120" />
-      <el-table-column prop="holderIdNo" label="证件号码" width="180" show-overflow-tooltip />
+      <el-table-column prop="productId" label="主险产品ID" min-width="160" show-overflow-tooltip />
+      <el-table-column prop="holderId" label="投保人ID" width="180" show-overflow-tooltip />
+      <el-table-column prop="bizNo" label="出单业务号" min-width="190" show-overflow-tooltip />
       <el-table-column prop="status" label="投保状态" width="120">
         <template #default="{ row }">
           <TiStatusTag :value="row.status" :label="getStatusLabel(row.status)" />
         </template>
       </el-table-column>
-      <el-table-column prop="totalPremium" label="总保费" width="130" align="right">
+      <el-table-column prop="exactPremium" label="总保费" width="130" align="right">
         <template #default="{ row }">
-          {{ row.totalPremium ? `¥${row.totalPremium.toLocaleString()}` : '-' }}
+          {{ row.exactPremium != null ? `¥${row.exactPremium.toLocaleString()}` : '-' }}
         </template>
       </el-table-column>
-      <el-table-column prop="applicantName" label="经办人" width="100" />
-      <el-table-column prop="createdAt" label="投保时间" width="180">
+      <el-table-column prop="lineCount" label="险种段" width="90" align="center" />
+      <el-table-column prop="createTime" label="投保时间" width="180">
         <template #default="{ row }">
-          {{ formatDateTime(row.createdAt) }}
+          {{ formatDateTime(row.createTime) }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="160" fixed="right">
+      <!-- @vue-generic {InsuranceVO} -->
+      <el-table-column label="操作" width="90" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" :icon="View" @click="handleDetail(row)">详情</el-button>
-          <el-button
-            v-if="row.status === 'DRAFT'"
-            link
-            type="warning"
-            :icon="Edit"
-            @click="handleEdit(row)"
-          >
-            编辑
-          </el-button>
         </template>
       </el-table-column>
     </TiTable>
+
+    <el-dialog
+      v-model="detailVisible"
+      title="投保单详情"
+      width="min(860px, 92vw)"
+      destroy-on-close
+    >
+      <div v-loading="detailLoading" class="detail-content">
+        <el-descriptions v-if="insuranceDetail" :column="2" border>
+          <el-descriptions-item label="投保单号">{{ insuranceDetail.insuranceNo }}</el-descriptions-item>
+          <el-descriptions-item label="投保单ID">{{ insuranceDetail.insuranceId }}</el-descriptions-item>
+          <el-descriptions-item label="出单业务号">{{ insuranceDetail.bizNo || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="投保状态">
+            <TiStatusTag
+              :value="insuranceDetail.status"
+              :label="getStatusLabel(insuranceDetail.status)"
+            />
+          </el-descriptions-item>
+          <el-descriptions-item label="关联意向单ID">{{ insuranceDetail.proposalId || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="投保人ID">{{ insuranceDetail.holderId || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="保单形态">{{ insuranceDetail.policyForm || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="被保险人数">{{ insuranceDetail.insuredCount ?? '-' }}</el-descriptions-item>
+          <el-descriptions-item label="主险产品ID">{{ insuranceDetail.productId || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="险种分类">{{ insuranceDetail.insuranceType || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="基本保额">
+            {{ formatMoney(insuranceDetail.sumInsured, insuranceDetail.currency) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="总保费">
+            {{ formatMoney(insuranceDetail.exactPremium, insuranceDetail.currency) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="缴费频率">{{ insuranceDetail.paymentFrequency || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="缴费年数">{{ insuranceDetail.premiumPaymentYears ?? '-' }}</el-descriptions-item>
+          <el-descriptions-item label="收费方式">{{ insuranceDetail.collectionMode || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="险种段数量">{{ insuranceDetail.lineCount ?? '-' }}</el-descriptions-item>
+          <el-descriptions-item label="渠道ID">{{ insuranceDetail.channelId || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="营销包ID">{{ insuranceDetail.marketPackageId || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="保险起期">
+            {{ formatDateTime(insuranceDetail.insurancePeriodStart) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="保险止期">
+            {{ formatDateTime(insuranceDetail.insurancePeriodEnd) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="核保单号">{{ insuranceDetail.underwritingId || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="核保结论">
+            {{ insuranceDetail.underwritingResultCode || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="承保时间">{{ formatDateTime(insuranceDetail.issuedTime) }}</el-descriptions-item>
+          <el-descriptions-item label="创建时间">{{ formatDateTime(insuranceDetail.createTime) }}</el-descriptions-item>
+          <el-descriptions-item label="更新时间" :span="2">
+            {{ formatDateTime(insuranceDetail.updateTime) }}
+          </el-descriptions-item>
+        </el-descriptions>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { reactive } from 'vue'
+import { reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Download, View, Edit } from '@element-plus/icons-vue'
-import { getInsuranceList, type InsuranceVO } from '@/api/insurance'
+import { Download, View } from '@element-plus/icons-vue'
+import { getInsuranceDetail, getInsuranceList, type InsuranceVO } from '@/api/insurance'
 import { useTable } from '@/composables/useTable'
 import { formatDateTime } from '@/utils/date'
 import TiTable from '@/components/TiTable/index.vue'
@@ -118,9 +162,8 @@ import TiCopyText from '@/components/TiCopyText/index.vue'
 /** 投保单查询参数 */
 const queryParams = reactive({
   insuranceNo: '',
-  holderName: '',
-  holderIdNo: '',
-  productName: '',
+  holderId: '',
+  productId: '',
   status: undefined as string | undefined,
   dateRange: undefined as string[] | undefined,
 })
@@ -129,12 +172,13 @@ const queryParams = reactive({
 const getStatusLabel = (status: string): string => {
   const statusMap: Record<string, string> = {
     DRAFT: '草稿',
-    PENDING_UNDERWRITING: '待核保',
+    SUBMITTED: '已提交',
     UNDERWRITING: '核保中',
-    APPROVED: '核保通过',
-    REJECTED: '核保拒绝',
-    ISSUED: '已出单',
-    EXPIRED: '已失效',
+    UNDERWRITING_APPROVED: '核保通过',
+    UNDERWRITING_REJECTED: '核保拒绝',
+    UNDERWRITING_SUSPENDED: '核保暂缓',
+    ISSUED: '已承保',
+    VOIDED: '作废',
   }
   return statusMap[status] || status
 }
@@ -150,18 +194,27 @@ const { tableData, tableLoading, pagination, fetchData, handleSearch, handleRese
 // 初始加载
 fetchData()
 
+const detailVisible = ref(false)
+const detailLoading = ref(false)
+const insuranceDetail = ref<InsuranceVO>()
+
 /** 查看详情 */
-const handleDetail = (row: InsuranceVO) => {
-  ElMessage.info(`查看投保单详情: ${row.insuranceNo}`)
-  // TODO: 路由跳转到详情页
-  // router.push(`/policy/application/detail/${row.id}`)
+const handleDetail = async (row: InsuranceVO) => {
+  detailVisible.value = true
+  detailLoading.value = true
+  insuranceDetail.value = undefined
+  try {
+    insuranceDetail.value = await getInsuranceDetail(row.insuranceId)
+  } catch {
+    detailVisible.value = false
+  } finally {
+    detailLoading.value = false
+  }
 }
 
-/** 编辑投保单 */
-const handleEdit = (row: InsuranceVO) => {
-  ElMessage.info(`编辑投保单: ${row.insuranceNo}`)
-  // TODO: 路由跳转到编辑页
-  // router.push(`/policy/application/edit/${row.id}`)
+const formatMoney = (value?: number, currency = 'CNY'): string => {
+  if (value == null) return '-'
+  return `${currency} ${value.toLocaleString()}`
 }
 
 /** 导出投保单 */
@@ -180,5 +233,9 @@ const handleExport = () => {
     color: #409eff;
     font-size: 16px;
   }
+}
+
+.detail-content {
+  min-height: 220px;
 }
 </style>

@@ -14,7 +14,7 @@
             </el-button>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item command="suspend" v-if="policy.status === 'ACTIVE'">
+                <el-dropdown-item command="suspend" v-if="policy.status === 'ACTIVE' || policy.status === 'EFFECTIVE'">
                   <el-icon><VideoPause /></el-icon> 中止保单
                 </el-dropdown-item>
                 <el-dropdown-item command="resume" v-if="policy.status === 'SUSPENDED'">
@@ -58,17 +58,17 @@
               <span>{{ policy.policyNo }}</span>
               <el-button text size="small" :icon="CopyDocument" @click="copyText(policy.policyNo)" />
             </el-descriptions-item>
-            <el-descriptions-item label="投保单号">{{ policy.proposalNo || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="保单形态">{{ policy.policyForm || '-' }}</el-descriptions-item>
             <el-descriptions-item label="产品名称">{{ policy.productName }}</el-descriptions-item>
-            <el-descriptions-item label="投保人">{{ policy.holderName }}</el-descriptions-item>
-            <el-descriptions-item label="证件号">{{ policy.holderIdNo }}</el-descriptions-item>
-            <el-descriptions-item label="手机号">{{ policy.holderMobile }}</el-descriptions-item>
+            <el-descriptions-item label="投保人">{{ policy.policyHolderName }}</el-descriptions-item>
+            <el-descriptions-item label="投保人ID">{{ policy.policyHolderId || '-' }}</el-descriptions-item>
             <el-descriptions-item label="被保人">{{ policy.insuredName }}</el-descriptions-item>
+            <el-descriptions-item label="被保人ID">{{ policy.insuredId || '-' }}</el-descriptions-item>
             <el-descriptions-item label="年缴保费">¥{{ policy.premium?.toLocaleString() }}</el-descriptions-item>
             <el-descriptions-item label="基本保额">¥{{ policy.sumInsured?.toLocaleString() }}</el-descriptions-item>
             <el-descriptions-item label="生效日期">{{ policy.effectiveDate }}</el-descriptions-item>
             <el-descriptions-item label="到期日期">{{ policy.expiryDate }}</el-descriptions-item>
-            <el-descriptions-item label="销售渠道">{{ policy.channel }}</el-descriptions-item>
+            <el-descriptions-item label="创建时间">{{ policy.createTime || '-' }}</el-descriptions-item>
           </el-descriptions>
         </el-tab-pane>
 
@@ -128,10 +128,10 @@
       <el-form :model="forms.terminate" label-width="110px">
         <el-form-item label="终止原因" required>
           <el-select v-model="forms.terminate.terminationReason" style="width: 100%">
-            <el-option label="客户主动退保" value="CUSTOMER_SURRENDER" />
+            <el-option label="客户主动退保" value="WITHDRAWAL" />
             <el-option label="保费逾期失效" value="LAPSE" />
-            <el-option label="满期终止" value="MATURITY" />
-            <el-option label="保险责任终止" value="COVERAGE_END" />
+            <el-option label="满期终止" value="EXPIRATION" />
+            <el-option label="保险责任终止" value="CONTRACT_TERMINATION" />
           </el-select>
         </el-form-item>
         <el-form-item label="备注说明">
@@ -147,20 +147,23 @@
     <!-- 申请批改对话框 -->
     <el-dialog v-model="dialogs.endorsement" title="申请批改" width="480px">
       <el-form :model="forms.endorsement" label-width="110px">
+        <el-form-item label="批单号" required>
+          <el-input v-model="forms.endorsement.endorsementNo" placeholder="请输入批单号" />
+        </el-form-item>
         <el-form-item label="批改类型" required>
-          <el-select v-model="forms.endorsement.endorsementType" style="width: 100%">
+          <el-select v-model="forms.endorsement.updateType" style="width: 100%">
             <el-option label="受益人变更" value="BENEFICIARY_CHANGE" />
-            <el-option label="联系方式变更" value="CONTACT_CHANGE" />
+            <el-option label="保单信息变更" value="POLICY_INFO_CHANGE" />
             <el-option label="保额变更" value="COVERAGE_CHANGE" />
-            <el-option label="证件信息变更" value="ID_CHANGE" />
-            <el-option label="地址变更" value="ADDRESS_CHANGE" />
+            <el-option label="被保人信息变更" value="INSURED_INFO_CHANGE" />
+            <el-option label="投保人变更" value="HOLDER_CHANGE" />
           </el-select>
         </el-form-item>
         <el-form-item label="变更说明" required>
-          <el-input v-model="forms.endorsement.changeDescription" type="textarea" :rows="3" placeholder="请描述具体变更内容" />
+          <el-input v-model="forms.endorsement.changeSummary" type="textarea" :rows="3" placeholder="请描述具体变更内容" />
         </el-form-item>
         <el-form-item label="生效日期">
-          <el-date-picker v-model="forms.endorsement.effectiveDate" type="date" placeholder="默认今日" style="width: 100%" />
+          <el-date-picker v-model="forms.endorsement.endorsementEffectiveDate" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" placeholder="默认今日" style="width: 100%" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -183,6 +186,7 @@ import {
   getPolicyDetail, suspendPolicy, resumePolicy, terminatePolicy,
   cancelPolicy, waivePremium, distributeDividend, startAnnuityPayout,
   payAnnuityBenefit, maturePolicy, applyEndorsement,
+  type PolicyDataUpdateType, type TerminationReason,
 } from '@/api/policy'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import type { PolicyVO } from '@/types/business.d'
@@ -205,13 +209,15 @@ const dialogs = reactive({
 const forms = reactive({
   suspend: { reason: '' },
   resume: { reason: '' },
-  terminate: { reason: '', terminationReason: '' },
-  endorsement: { endorsementType: '', changeDescription: '', effectiveDate: '' },
+  terminate: { reason: '', terminationReason: '' as TerminationReason | '' },
+  endorsement: {
+    endorsementNo: '', updateType: '' as PolicyDataUpdateType | '', endorsementEffectiveDate: '', changeSummary: '',
+  },
 })
 
 /** 是否可撤销（投保后15天内或待生效状态） */
 const canCancel = computed(() =>
-  policy.value?.status === 'PENDING',
+  policy.value?.status === 'PENDING' || policy.value?.status === 'PENDING_EFFECTIVE',
 )
 
 /** 处理操作菜单命令 */
@@ -222,31 +228,37 @@ const handleAction = async (cmd: string) => {
     case 'terminate': dialogs.terminate = true; break
     case 'cancel':
       await ElMessageBox.confirm('确认撤销该保单？此操作不可撤销。', '警告', { type: 'warning' })
-      await doAction(() => cancelPolicy(policy.value!.id, '管理员操作撤销'))
+      await doAction(() => cancelPolicy(policy.value!.policyId, '管理员操作撤销'))
       break
     case 'waive':
       await ElMessageBox.confirm('确认对该保单执行保费豁免？', '确认', { type: 'info' })
-      await doAction(() => waivePremium(policy.value!.id, { waiverReason: '健康告知触发豁免' }))
+      await doAction(() => waivePremium(policy.value!.policyId, { reason: 'INSURED_CRITICAL_ILLNESS' }))
       break
     case 'dividend':
       await ElMessageBox.prompt('请输入本年度红利金额（元）', '红利派发', { inputType: 'number' }).then(({ value }) =>
-        doAction(() => distributeDividend(policy.value!.id, {
-          dividendYear: new Date().getFullYear(),
+        doAction(() => distributeDividend(policy.value!.policyId, {
+          policyYear: new Date().getFullYear(),
           dividendAmount: Number(value),
+          option: 'ACCUMULATE',
         })),
       )
       break
     case 'annuityStart':
-      await ElMessageBox.confirm('确认启动年金给付计划？', '确认', { type: 'info' })
-      await doAction(() => startAnnuityPayout(policy.value!.id, { startDate: new Date().toISOString().split('T')[0] }))
+      await ElMessageBox.prompt('请输入每期年金给付金额（元）', '启动年金给付', { inputType: 'number' }).then(({ value }) =>
+        doAction(() => startAnnuityPayout(policy.value!.policyId, {
+          startDate: new Date().toISOString().replace(/\.\d{3}Z$/, ''),
+          frequency: 'ANNUALLY', amountPerInstallment: Number(value), currency: 'CNY',
+        })),
+      )
       break
     case 'annuityPay':
       await ElMessageBox.confirm('确认执行本期年金给付？', '确认', { type: 'info' })
-      await doAction(() => payAnnuityBenefit(policy.value!.id))
+      await doAction(() => payAnnuityBenefit(policy.value!.policyId))
       break
     case 'mature':
-      await ElMessageBox.confirm('确认执行满期给付？', '确认', { type: 'info' })
-      await doAction(() => maturePolicy(policy.value!.id, {}))
+      await ElMessageBox.prompt('请输入满期给付金额（元）', '满期给付', { inputType: 'number' }).then(({ value }) =>
+        doAction(() => maturePolicy(policy.value!.policyId, { maturityBenefit: Number(value) })),
+      )
       break
     case 'endorsement': dialogs.endorsement = true; break
   }
@@ -267,7 +279,7 @@ const doAction = async (fn: () => Promise<void>) => {
 /** 提交中止 */
 const submitSuspend = async () => {
   if (!forms.suspend.reason.trim()) { ElMessage.warning('请填写中止原因'); return }
-  await doAction(() => suspendPolicy(policy.value!.id, forms.suspend.reason))
+  await doAction(() => suspendPolicy(policy.value!.policyId, forms.suspend.reason))
   dialogs.suspend = false
   forms.suspend.reason = ''
 }
@@ -275,26 +287,34 @@ const submitSuspend = async () => {
 /** 提交恢复 */
 const submitResume = async () => {
   if (!forms.resume.reason.trim()) { ElMessage.warning('请填写恢复原因'); return }
-  await doAction(() => resumePolicy(policy.value!.id, forms.resume.reason))
+  await doAction(() => resumePolicy(policy.value!.policyId, forms.resume.reason))
   dialogs.resume = false
 }
 
 /** 提交终止 */
 const submitTerminate = async () => {
   if (!forms.terminate.terminationReason) { ElMessage.warning('请选择终止原因'); return }
-  await doAction(() => terminatePolicy(policy.value!.id, forms.terminate))
+  await doAction(() => terminatePolicy(policy.value!.policyId, {
+    reason: forms.terminate.reason,
+    terminationReason: forms.terminate.terminationReason as TerminationReason,
+  }))
   dialogs.terminate = false
 }
 
 /** 提交批改 */
 const submitEndorsement = async () => {
-  if (!forms.endorsement.endorsementType || !forms.endorsement.changeDescription) {
+  if (!forms.endorsement.endorsementNo.trim() || !forms.endorsement.updateType || !forms.endorsement.changeSummary) {
     ElMessage.warning('请填写完整批改信息'); return
   }
   submitting.value = true
   try {
-    const result = await applyEndorsement(policy.value!.id, forms.endorsement)
-    ElMessage.success(`批改申请已提交，批改单号：${result.endorsementId}`)
+    const result = await applyEndorsement(policy.value!.policyId, {
+      endorsementNo: forms.endorsement.endorsementNo,
+      updateType: forms.endorsement.updateType as PolicyDataUpdateType,
+      endorsementEffectiveDate: forms.endorsement.endorsementEffectiveDate || undefined,
+      changeSummary: forms.endorsement.changeSummary,
+    })
+    ElMessage.success(`批改申请已提交，批改单号：${result}`)
     dialogs.endorsement = false
   } finally {
     submitting.value = false

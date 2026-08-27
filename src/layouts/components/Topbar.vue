@@ -25,7 +25,8 @@
       <!-- 语言切换 -->
       <el-dropdown trigger="click" @command="handleLocaleChange">
         <el-button text class="topbar__lang-btn">
-          🌐 {{ currentLocaleName }}
+          <span class="topbar__lang-icon" aria-hidden="true">🌐</span>
+          <span class="topbar__lang-label">{{ currentLocaleName }}</span>
           <el-icon class="el-icon--right"><ArrowDown /></el-icon>
         </el-button>
         <template #dropdown>
@@ -184,6 +185,42 @@ const handleUserCommand = async (command: string) => {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+}
+
+@media (max-width: 767px) {
+  .topbar {
+    padding-right: 4px;
+
+    &__left {
+      min-width: 0;
+    }
+
+    &__breadcrumb {
+      min-width: 0;
+      max-width: 126px;
+      overflow: hidden;
+      white-space: nowrap;
+
+      :deep(.el-breadcrumb__item:not(:last-child)) {
+        display: none;
+      }
+    }
+
+    &__lang-btn {
+      width: 36px;
+      padding: 8px;
+    }
+
+    &__lang-label,
+    &__username {
+      display: none;
+    }
+
+    &__user {
+      gap: 4px;
+      padding: 4px;
+    }
   }
 }
 </style>

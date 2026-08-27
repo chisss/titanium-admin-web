@@ -62,6 +62,7 @@
           <TiStatusTag :value="row.status" :color="STATUS_COLOR[row.status]" :label="STATUS_LABEL[row.status]" />
         </template>
       </el-table-column>
+      <!-- @vue-generic {RegulatoryReportVO} -->
       <el-table-column label="操作" min-width="220" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
           <el-button size="small" :icon="View" @click="handleView(row)">查看</el-button>

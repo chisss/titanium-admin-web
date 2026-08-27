@@ -411,7 +411,7 @@ const documentTypeOptions = [
 
 // 文档配置行操作
 function addMaterial() {
-  form.documentConfig!.requiredMaterials!.push({
+  form.documentConfig.requiredMaterials.push({
     materialCode: '',
     materialName: '',
     mandatory: true,
@@ -419,10 +419,10 @@ function addMaterial() {
   })
 }
 function removeMaterial(index: number) {
-  form.documentConfig!.requiredMaterials!.splice(index, 1)
+  form.documentConfig.requiredMaterials.splice(index, 1)
 }
 function addDocTemplate() {
-  form.documentConfig!.documentTemplates!.push({
+  form.documentConfig.documentTemplates.push({
     documentType: undefined,
     templateCode: '',
     templateName: '',
@@ -431,7 +431,7 @@ function addDocTemplate() {
   })
 }
 function removeDocTemplate(index: number) {
-  form.documentConfig!.documentTemplates!.splice(index, 1)
+  form.documentConfig.documentTemplates.splice(index, 1)
 }
 
 const step1Rules: FormRules = {
@@ -478,7 +478,7 @@ const coverages = ref<CoverageVO[]>([])
 async function loadClauses() {
   clauseLoading.value = true
   try {
-    const res = await getClauseList({ pageNum: 0, pageSize: 100 })
+    const res = await getClauseList({ pageNum: 1, pageSize: 100 })
     // 仅展示 ACTIVE 条款供绑定
     clauses.value = (res.list ?? []).filter((c) => c.status === 'ACTIVE')
   } catch {

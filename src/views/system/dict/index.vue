@@ -74,6 +74,7 @@
                 <TiStatusTag :value="row.status" />
               </template>
             </el-table-column>
+            <!-- @vue-generic {DictData} -->
             <el-table-column label="操作" width="120" fixed="right">
               <template #default="{ row }">
                 <el-button size="small" :icon="Edit" @click="openDataDialog(row)">编辑</el-button>

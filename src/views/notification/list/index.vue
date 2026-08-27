@@ -70,6 +70,7 @@
       <el-table-column prop="sentAt" label="发送时间" width="160">
         <template #default="{ row }">{{ row.sentAt || '-' }}</template>
       </el-table-column>
+      <!-- @vue-generic {NotificationVO} -->
       <el-table-column label="操作" width="90" fixed="right">
         <template #default="{ row }">
           <el-button size="small" :icon="View" @click="handleView(row)">详情</el-button>

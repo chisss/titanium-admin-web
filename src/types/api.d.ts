@@ -28,6 +28,10 @@ export interface PageResult<T = unknown> {
   pageNum: number
   /** 每页条数 */
   pageSize: number
+  /** 后台分页响应的兼容字段 */
+  page?: number
+  size?: number
+  totalPages?: number
 }
 
 /** 字典项类型 */

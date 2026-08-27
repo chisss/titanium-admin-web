@@ -21,7 +21,30 @@
           </el-col>
           <el-col :sm="12">
             <el-form-item label="险种分类" prop="category">
-              <TiDictSelect v-model="form.category" dict-type="INSURANCE_CATEGORY" style="width: 100%" />
+              <TiDictSelect
+                v-model="form.category"
+                dict-type="INSURANCE_CATEGORY"
+                style="width: 100%"
+                @change="onCategoryChange"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :sm="12">
+            <el-form-item label="具体险种" prop="insuranceType">
+              <el-select
+                v-model="form.insuranceType"
+                :disabled="!form.category"
+                clearable
+                placeholder="请选择具体险种"
+                style="width: 100%"
+              >
+                <el-option
+                  v-for="option in insuranceTypeOptions"
+                  :key="option.value"
+                  :label="option.label"
+                  :value="option.value"
+                />
+              </el-select>
             </el-form-item>
           </el-col>
           <el-col :sm="12">
@@ -34,8 +57,9 @@
             </el-form-item>
           </el-col>
           <el-col :sm="12">
-            <el-form-item label="版本号" prop="version">
-              <el-input v-model="form.version" placeholder="如：V1.0" />
+            <el-form-item label="版本号">
+              <el-input v-model="form.version" readonly />
+              <el-text type="info" size="small">创建时由后端固定为 V1.0，更新请求不提交版本字段</el-text>
             </el-form-item>
           </el-col>
           <el-col :sm="12">
@@ -250,10 +274,13 @@ import {
   removeCoverage,
   type CoverageVO,
 } from '@/api/clause'
+import { insuranceTypesOf } from '@/constants/insurance'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
+import { useUserStore } from '@/stores/user'
 
 const route = useRoute()
 const router = useRouter()
+const userStore = useUserStore()
 
 const isEdit = computed(() => !!route.params.id)
 const clauseId = computed(() => route.params.id as string)
@@ -265,6 +292,7 @@ const form = reactive({
   code: '',
   name: '',
   category: undefined as string | undefined,
+  insuranceType: undefined as string | undefined,
   clauseType: 'MAIN',
   version: 'V1.0',
   content: '',
@@ -275,8 +303,15 @@ const rules: FormRules = {
   code: [{ required: true, message: '请输入条款编码', trigger: 'blur' }],
   name: [{ required: true, message: '请输入条款名称', trigger: 'blur' }],
   category: [{ required: true, message: '请选择险种分类', trigger: 'change' }],
+  insuranceType: [{ required: true, message: '请选择具体险种', trigger: 'change' }],
   clauseType: [{ required: true, message: '请选择条款类型', trigger: 'change' }],
-  version: [{ required: true, message: '请输入版本号', trigger: 'blur' }],
+}
+
+const insuranceTypeOptions = computed(() => insuranceTypesOf(form.category))
+
+/** 一级险种变化后必须重新选择具体险种，禁止静默代选第一个选项。 */
+const onCategoryChange = () => {
+  form.insuranceType = undefined
 }
 
 // ===== 保险责任枚举选项 =====
@@ -387,6 +422,11 @@ onMounted(async () => {
   loading.value = true
   try {
     const detail = await getClauseDetail(clauseId.value)
+    if (detail.status !== 'DRAFT') {
+      ElMessage.warning('仅草稿状态的条款可编辑')
+      router.replace('/clause/list')
+      return
+    }
     Object.assign(form, detail)
   } finally {
     loading.value = false
@@ -397,13 +437,18 @@ onMounted(async () => {
 const handleSave = async () => {
   const valid = await formRef.value?.validate().catch(() => false)
   if (!valid) return
+  const operatorId = userStore.userInfo?.id
+  if (!operatorId) {
+    ElMessage.error('无法获取当前操作人，请重新登录后再试')
+    return
+  }
   saving.value = true
   try {
     if (isEdit.value) {
-      await updateClause(clauseId.value, form)
+      await updateClause(clauseId.value, form, operatorId)
       ElMessage.success('保存成功')
     } else {
-      await createClause(form)
+      await createClause(form, operatorId)
       ElMessage.success('保存成功')
     }
     router.push('/clause/list')

@@ -29,7 +29,8 @@ src/
 └── views/          # 业务页面
     ├── login/          # 登录页
     ├── dashboard/      # 数据看板（ECharts）
-    ├── product/        # 产品管理（列表 / 创建向导 / 详情）
+    ├── product/        # 产品管理（列表 / 创建向导 / 费率表 / 定价包 / 精算工作台）
+    ├── rule-engine/    # 规则集管理（查询 / 维护 / 启停）
     ├── policy/         # 保单查询（高级搜索 / 详情 5 Tab）
     ├── clause/         # 条款管理（富文本编辑）
     ├── maintenance/    # 保全工单
@@ -66,6 +67,13 @@ getLabel('ACTIVE')  // 中文下返回"生效中"，英文下返回"Active"
 - **按钮级**：`v-permission="'policy:maintenance:apply'"` 指令控制按钮显隐
 - **接口级**：401 自动跳登录，403 提示无权限
 
+### 精算工作台
+
+- 以产品为上下文维护费用项和计算模型，并查看定价包、费率表及确认计算明细。
+- 后台统一显示“定价包”，接口及 TypeScript 兼容现有 `pricing-plans`/`PricingPlan` 命名。
+- `product:actuarial` 控制查看能力，`product:actuarial:edit` 控制创建、审批、发布和显示策略维护。
+- 租户可分别脱敏内部成本金额及内部字段，标准保费空基数/空费率显示为“不适用”，不误标为脱敏。
+
 ### 布局设计
 - 左侧折叠菜单（200px ↔ 64px）
 - 右侧数据看板（可收起，含 ECharts 趋势图）
@@ -75,3 +83,10 @@ getLabel('ACTIVE')  // 中文下返回"生效中"，英文下返回"Active"
 
 所有接口通过 `/api` 代理转发到 `titanium-admin-service`（端口 8090）。
 接口格式：`POST /web/v1/{resource}` with `X-Tenant-ID` 请求头。
+
+## 验证命令
+
+```bash
+npm run test:contracts
+npm run build
+```

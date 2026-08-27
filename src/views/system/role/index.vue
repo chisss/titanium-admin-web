@@ -23,6 +23,7 @@
         </template>
       </el-table-column>
       <el-table-column prop="createdAt" label="创建时间" width="160" />
+      <!-- @vue-generic {RoleVO} -->
       <el-table-column label="操作" min-width="160" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
           <el-button size="small" :icon="Edit" v-permission="'system:role:edit'" @click="openDialog(row)">编辑</el-button>

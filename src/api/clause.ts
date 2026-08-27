@@ -1,6 +1,7 @@
 // 条款相关接口
 import http from './http'
 import type { PageParams, PageResult } from '@/types/api.d'
+import { CATEGORY_BY_INSURANCE_TYPE } from '@/constants/insurance'
 
 /** 条款信息（前端视图模型，字段名对齐列表/编辑页） */
 export interface ClauseVO {
@@ -8,6 +9,8 @@ export interface ClauseVO {
   code: string
   name: string
   category: string
+  /** 后端持久化的具体险种枚举值 */
+  insuranceType?: string
   clauseType?: string
   version: string
   content?: string
@@ -18,26 +21,9 @@ export interface ClauseVO {
   updatedAt?: string
 }
 
-/**
- * 险种分类字典(INSURANCE_CATEGORY) → 后端 InsuranceType 枚举常量名 的映射。
- * 字典存在 HEALTH，而 InsuranceType 无 HEALTH（对应 MEDICAL），此处消化差异；
- * 其余同名直传。后端按枚举「常量名」反序列化，故必须落到合法常量名。
- */
-const CATEGORY_TO_INSURANCE_TYPE: Record<string, string> = {
-  HEALTH: 'MEDICAL',
-}
-const INSURANCE_TYPE_TO_CATEGORY: Record<string, string> = {
-  MEDICAL: 'HEALTH',
-}
-
-function toInsuranceType(category?: string): string | undefined {
-  if (!category) return undefined
-  return CATEGORY_TO_INSURANCE_TYPE[category] ?? category
-}
-
 function toCategory(insuranceType?: string): string | undefined {
   if (!insuranceType) return undefined
-  return INSURANCE_TYPE_TO_CATEGORY[insuranceType] ?? insuranceType
+  return CATEGORY_BY_INSURANCE_TYPE[insuranceType] ?? insuranceType
 }
 
 /** 日期(YYYY-MM-DD) → 后端 LocalDateTime 可解析的 ISO 字符串 */
@@ -58,8 +44,7 @@ function toClausePayload(data: Partial<ClauseVO>): Record<string, unknown> {
     clauseCode: data.code,
     clauseName: data.name,
     clauseType: data.clauseType ?? 'MAIN',
-    insuranceType: toInsuranceType(data.category),
-    version: data.version,
+    insuranceType: data.insuranceType,
     content: data.content,
     description: data.description,
     effectiveDate: toDateTime(data.effectiveDate),
@@ -68,13 +53,17 @@ function toClausePayload(data: Partial<ClauseVO>): Record<string, unknown> {
 
 /** 后端条款 VO → 前端视图模型 */
 function fromClauseVO(vo: Record<string, any>): ClauseVO {
+  const insuranceType = typeof vo.insuranceType === 'string'
+    ? vo.insuranceType
+    : vo.insuranceType?.name ?? vo.insuranceType?.code
   return {
     id: vo.clauseId ?? vo.id,
     code: vo.clauseCode ?? vo.code,
     name: vo.clauseName ?? vo.name,
-    category: toCategory(vo.insuranceType) ?? vo.category ?? '',
+    category: toCategory(insuranceType) ?? vo.category ?? '',
+    insuranceType,
     clauseType: vo.clauseType,
-    version: vo.version,
+    version: vo.version ?? 'V1.0',
     content: vo.content,
     description: vo.description,
     status: vo.status,
@@ -99,23 +88,49 @@ export async function getClauseDetail(id: string): Promise<ClauseVO> {
 }
 
 /** 新增条款 */
-export function createClause(data: Partial<ClauseVO>): Promise<void> {
-  return http.post('/web/v1/proxy/clauses', toClausePayload(data))
+export function createClause(data: Partial<ClauseVO>, createdBy: string): Promise<void> {
+  return http.post('/web/v1/proxy/clauses', { ...toClausePayload(data), createdBy })
 }
 
 /** 更新条款 */
-export function updateClause(id: string, data: Partial<ClauseVO>): Promise<void> {
-  return http.put(`/web/v1/proxy/clauses/${id}`, toClausePayload(data))
+export function updateClause(id: string, data: Partial<ClauseVO>, updatedBy: string): Promise<void> {
+  return http.put(`/web/v1/proxy/clauses/${id}`, { ...toClausePayload(data), updatedBy })
+}
+
+/** 条款审批类型（后端仅支持这三类） */
+export type ClauseApprovalType = 'LEGAL' | 'ACTUARIAL' | 'MANAGEMENT'
+
+/** 提交条款审批 */
+export function submitApproval(id: string, submittedBy: string): Promise<void> {
+  return http.put(`/web/v1/proxy/clauses/${id}/submit-approval`, { submittedBy })
+}
+
+/** 条款审批请求 */
+export interface ClauseApprovalRequest {
+  approvalType: ClauseApprovalType
+  approverId: string
+  approverName: string
+  comment?: string
+}
+
+/** 审批通过条款 */
+export function approve(id: string, data: ClauseApprovalRequest): Promise<void> {
+  return http.put(`/web/v1/proxy/clauses/${id}/approve`, data)
+}
+
+/** 驳回条款 */
+export function reject(id: string, data: ClauseApprovalRequest): Promise<void> {
+  return http.put(`/web/v1/proxy/clauses/${id}/reject`, data)
 }
 
 /** 启用条款 */
-export function activateClause(id: string): Promise<void> {
-  return http.put(`/web/v1/proxy/clauses/${id}/activate`, {})
+export function activateClause(id: string, updatedBy: string): Promise<void> {
+  return http.put(`/web/v1/proxy/clauses/${id}/activate`, { updatedBy })
 }
 
 /** 停用条款 */
-export function deactivateClause(id: string): Promise<void> {
-  return http.put(`/web/v1/proxy/clauses/${id}/inactivate`, {})
+export function deactivateClause(id: string, updatedBy: string): Promise<void> {
+  return http.put(`/web/v1/proxy/clauses/${id}/inactivate`, { updatedBy })
 }
 
 // ==================== 保险责任（Coverage） ====================

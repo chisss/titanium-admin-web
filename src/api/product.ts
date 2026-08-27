@@ -61,6 +61,7 @@ function fromProductVO(vo: Record<string, any>): ProductVO {
     code: vo.productCode ?? vo.code ?? '',
     category: (toCategoryFromProductType(vo.insuranceType) ?? '') as ProductVO['category'],
     insuranceType: vo.insuranceType,
+    version: vo.version,
     status: vo.status,
     description: vo.productDesc ?? vo.description,
     minPremium: vo.minPremium ?? vo.pricingBasicRule?.minPremium,
@@ -192,8 +193,8 @@ export interface DocumentTemplateForm {
 
 /** 产品文档配置（对齐后端 DocumentConfig：所需材料清单 + 生成文档模板清单） */
 export interface DocumentConfigForm {
-  requiredMaterials?: RequiredMaterialForm[]
-  documentTemplates?: DocumentTemplateForm[]
+  requiredMaterials: RequiredMaterialForm[]
+  documentTemplates: DocumentTemplateForm[]
 }
 
 /** 新建产品的完整前端模型（分步向导聚合各步表单结果） */
@@ -225,7 +226,7 @@ export interface CreateProductForm {
   /** 定价模式 RATE_TABLE/ACTUARIAL_FORMULA */
   pricingMode?: 'RATE_TABLE' | 'ACTUARIAL_FORMULA'
   /** 文档配置（所需投保材料 + 生成文档模板，纯产品配置） */
-  documentConfig?: DocumentConfigForm
+  documentConfig: DocumentConfigForm
 }
 
 /**
@@ -266,12 +267,11 @@ function toCreateProductPayload(form: CreateProductForm): Record<string, unknown
     pricingMode: form.pricingMode,
     // 文档配置：仅在配置了材料或模板时下发，避免空清单覆盖
     documentConfig:
-      form.documentConfig &&
-      ((form.documentConfig.requiredMaterials?.length ?? 0) > 0 ||
-        (form.documentConfig.documentTemplates?.length ?? 0) > 0)
+      (form.documentConfig.requiredMaterials.length > 0 ||
+        form.documentConfig.documentTemplates.length > 0)
         ? {
-            requiredMaterials: form.documentConfig.requiredMaterials ?? [],
-            documentTemplates: form.documentConfig.documentTemplates ?? [],
+            requiredMaterials: form.documentConfig.requiredMaterials,
+            documentTemplates: form.documentConfig.documentTemplates,
           }
         : undefined,
   }

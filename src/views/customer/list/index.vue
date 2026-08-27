@@ -11,15 +11,6 @@
       <el-form-item label="手机号">
         <el-input v-model="queryParams.mobile" clearable style="width: 140px" />
       </el-form-item>
-      <el-form-item label="注册时间">
-        <el-date-picker
-          v-model="queryParams.dateRange"
-          type="daterange"
-          range-separator="至"
-          value-format="YYYY-MM-DD"
-          style="width: 220px"
-        />
-      </el-form-item>
     </TiSearchForm>
 
     <TiTable
@@ -60,8 +51,8 @@
 
 <script setup lang="ts">
 import { reactive } from 'vue'
-import { ElMessage } from 'element-plus'
 import { View } from '@element-plus/icons-vue'
+import { useRouter } from 'vue-router'
 import { getCustomerList } from '@/api/customer'
 import { useTable } from '@/composables/useTable'
 import TiTable from '@/components/TiTable/index.vue'
@@ -73,18 +64,16 @@ const queryParams = reactive({
   name: '',
   idNo: '',
   mobile: '',
-  dateRange: undefined as string[] | undefined,
 })
+const router = useRouter()
 
 const { tableData, tableLoading, pagination, fetchData, handleSearch, handleReset, onPageChange, onSizeChange } =
   useTable<CustomerVO, typeof queryParams>((params) => {
-    const { dateRange, ...rest } = params
-    return getCustomerList({ ...rest, dateRange }) as Promise<PageResult<CustomerVO>>
+    return getCustomerList(params) as Promise<PageResult<CustomerVO>>
   }, queryParams)
 
 const handleViewDetail = (customerId: string) => {
-  // TODO: 客户详情页待实现，先提示
-  ElMessage.info(`客户详情: ${customerId}`)
+  router.push(`/customer/detail/${customerId}`)
 }
 
 fetchData()

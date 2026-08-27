@@ -43,6 +43,12 @@ export const INSURANCE_TYPE_BY_CATEGORY: Record<string, InsuranceTypeOption[]> =
     { value: 'HOUSEHOLD_PROPERTY', label: '家庭财产保险' },
     { value: 'AGRICULTURAL', label: '农业保险' },
     { value: 'MARINE_CARGO', label: '货运保险' },
+    { value: 'PUBLIC_LIABILITY', label: '公众责任保险' },
+    { value: 'EMPLOYER_LIABILITY', label: '雇主责任保险' },
+    { value: 'PRODUCT_LIABILITY', label: '产品责任保险' },
+    { value: 'PROFESSIONAL_LIABILITY', label: '职业责任保险' },
+    { value: 'CREDIT', label: '信用保险' },
+    { value: 'GUARANTEE', label: '保证保险' },
   ],
 }
 

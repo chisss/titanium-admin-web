@@ -2,14 +2,24 @@
   <!-- 整体应用布局：左侧菜单 + 顶部 + 主内容 + 右侧数据面板 + 底部 AI -->
   <div class="app-layout">
     <!-- 左侧侧边栏 -->
-    <Sidebar :collapsed="appStore.sidebarCollapsed" />
+    <Sidebar v-if="!isMobile" :collapsed="appStore.sidebarCollapsed" />
+    <el-drawer
+      v-model="mobileNavigationVisible"
+      class="mobile-navigation-drawer"
+      direction="ltr"
+      size="min(82vw, 320px)"
+      :with-header="false"
+      append-to-body
+    >
+      <Sidebar :collapsed="false" />
+    </el-drawer>
 
     <!-- 右侧主体区域（垂直排列：顶栏 + 内容 + AI助手） -->
     <div class="app-layout__main">
       <!-- 顶部导航栏 -->
       <Topbar
-        :collapsed="appStore.sidebarCollapsed"
-        @toggle-sidebar="appStore.toggleSidebar"
+        :collapsed="isMobile ? !mobileNavigationVisible : appStore.sidebarCollapsed"
+        @toggle-sidebar="handleSidebarToggle"
       />
 
       <!-- 中间内容区（横向：路由视图 + 数据面板） -->
@@ -17,7 +27,7 @@
         <!-- 主内容路由视图 -->
         <div class="app-layout__content">
           <router-view v-slot="{ Component, route }">
-            <transition name="slide" mode="out-in">
+            <transition name="slide">
               <component :is="Component" :key="route.path" />
             </transition>
           </router-view>
@@ -25,6 +35,7 @@
 
         <!-- 右侧数据面板 -->
         <DataPanel
+          v-if="!isMobile"
           :collapsed="appStore.dataPanelCollapsed"
           @collapse="appStore.dataPanelCollapsed = true"
           @expand="appStore.dataPanelCollapsed = false"
@@ -49,10 +60,21 @@ import AiChat from './components/AiChat.vue'
 import { useAppStore } from '@/stores/app'
 import { useMenuStore } from '@/stores/menu'
 import { useRoute } from 'vue-router'
+import { useMediaQuery } from '@vueuse/core'
 
 const appStore = useAppStore()
 const menuStore = useMenuStore()
 const route = useRoute()
+const isMobile = useMediaQuery('(max-width: 767px)')
+const mobileNavigationVisible = ref(false)
+
+const handleSidebarToggle = () => {
+  if (isMobile.value) {
+    mobileNavigationVisible.value = !mobileNavigationVisible.value
+    return
+  }
+  appStore.toggleSidebar()
+}
 
 // 根据路由 meta 更新面包屑
 watch(
@@ -68,6 +90,13 @@ watch(
     }
   },
   { immediate: true },
+)
+
+watch(
+  () => route.path,
+  () => {
+    mobileNavigationVisible.value = false
+  },
 )
 </script>
 
@@ -99,5 +128,13 @@ watch(
     background: $content-bg;
     min-width: 0;
   }
+}
+
+:global(.mobile-navigation-drawer .el-drawer__body) {
+  padding: 0;
+}
+
+:global(.mobile-navigation-drawer .sidebar) {
+  width: 100%;
 }
 </style>

@@ -5,15 +5,12 @@
       <el-form-item label="账单号">
         <el-input v-model="queryParams.billNo" clearable style="width: 160px" />
       </el-form-item>
-      <el-form-item label="保单号">
-        <el-input v-model="queryParams.policyNo" clearable style="width: 160px" />
-      </el-form-item>
-      <el-form-item label="投保人">
-        <el-input v-model="queryParams.holderName" clearable style="width: 130px" />
+      <el-form-item label="保单ID">
+        <el-input v-model="queryParams.policyId" clearable style="width: 160px" />
       </el-form-item>
       <el-form-item label="账单状态">
         <el-select v-model="queryParams.status" clearable placeholder="全部" style="width: 130px">
-          <el-option label="待缴费" value="PENDING" />
+          <el-option label="待缴费" value="ISSUED" />
           <el-option label="已缴费" value="PAID" />
           <el-option label="已逾期" value="OVERDUE" />
           <el-option label="已取消" value="CANCELLED" />
@@ -39,33 +36,35 @@
       @page-change="onPageChange"
       @size-change="onSizeChange"
     >
-      <el-table-column prop="billNo" label="账单号" width="180" class-name="ti-code-column">
+      <el-table-column prop="billId" label="账单号" width="180" class-name="ti-code-column">
         <template #default="{ row }">
-          <TiCopyText :text="row.billNo" />
+          <TiCopyText :text="row.billNo || row.billId" />
         </template>
       </el-table-column>
-      <el-table-column prop="policyNo" label="保单号" width="160" class-name="ti-code-column">
+      <el-table-column prop="policyId" label="保单ID" width="180" class-name="ti-code-column">
         <template #default="{ row }">
-          <TiCopyText :text="row.policyNo" />
+          <TiCopyText :text="row.policyId" />
         </template>
       </el-table-column>
-      <el-table-column prop="holderName" label="投保人" width="100" />
+      <el-table-column prop="customerId" label="客户ID" width="180">
+        <template #default="{ row }">{{ row.customerId || '-' }}</template>
+      </el-table-column>
       <el-table-column prop="amount" label="金额" width="120">
         <template #default="{ row }">¥{{ row.amount?.toLocaleString() }}</template>
       </el-table-column>
       <el-table-column prop="status" label="状态" width="100">
         <template #default="{ row }">
-          <TiStatusTag :value="row.status" />
+          <TiStatusTag :value="row.status" :label="billStatusLabel(row.status)" />
         </template>
       </el-table-column>
       <el-table-column prop="dueDate" label="到期日" width="120" />
       <el-table-column prop="paidDate" label="实缴日" width="120">
-        <template #default="{ row }">{{ row.paidDate || '-' }}</template>
+        <template #default="{ row }">{{ row.paidDate || row.paymentDate || '-' }}</template>
       </el-table-column>
       <el-table-column prop="createdAt" label="创建时间" width="160" />
       <el-table-column label="操作" min-width="100" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
-          <el-button size="small" :icon="View" @click="toDetail(row.id)">详情</el-button>
+          <el-button size="small" :icon="View" @click="toDetail(row.billId || row.id)">详情</el-button>
         </template>
       </el-table-column>
     </TiTable>
@@ -89,20 +88,32 @@ const router = useRouter()
 
 const queryParams = reactive({
   billNo: '',
-  policyNo: '',
-  holderName: '',
+  policyId: '',
   status: undefined as string | undefined,
   dateRange: undefined as string[] | undefined,
 })
 
-const { tableData, tableLoading, pagination, handleSearch, handleReset, onPageChange, onSizeChange } =
+const { tableData, tableLoading, pagination, fetchData, handleSearch, handleReset, onPageChange, onSizeChange } =
   useTable<BillVO, typeof queryParams>((params) => {
     const { dateRange, ...rest } = params
     return getBillList({ ...rest, dateRange }) as Promise<PageResult<BillVO>>
   }, queryParams)
 
+fetchData()
+
+const BILL_STATUS_LABELS: Record<BillVO['status'], string> = {
+  ISSUED: '待缴费',
+  PAID: '已缴费',
+  OVERDUE: '已逾期',
+  CANCELLED: '已取消',
+}
+
+/** 将 Billing 内部状态枚举转换为后台展示文案。 */
+const billStatusLabel = (status: BillVO['status']) => BILL_STATUS_LABELS[status] || status
+
 /** 跳转详情页 */
-const toDetail = (id: string) => {
+const toDetail = (id?: string) => {
+  if (!id) return
   router.push(`/billing/detail/${id}`)
 }
 </script>

@@ -47,6 +47,7 @@
         </template>
       </el-table-column>
       <el-table-column prop="createdAt" label="创建时间" width="160" />
+      <!-- @vue-generic {DocumentVO} -->
       <el-table-column label="操作" min-width="150" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
           <el-button size="small" :icon="View" @click="handleView(row)">详情</el-button>

@@ -47,6 +47,12 @@ export const CURRENCY_OPTIONS: LocaleOption[] = [
   { value: 'GBP', label: '英镑 (£)' },
   { value: 'JPY', label: '日元 (JP¥)' },
   { value: 'HKD', label: '港币 (HK$)' },
+  { value: 'SGD', label: '新加坡元 (S$)' },
+  { value: 'PHP', label: '菲律宾比索 (₱)' },
+  { value: 'IDR', label: '印度尼西亚盾 (Rp)' },
+  { value: 'MYR', label: '马来西亚林吉特 (RM)' },
+  { value: 'THB', label: '泰铢 (฿)' },
+  { value: 'VND', label: '越南盾 (₫)' },
 ]
 
 /** 时区选项（IANA） */

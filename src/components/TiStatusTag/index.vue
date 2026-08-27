@@ -12,7 +12,9 @@
 
 <script setup lang="ts">
 /** 预定义颜色映射 */
-const COLOR_MAP: Record<string, string> = {
+type TagType = 'primary' | 'success' | 'warning' | 'info' | 'danger'
+
+const COLOR_MAP: Record<string, TagType> = {
   // 通用颜色关键字 → el-tag type
   success: 'success',
   warning: 'warning',
@@ -21,12 +23,15 @@ const COLOR_MAP: Record<string, string> = {
   primary: 'primary',
   // 业务状态快捷映射
   ACTIVE: 'success',
+  EFFECTIVE: 'success',
   APPROVED: 'success',
   COMPLETED: 'success',
   SETTLED: 'success',
   DRAFT: 'info',
   PENDING: 'warning',
+  ISSUED: 'warning',
   PENDING_PAYMENT: 'warning',
+  PENDING_EFFECTIVE: 'warning',
   AUTO_REVIEWING: 'warning',
   MANUAL_REVIEWING: 'warning',
   PROCESSING: 'warning',
@@ -56,10 +61,8 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 // 计算 el-tag type
-const tagType = computed<'' | 'success' | 'warning' | 'danger' | 'info' | 'primary'>(() => {
-  const color = props.color || COLOR_MAP[props.value] || 'info'
-  const validTypes = ['success', 'warning', 'danger', 'info', 'primary', '']
-  return (validTypes.includes(color) ? color : 'info') as '' | 'success' | 'warning' | 'danger' | 'info' | 'primary'
+const tagType = computed<TagType>(() => {
+  return COLOR_MAP[props.color || ''] || COLOR_MAP[props.value] || 'info'
 })
 
 // 显示标签：优先使用传入的 label，否则显示 value

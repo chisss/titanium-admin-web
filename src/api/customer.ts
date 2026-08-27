@@ -3,16 +3,24 @@ import http from './http'
 import type { CustomerVO } from '@/types/business.d'
 import type { PageParams, PageResult } from '@/types/api.d'
 
-/** 查询客户列表（包装后端List响应为PageResult） */
+/** 查询客户列表（兼容 Admin 代理分页对象与旧版裸数组响应） */
 export async function getCustomerList(
-  params?: Partial<{ name: string; idNo: string; mobile: string; dateRange?: string[] }> & PageParams,
+  params?: Partial<{ name: string; idNo: string; mobile: string }> & PageParams,
 ): Promise<PageResult<CustomerVO>> {
-  const list = await http.get<CustomerVO[]>('/web/v1/proxy/customers', { params })
+  const { pageNum, pageSize, ...filters } = params ?? {}
+  const payload = await http.get<unknown, CustomerVO[] | PageResult<CustomerVO>>('/web/v1/proxy/customers', {
+    params: {
+      ...filters,
+      page: Math.max((pageNum ?? 1) - 1, 0),
+      size: pageSize ?? 20,
+    },
+  })
+  const list = Array.isArray(payload) ? payload : payload?.list
   return {
     list: Array.isArray(list) ? list : [],
-    total: Array.isArray(list) ? list.length : 0,
-    pageNum: params?.pageNum || 1,
-    pageSize: params?.pageSize || 20,
+    total: Array.isArray(payload) ? payload.length : payload?.total ?? list?.length ?? 0,
+    pageNum: pageNum || 1,
+    pageSize: pageSize || 20,
   }
 }
 

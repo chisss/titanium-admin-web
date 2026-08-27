@@ -44,6 +44,7 @@
             </el-icon>
           </template>
         </el-table-column>
+        <!-- @vue-generic {MenuNode} -->
         <el-table-column label="操作" width="160" fixed="right">
           <template #default="{ row }">
             <el-button size="small" :icon="Edit" v-permission="'system:menu:edit'" @click="openDialog(row)">编辑</el-button>
@@ -60,7 +61,8 @@
           <el-tree-select
             v-model="form.parentId"
             :data="menuTree"
-            :props="{ label: 'title', value: 'id', children: 'children' }"
+            node-key="id"
+            :props="{ label: 'title', children: 'children' }"
             clearable
             placeholder="选择上级菜单（不选则为顶级）"
             style="width: 100%"

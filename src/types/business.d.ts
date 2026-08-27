@@ -12,6 +12,7 @@ export type PolicyStatus =
   | 'PENDING'
   | 'PENDING_PAYMENT'
   | 'ACTIVE'
+  | 'PENDING_EFFECTIVE'
   | 'EFFECTIVE'
   | 'SUSPENDED'
   | 'LAPSED'
@@ -37,6 +38,8 @@ export interface ProductVO {
   status: ProductStatus
   /** 二级险种（后端 InsuranceProductType 常量名，如 MEDICAL/WHOLE_LIFE） */
   insuranceType?: string
+  /** 产品版本，用于定价包关联 */
+  version?: string
   description?: string
   minPremium?: number
   maxCoverage?: number
@@ -96,37 +99,38 @@ export interface ProductDetailVO extends ProductVO {
 
 /** 保单信息 */
 export interface PolicyVO {
-  id: string
+  policyId: string
   policyNo: string
-  proposalNo?: string
+  policyForm?: string
   productName: string
   productCode: string
-  policyHolderName: string  // 后端返回policyHolderName
-  holderIdNo: string
-  holderMobile: string
+  policyHolderId: string
+  policyHolderName: string
+  insuredId: string
   insuredName: string
   status: PolicyStatus
   premium: number
   sumInsured: number
   effectiveDate: string
   expiryDate: string
-  channel: string
-  tenantId: string
-  createdAt: string
+  createTime: string
+  updateTime?: string
 }
 
 /** 客户信息 */
 export interface CustomerVO {
-  id: string
-  name: string
+  customerId: string
+  fullName: string
+  customerType: string
   idType: string
   idNo: string
-  mobile: string
-  email?: string
   gender?: string
-  birthday?: string
-  tenantId: string
-  createdAt: string
+  phoneNumber: string
+  email?: string
+  address?: string
+  status: string
+  createTime: string
+  updateTime?: string
 }
 
 /** 字典类型 */

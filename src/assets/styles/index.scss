@@ -59,6 +59,19 @@ body {
   overflow-y: auto;
 }
 
+@media (max-width: 767px) {
+  .ti-page {
+    padding: 12px;
+  }
+
+  .ti-card,
+  .ti-search-area,
+  .ti-table-wrap {
+    min-width: 0;
+    padding: 12px;
+  }
+}
+
 // 搜索区域
 .ti-search-area {
   background: $card-bg;
