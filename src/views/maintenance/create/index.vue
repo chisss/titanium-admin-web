@@ -44,17 +44,17 @@
           </div>
         </el-form-item>
         <el-form-item label="生效方式" prop="effectiveTimeType">
-          <el-select v-model="form.effectiveTimeType" class="full-width">
-            <el-option v-for="option in effectiveOptions" :key="option.value" v-bind="option" />
-          </el-select>
+          <TiDictSelect v-model="form.effectiveTimeType" dict-type="MAINTENANCE_EFFECTIVE_TIME_TYPE" :clearable="false" class="full-width" />
         </el-form-item>
-        <el-form-item v-if="form.effectiveTimeType === 'SPECIFIED_DATE'" label="指定生效时间" prop="specificEffectiveDate">
+        <el-form-item v-if="requiresSpecificTime" label="生效时间" prop="specificEffectiveDate">
           <el-date-picker
             v-model="form.specificEffectiveDate"
             type="datetime"
             value-format="YYYY-MM-DDTHH:mm:ss"
             class="full-width"
+            placeholder="请选择租户本地日期时间"
           />
+          <div class="field-tip">按租户时区 {{ tenantZoneId }} 解释并执行</div>
         </el-form-item>
         <el-form-item label="案件说明">
           <el-input v-model="form.description" type="textarea" :rows="4" maxlength="500" show-word-limit />
@@ -75,11 +75,12 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, Check, Refresh } from '@element-plus/icons-vue'
 import { createMaintenanceCase, getMaintenanceConfigurations } from '@/api/maintenance'
+import TiDictSelect from '@/components/TiDictSelect/index.vue'
 
 const router = useRouter()
 const waitForProjection = () => new Promise((resolve) => window.setTimeout(resolve, 500))
@@ -87,6 +88,7 @@ const formRef = ref()
 const submitting = ref(false)
 const configurationLoading = ref(false)
 const publishedItems = ref<Array<{ code: string; name: string }>>([])
+const tenantZoneId = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Shanghai'
 
 const form = reactive({
   policyId: '',
@@ -97,21 +99,19 @@ const form = reactive({
   clientRequestKey: `manual-${Date.now()}`,
 })
 
-const effectiveOptions = [
-  { label: '立即生效', value: 'IMMEDIATE' },
-  { label: '次期生效', value: 'NEXT_PERIOD' },
-  { label: '指定日期', value: 'SPECIFIED_DATE' },
-  { label: '追溯生效', value: 'RETROACTIVE' },
-  { label: '未来生效', value: 'FUTURE' },
-  { label: '下一缴费日', value: 'NEXT_BILLING_DATE' },
-  { label: '保单周年日', value: 'POLICY_ANNIVERSARY' },
-]
+const requiresSpecificTime = computed(() => ['SPECIFIED_DATE', 'FUTURE'].includes(form.effectiveTimeType))
 
 const rules = {
   policyId: [{ required: true, message: '请输入保单 ID', trigger: 'blur' }],
   itemCodes: [{ type: 'array', required: true, min: 1, message: '至少选择一个保全项', trigger: 'change' }],
   effectiveTimeType: [{ required: true, message: '请选择生效方式', trigger: 'change' }],
-  specificEffectiveDate: [{ required: true, message: '请选择指定生效时间', trigger: 'change' }],
+  specificEffectiveDate: [{
+    validator: (_rule: unknown, value: string, callback: (error?: Error) => void) => {
+      if (requiresSpecificTime.value && !value) callback(new Error('请选择生效时间'))
+      else callback()
+    },
+    trigger: 'change',
+  }],
   clientRequestKey: [{ required: true, message: '请输入幂等键', trigger: 'blur' }],
 }
 
@@ -134,7 +134,8 @@ const loadConfigurations = async () => {
 const regenerateKey = () => { form.clientRequestKey = `manual-${Date.now()}` }
 
 const submit = async () => {
-  await formRef.value?.validate()
+  const valid = await formRef.value?.validate().catch(() => false)
+  if (!valid) return
   submitting.value = true
   try {
     const result = await createMaintenanceCase({ ...form, specificEffectiveDate: form.specificEffectiveDate || undefined })

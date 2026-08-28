@@ -4,7 +4,7 @@
     <div v-if="!collapsed" class="data-panel">
       <div class="data-panel__header">
         <span class="data-panel__title">实时数据</span>
-        <el-button :icon="Close" text size="small" @click="$emit('collapse')" />
+        <el-button :icon="Close" text size="small" aria-label="关闭实时数据面板" @click="$emit('collapse')" />
       </div>
 
       <!-- 核心指标卡片 -->
@@ -29,9 +29,9 @@
   </transition>
 
   <!-- 折叠时的展开按钮 -->
-  <div v-if="collapsed" class="data-panel-collapsed" @click="$emit('expand')">
+  <button v-if="collapsed" class="data-panel-collapsed" type="button" aria-label="展开实时数据面板" @click="$emit('expand')">
     <el-icon><DataLine /></el-icon>
-  </div>
+  </button>
 </template>
 
 <script setup lang="ts">

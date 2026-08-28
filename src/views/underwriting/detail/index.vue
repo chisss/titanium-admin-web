@@ -5,7 +5,7 @@
       <div class="detail-header">
         <el-button :icon="ArrowLeft" text @click="$router.back()">返回</el-button>
         <h3>核保工单 - {{ detail?.caseNo }}</h3>
-        <TiStatusTag v-if="detail" :value="detail.status" />
+        <TiStatusTag v-if="detail" :value="detail.status" :label="underwritingStatusLabel(detail.status)" />
       </div>
 
       <!-- 投保基本信息 -->
@@ -26,7 +26,7 @@
         <el-descriptions :column="2" border style="margin-bottom: 24px">
           <el-descriptions-item label="决策结果">
             <el-tag :type="decisionTagType(detail.decisionResult)">
-              {{ DECISION_LABELS[detail.decisionResult] || detail.decisionResult }}
+              {{ underwritingDecisionLabel(detail.decisionResult) }}
             </el-tag>
           </el-descriptions-item>
           <el-descriptions-item label="决策原因">{{ detail.decisionReason || '-' }}</el-descriptions-item>
@@ -45,13 +45,7 @@
           style="max-width: 560px"
         >
           <el-form-item label="决策类型" prop="decision">
-            <el-select v-model="decisionForm.decision" placeholder="请选择决策类型" style="width: 200px">
-              <el-option label="标准承保" value="APPROVED" />
-              <el-option label="加费承保" value="RATED" />
-              <el-option label="除外承保" value="EXCLUDED" />
-              <el-option label="延期核保" value="POSTPONED" />
-              <el-option label="拒绝承保" value="DECLINED" />
-            </el-select>
+            <TiDictSelect v-model="decisionForm.decision" dict-type="UNDERWRITING_DECISION" placeholder="请选择决策类型" style="width: 200px" />
           </el-form-item>
           <el-form-item
             v-if="decisionForm.decision === 'RATED'"
@@ -107,15 +101,11 @@ import { ArrowLeft } from '@element-plus/icons-vue'
 import { getUnderwritingDetail, makeDecision } from '@/api/underwriting'
 import type { UnderwritingCaseVO, DecisionRequest } from '@/api/underwriting'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
+import TiDictSelect from '@/components/TiDictSelect/index.vue'
+import { useDict } from '@/composables/useDict'
 
-/** 决策结果标签映射 */
-const DECISION_LABELS: Record<string, string> = {
-  APPROVED: '标准承保',
-  RATED: '加费承保',
-  EXCLUDED: '除外承保',
-  POSTPONED: '延期核保',
-  DECLINED: '拒绝承保',
-}
+const { getLabel: underwritingStatusLabel } = useDict('UNDERWRITING_STATUS')
+const { getLabel: underwritingDecisionLabel } = useDict('UNDERWRITING_DECISION')
 
 const route = useRoute()
 const router = useRouter()

@@ -21,15 +21,7 @@
         <el-input v-model="queryParams.productCode" placeholder="产品编码" clearable style="width: 150px" />
       </el-form-item>
       <el-form-item label="保单状态">
-        <el-select v-model="queryParams.status" clearable placeholder="全部" style="width: 140px">
-          <el-option label="待生效" value="PENDING_EFFECTIVE" />
-          <el-option label="已生效" value="EFFECTIVE" />
-          <el-option label="已暂停" value="SUSPENDED" />
-          <el-option label="已失效" value="LAPSED" />
-          <el-option label="已到期" value="EXPIRED" />
-          <el-option label="已撤销" value="CANCELLED" />
-          <el-option label="已终止" value="TERMINATED" />
-        </el-select>
+        <TiDictSelect v-model="queryParams.status" dict-type="POLICY_STATUS" placeholder="全部" style="width: 140px" />
       </el-form-item>
     </TiSearchForm>
 
@@ -76,7 +68,7 @@
       </el-table-column>
       <el-table-column prop="status" label="状态" width="110">
         <template #default="{ row }">
-          <TiStatusTag :value="row.status" :label="POLICY_STATUS_MAP[row.status] || row.status" />
+          <TiStatusTag :value="row.status" :label="policyStatusLabel(row.status)" />
         </template>
       </el-table-column>
       <el-table-column prop="effectiveDate" label="起保日期" width="110">
@@ -104,18 +96,11 @@ import { useTable } from '@/composables/useTable'
 import TiTable from '@/components/TiTable/index.vue'
 import TiSearchForm from '@/components/TiSearchForm/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
+import TiDictSelect from '@/components/TiDictSelect/index.vue'
+import { useDict } from '@/composables/useDict'
 import type { PolicyVO } from '@/types/business.d'
 
-// 保单状态映射
-const POLICY_STATUS_MAP: Record<string, string> = {
-  PENDING_EFFECTIVE: '待生效',
-  EFFECTIVE: '保单生效',
-  EXPIRED: '保单到期',
-  TERMINATED: '提前终止',
-  SUSPENDED: '暂时中止',
-  CANCELLED: '保单撤销',
-  LAPSED: '保单失效',
-}
+const { getLabel: policyStatusLabel } = useDict('POLICY_STATUS')
 
 const formatDate = (dateStr: string | undefined) => {
   if (!dateStr) return '-'

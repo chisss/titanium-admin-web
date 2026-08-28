@@ -119,6 +119,7 @@ export interface SurrenderSettlementVO {
 
 export interface MaintenanceListParams extends PageParams {
   policyId?: string
+  policyNumber?: string
   customerId?: string
   maintenanceType?: string
   status?: string
@@ -177,9 +178,19 @@ export interface MaintenanceWorkflowTask {
   failure?: { failureCode?: string; failureReason?: string }
   reviewEvidence?: { decision?: string; policyCode?: string; policyVersion?: string; comment?: string }
   underwritingEvidence?: { conclusion?: string; ruleVersion?: string; modelVersion?: string; summary?: string }
-  premiumQuoteEvidence?: { status?: string; quoteId?: string; amount?: number; currency?: string; resultHash?: string }
-  billingPostingEvidence?: { postingId?: string; status?: string; amount?: number; currency?: string }
-  fundSettlementEvidence?: { type?: string; status?: string; orderId?: string; externalStatus?: string }
+  premiumQuoteEvidence?: {
+    status?: string; quoteId?: string; quoteVersion?: string; pricingPlanVersion?: string
+    detailSummary?: string; direction?: string; amount?: number; currency?: string; resultHash?: string
+  }
+  billingPostingEvidence?: {
+    postingId?: string; adjustmentId?: string; status?: string; direction?: string
+    amount?: number; currency?: string; resultHash?: string
+  }
+  fundSettlementEvidence?: {
+    type?: string; status?: string; sourcePostingId?: string; instructionId?: string
+    orderId?: string; externalStatus?: string; amount?: number; currency?: string
+    failureCode?: string; failureMessage?: string
+  }
   effectEvidence?: { request?: { requestId?: string; expectedPolicyVersion?: number; effectiveTimeType?: string }; application?: { endorsementNo?: string; actualPolicyVersion?: number; applicationHash?: string } }
   lastOperation?: { operationId?: string; action?: string; reason?: string; operatedAt?: string; operatedBy?: string }
 }
@@ -225,7 +236,11 @@ export interface MaintenanceCaseDetail {
   status: string
   effectStatus?: string
   effectCompensation?: Record<string, unknown>
-  effectSchedule?: { scheduleId?: string; status?: string; tenantZoneId?: string; nextExecutionAt?: string; attemptCount?: number; lastErrorMessage?: string }
+  effectSchedule?: {
+    scheduleId?: string; status?: string; tenantZoneId?: string; nextExecutionAt?: string
+    attemptCount?: number; lastAttemptId?: string; lastAttemptAt?: string
+    lastErrorCode?: string; lastErrorMessage?: string
+  }
   retroactiveImpactAnalysis?: { analysisId?: string; status?: string; itemCount?: number; blockingItemCount?: number; pendingItemCount?: number; resultHash?: string; scopeFrom?: string; scopeTo?: string }
   retroactivePeriodRecalculation?: { periodRecalculationId?: string; status?: string; periodCount?: number; direction?: string; amount?: number; currency?: string; billingBatchId?: string; failureMessage?: string }
   effectiveTimeType?: string
@@ -257,6 +272,57 @@ export interface MaintenanceConfigurationFieldRule {
   editable: boolean
   allowClear: boolean
   expectedValueType?: string
+  validationType?: MaintenanceFieldValidationType
+  validationPattern?: string
+  validationMessage?: string
+}
+
+export type MaintenanceFieldValidationType =
+  | 'NONE'
+  | 'EMAIL'
+  | 'MOBILE_CN'
+  | 'GENDER'
+  | 'ID_CARD_CN'
+  | 'POSTAL_CODE_CN'
+  | 'CUSTOM_REGEX'
+
+export interface MaintenanceConfigurationStep {
+  sequence: number
+  stepType: string
+  mode: string
+  conditionRuleCode?: string
+}
+
+export interface MaintenanceConfigurationPayload {
+  definition: {
+    itemCode: string
+    version: string
+    name: string
+    category: string
+    channels: string[]
+    fieldRules: MaintenanceConfigurationFieldRule[]
+    steps: MaintenanceConfigurationStep[]
+    feeMode: string
+    effectiveRule: {
+      allowedModes: string[]
+      defaultMode: string
+      maxRetroactiveDays: number
+      maxFutureDays: number
+    }
+    incompatibleItemCodes: string[]
+    atomicOnly: boolean
+    controls: {
+      channelCapabilities: Array<{ channel: string; autoApprovalAllowed: boolean }>
+      materialRequirements: Array<{ materialCode: string; required: boolean; conditionRuleCode?: string }>
+      crossFieldRuleCodes: string[]
+      approvalPolicyCode?: string
+      feeRule: { formulaCode?: string; settlementGateRuleCode?: string; recalculationTiming: string }
+      accessRule: { operationPermissionCodes: string[]; viewPermissionCodes: string[] }
+      outputRule: { voucherTemplateCode?: string; notificationTemplateCodes: string[]; archiveTemplateCode?: string }
+    }
+  }
+  validFrom: string
+  validTo?: string
 }
 
 export interface MaintenanceConfigurationSummary {
@@ -270,6 +336,9 @@ export interface MaintenanceConfigurationSummary {
   validTo?: string
   contentHash?: string
   rowVersion?: number
+  etag?: string
+  stepCount?: number
+  feeMode?: string
   updatedAt?: string
   definition?: {
     itemCode: string
@@ -278,11 +347,11 @@ export interface MaintenanceConfigurationSummary {
     category?: string
     channels?: string[]
     fieldRules?: MaintenanceConfigurationFieldRule[]
-    steps?: Array<{ sequence: number; stepType: string; mode: string; conditionRuleCode?: string }>
+    steps?: MaintenanceConfigurationStep[]
     feeMode?: string
     effectiveRule?: { allowedModes?: string[]; defaultMode?: string; maxRetroactiveDays?: number; maxFutureDays?: number }
     incompatibleItemCodes?: string[]
-    controls?: { approvalPolicyCode?: string; feeRule?: { formulaCode?: string; settlementGateRuleCode?: string; recalculationTiming?: string } }
+    controls?: MaintenanceConfigurationPayload['definition']['controls']
   }
   publicationEvidence?: { catalogVersion?: string; catalogHash?: string; validatedAt?: string }
   lifecycleAudits?: Array<{ action: string; operatorId: string; occurredAt: string; detail?: string }>
@@ -327,6 +396,30 @@ export function getMaintenanceConfiguration(id: string): Promise<MaintenanceConf
   return http.get(`/web/v1/proxy/maintenance/configurations/${id}`) as Promise<MaintenanceConfigurationSummary>
 }
 
+export function createMaintenanceConfiguration(
+  body: MaintenanceConfigurationPayload,
+): Promise<MaintenanceConfigurationSummary> {
+  return http.post('/web/v1/proxy/maintenance/configurations', body) as Promise<MaintenanceConfigurationSummary>
+}
+
+export function replaceMaintenanceConfiguration(
+  id: string,
+  etag: string,
+  body: MaintenanceConfigurationPayload,
+): Promise<MaintenanceConfigurationSummary> {
+  return http.put(`/web/v1/proxy/maintenance/configurations/${id}`, body, {
+    headers: { 'If-Match': etag },
+  }) as Promise<MaintenanceConfigurationSummary>
+}
+
+export function createMaintenanceConfigurationRevision(
+  id: string,
+  etag: string,
+  body: { version: string; validFrom: string; validTo?: string },
+): Promise<MaintenanceConfigurationSummary> {
+  return operateMaintenanceConfiguration(id, 'revisions', etag, body)
+}
+
 export function operateMaintenanceConfiguration(id: string, action: string, ifMatch?: string, body: Record<string, unknown> = {}): Promise<MaintenanceConfigurationSummary> {
   return http.post(`/web/v1/proxy/maintenance/configurations/${id}/${action}`, body, {
     headers: ifMatch ? { 'If-Match': ifMatch } : undefined,
@@ -339,11 +432,6 @@ export function getMaintenanceList(params: MaintenanceListParams): Promise<PageR
   return http.get('/web/v1/proxy/policies/maintenance', {
     params: { ...filters, page: Math.max(pageNum - 1, 0), size: pageSize },
   }) as Promise<PageResult<MaintenanceVO>>
-}
-
-/** 保全工单详情。 */
-export function getMaintenanceDetail(id: string): Promise<MaintenanceVO> {
-  return http.get(`/web/v1/proxy/policies/maintenance/${id}`) as Promise<MaintenanceVO>
 }
 
 /** 审核通过。 */

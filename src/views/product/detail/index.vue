@@ -217,71 +217,33 @@ const goConfig = () => router.push(`/product/config/${route.params.id}`)
 
 const { getLabel: getCategoryLabel } = useDict('INSURANCE_CATEGORY')
 const { getLabel: getStatusLabel } = useDict('PRODUCT_STATUS')
+const { getLabel: productFormDictLabel } = useDict('PRODUCT_FORM')
+const { getLabel: productCategoryDictLabel } = useDict('PRODUCT_CATEGORY')
+const { getLabel: pricingModeDictLabel } = useDict('PRICING_MODE')
+const { getLabel: pricingTypeDictLabel } = useDict('PRICING_TYPE')
+const { getLabel: issuanceModeDictLabel } = useDict('ISSUANCE_MODE')
+const { getLabel: maintenanceTypeDictLabel } = useDict('MAINTENANCE_TYPE')
+const { getLabel: paymentFrequencyDictLabel } = useDict('PAYMENT_FREQUENCY')
+const { getLabel: dividendDistributionDictLabel } = useDict('DIVIDEND_DISTRIBUTION')
+const { getLabel: lifeProductTypeDictLabel } = useDict('LIFE_PRODUCT_TYPE')
+const { getLabel: coverageTypeDictLabel } = useDict('COVERAGE_TYPE')
+const { getLabel: payoutTypeDictLabel } = useDict('PAYOUT_TYPE')
 
 // —— 标签/格式化工具（后端枚举码 → 中文，空值统一占位 '-'） ——
-const formLabel = (v?: string) => (v === 'GROUP' ? '团险' : v === 'INDIVIDUAL' ? '个险' : v || '-')
-const productCategoryLabel = (v?: string) => (v === 'MAIN' ? '主险' : v === 'RIDER' ? '附加险' : v || '-')
-const pricingModeLabel = (v?: string) =>
-  v === 'RATE_TABLE' ? '费率表查询' : v === 'ACTUARIAL_FORMULA' ? '精算公式' : v || '-'
-const pricingTypeLabel = (v?: string) =>
-  v === 'FIXED' ? '固定费率' : v === 'STEP' ? '阶梯费率' : v === 'FACTOR' ? '因子定价' : v || '-'
+const formLabel = (v?: string) => v ? productFormDictLabel(v) : '-'
+const productCategoryLabel = (v?: string) => v ? productCategoryDictLabel(v) : '-'
+const pricingModeLabel = (v?: string) => v ? pricingModeDictLabel(v) : '-'
+const pricingTypeLabel = (v?: string) => v ? pricingTypeDictLabel(v) : '-'
 const days = (v?: number) => (v != null ? `${v} 天` : '-')
 const boolText = (v?: boolean) => (v == null ? '-' : v ? '是' : '否')
 const pct = (v?: number) => (v != null ? `${(v * 100).toFixed(2)}%` : '-')
 
-// —— 模板行为配置枚举码 → 中文 ——
-const ISSUANCE_MODES: Record<string, string> = {
-  ONE_STEP: '一步出单',
-  TWO_STEP: '两步出单',
-  THREE_STEP: '三步出单',
-  CUSTOM: '自定义出单',
-}
-const MAINTENANCE_TYPES: Record<string, string> = {
-  POLICY_HOLDER_CHANGE: '投保人变更',
-  BENEFICIARY_CHANGE: '受益人变更',
-  PAYMENT_METHOD_CHANGE: '缴费方式变更',
-  ADDITIONAL_PAYMENT: '增额缴费',
-  REDUCTION_PAYMENT: '减额缴费',
-  POLICY_SUSPENSION: '保单中止',
-  POLICY_RESUMPTION: '保单复效',
-  POLICY_TERMINATION: '保单终止',
-  POLICY_INFO_CHANGE: '保单信息变更',
-  POLICY_PERIOD_CHANGE: '保险期间变更',
-  COVERAGE_AMOUNT_CHANGE: '保额变更',
-  INSURED_INFO_CHANGE: '被保人信息变更',
-  SUBJECT_CHANGE: '标的变更',
-  COVERAGE_CHANGE: '保障责任变更',
-  PARTIAL_WITHDRAWAL: '部分领取',
-  TOP_UP: '追加保费',
-  POLICY_LOAN: '保单贷款',
-  LOAN_REPAYMENT: '保单贷款还款',
-  REDUCED_PAID_UP: '减额缴清',
-}
-const PAYMENT_MODES: Record<string, string> = {
-  LUMP_SUM: '趸缴',
-  ANNUAL: '年缴',
-  SEMI_ANNUAL: '半年缴',
-  QUARTERLY: '季缴',
-  MONTHLY: '月缴',
-}
-const DIVIDEND_DISTRIBUTIONS: Record<string, string> = {
-  CASH: '现金红利',
-  ACCUMULATION: '累积生息',
-  PAID_UP_ADDITION: '购买交清增额',
-  PREMIUM_OFFSET: '抵缴保费',
-}
-const PRODUCT_TYPES: Record<string, string> = {
-  TERM_LIFE: '定期寿险',
-  WHOLE_LIFE: '终身寿险',
-  ENDOWMENT: '两全保险',
-  ANNUITY: '年金保险',
-}
-const issuanceModeLabel = (v?: string) => (v ? ISSUANCE_MODES[v] ?? v : '-')
-const maintenanceTypeLabel = (v?: string) => (v ? MAINTENANCE_TYPES[v] ?? v : v)
-const dividendLabel = (v?: string) => (v ? DIVIDEND_DISTRIBUTIONS[v] ?? v : '-')
-const productTypeLabel = (v?: string) => (v ? PRODUCT_TYPES[v] ?? v : '-')
+const issuanceModeLabel = (v?: string) => v ? issuanceModeDictLabel(v) : '-'
+const maintenanceTypeLabel = (v?: string) => v ? maintenanceTypeDictLabel(v) : v
+const dividendLabel = (v?: string) => v ? dividendDistributionDictLabel(v) : '-'
+const productTypeLabel = (v?: string) => v ? lifeProductTypeDictLabel(v) : '-'
 const paymentModesText = (list?: string[]) =>
-  list && list.length ? list.map((m) => PAYMENT_MODES[m] ?? m).join('、') : '-'
+  list && list.length ? list.map(paymentFrequencyDictLabel).join('、') : '-'
 const rate = (v?: number) => (v != null ? v.toString() : '-')
 const money = (v?: number) => (v != null ? `¥${v.toLocaleString()}` : '-')
 const rangeText = (min?: number, max?: number, unit = '') => {
@@ -311,22 +273,8 @@ const lifeSumRange = computed(() => {
   return `${min != null ? '¥' + min.toLocaleString() : '不限'} ~ ${max != null ? '¥' + max.toLocaleString() : '不限'}`
 })
 
-// —— 条款与保障责任（对齐条款编辑页的责任/赔付类型口径） ——
-const COVERAGE_TYPES: Record<string, string> = {
-  CRITICAL_ILLNESS: '重疾',
-  MEDICAL: '医疗',
-  ACCIDENT: '意外',
-  DEATH: '身故',
-}
-const PAYOUT_TYPES: Record<string, string> = {
-  REIMBURSEMENT: '报销',
-  PROPORTIONAL: '比例赔付',
-  ACTUAL_LOSS: '按损赔付',
-  FIXED: '定额给付',
-  PERIODIC: '周期给付/津贴',
-}
-const coverageTypeLabel = (v?: string) => (v ? COVERAGE_TYPES[v] ?? v : '-')
-const payoutTypeLabel = (v?: string) => (v ? PAYOUT_TYPES[v] ?? v : '-')
+const coverageTypeLabel = (v?: string) => v ? coverageTypeDictLabel(v) : '-'
+const payoutTypeLabel = (v?: string) => v ? payoutTypeDictLabel(v) : '-'
 
 /** 保险金额展示：优先最高保额，退化到赔付上限/日津贴 */
 const coverageAmountText = (row: CoverageVO): string => {

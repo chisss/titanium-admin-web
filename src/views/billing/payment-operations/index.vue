@@ -13,23 +13,17 @@
           <el-form-item label="回调ID"><el-input v-model="callbackQuery.callbackId" clearable /></el-form-item>
           <el-form-item label="支付订单"><el-input v-model="callbackQuery.paymentId" clearable /></el-form-item>
           <el-form-item label="渠道结果">
-            <el-select v-model="callbackQuery.resultStatus" clearable placeholder="全部" style="width: 130px">
-              <el-option label="成功" value="SUCCESS" /><el-option label="失败" value="FAILED" />
-            </el-select>
+            <TiDictSelect v-model="callbackQuery.resultStatus" dict-type="PAYMENT_CALLBACK_RESULT" placeholder="全部" style="width: 130px" />
           </el-form-item>
           <template #advanced>
             <el-form-item label="渠道"><el-input v-model="callbackQuery.channelCode" clearable /></el-form-item>
             <el-form-item label="密钥版本"><el-input v-model="callbackQuery.keyVersion" clearable /></el-form-item>
             <el-form-item label="安全模式">
-              <el-select v-model="callbackQuery.securityMode" clearable placeholder="全部" style="width: 165px">
-                <el-option label="版本密钥+Nonce" value="VERSIONED_NONCE" /><el-option label="旧共享密钥" value="LEGACY" />
-              </el-select>
+              <TiDictSelect v-model="callbackQuery.securityMode" dict-type="PAYMENT_SIGNATURE_MODE" placeholder="全部" style="width: 165px" />
             </el-form-item>
             <el-form-item label="渠道交易号"><el-input v-model="callbackQuery.channelTransactionId" clearable /></el-form-item>
             <el-form-item label="处理状态">
-              <el-select v-model="callbackQuery.status" clearable placeholder="全部" style="width: 130px">
-                <el-option label="已接收" value="RECEIVED" /><el-option label="已应用" value="APPLIED" /><el-option label="已拒绝" value="REJECTED" />
-              </el-select>
+              <TiDictSelect v-model="callbackQuery.status" dict-type="PAYMENT_CALLBACK_STATUS" placeholder="全部" style="width: 130px" />
             </el-form-item>
             <el-form-item label="发生时间">
               <el-date-picker v-model="callbackTimeRange" type="datetimerange" value-format="YYYY-MM-DDTHH:mm:ss" start-placeholder="开始时间" end-placeholder="结束时间" />
@@ -62,9 +56,7 @@
           <el-form-item label="回调ID"><el-input v-model="securityQuery.callbackId" clearable /></el-form-item>
           <el-form-item label="渠道"><el-input v-model="securityQuery.channelCode" clearable /></el-form-item>
           <el-form-item label="事件类型">
-            <el-select v-model="securityQuery.eventType" clearable placeholder="全部" style="width: 155px">
-              <el-option v-for="item in securityEventOptions" :key="item.value" :label="item.label" :value="item.value" />
-            </el-select>
+            <TiDictSelect v-model="securityQuery.eventType" dict-type="PAYMENT_SECURITY_EVENT_TYPE" placeholder="全部" style="width: 155px" />
           </el-form-item>
           <template #advanced>
             <el-form-item label="支付订单"><el-input v-model="securityQuery.paymentId" clearable /></el-form-item>
@@ -89,7 +81,7 @@
             <el-table-column prop="channelCode" label="渠道" width="120" />
             <el-table-column prop="keyVersion" label="密钥版本" width="110" />
             <el-table-column label="事件类型" width="140"><template #default="{ row }">{{ securityEventLabel(row.eventType) }}</template></el-table-column>
-            <el-table-column label="级别" width="95"><template #default="{ row }"><TiStatusTag :value="row.severity" :label="row.severity === 'HIGH' ? '高' : '中'" /></template></el-table-column>
+            <el-table-column label="级别" width="95"><template #default="{ row }"><TiStatusTag :value="row.severity" :label="securitySeverityLabel(row.severity)" /></template></el-table-column>
             <el-table-column label="告警" width="95"><template #default="{ row }"><TiStatusTag :value="row.alertTriggered ? 'FAILED' : 'PENDING'" :label="row.alertTriggered ? '已触发' : '仅审计'" /></template></el-table-column>
             <el-table-column prop="message" label="事件说明" min-width="220" show-overflow-tooltip />
             <el-table-column prop="createdAt" label="事件时间" width="170" />
@@ -103,9 +95,7 @@
           <el-form-item label="收款订单"><el-input v-model="collectionQuery.orderId" clearable /></el-form-item>
           <el-form-item label="保单ID"><el-input v-model="collectionQuery.policyId" clearable /></el-form-item>
           <el-form-item label="状态">
-            <el-select v-model="collectionQuery.status" clearable placeholder="全部" style="width: 130px">
-              <el-option label="待收款" value="PENDING" /><el-option label="已收款" value="PAID" /><el-option label="收款失败" value="FAILED" />
-            </el-select>
+            <TiDictSelect v-model="collectionQuery.status" dict-type="PAYMENT_COLLECTION_STATUS" placeholder="全部" style="width: 130px" />
           </el-form-item>
           <template #advanced>
             <el-form-item label="支付订单"><el-input v-model="collectionQuery.paymentId" clearable /></el-form-item>
@@ -150,13 +140,15 @@ import { useMediaQuery } from '@vueuse/core'
 import {
   getPaymentCallbackAudits, getPaymentCallbackSecurityEvents, getPremiumCollectionOrders,
   reconcilePremiumCollectionOrder, type CallbackAuditQuery, type CallbackSecurityEventQuery,
-  type CallbackSecurityEventType, type CollectionOrderQuery, type PaymentCallbackAuditVO,
+  type CollectionOrderQuery, type PaymentCallbackAuditVO,
   type PaymentCallbackSecurityEventVO, type PremiumCollectionOrderVO,
 } from '@/api/payment-operations'
 import TiCopyText from '@/components/TiCopyText/index.vue'
 import TiSearchForm from '@/components/TiSearchForm/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import TiTable from '@/components/TiTable/index.vue'
+import TiDictSelect from '@/components/TiDictSelect/index.vue'
+import { useDict } from '@/composables/useDict'
 
 const activeTab = ref('callbacks')
 const isNarrowScreen = useMediaQuery('(max-width: 767px)')
@@ -183,22 +175,12 @@ let securityEventsLoaded = false
 let collectionsLoaded = false
 
 const amountText = (amount: number, currency: string) => `${currency} ${Number(amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-const resultLabel = (value: string) => value === 'SUCCESS' ? '成功' : '失败'
-const callbackStatusLabels: Record<string, string> = { RECEIVED: '已接收', APPLIED: '已应用', REJECTED: '已拒绝' }
-const collectionStatusLabels: Record<string, string> = { PENDING: '待收款', PAID: '已收款', FAILED: '收款失败' }
-const securityEventOptions: { label: string; value: CallbackSecurityEventType }[] = [
-  { label: '元数据无效', value: 'INVALID_METADATA' },
-  { label: '未知密钥', value: 'UNKNOWN_CREDENTIAL' },
-  { label: '签名无效', value: 'INVALID_SIGNATURE' },
-  { label: '回调过期', value: 'EXPIRED' },
-  { label: '未来时间', value: 'FUTURE_TIME' },
-  { label: 'Nonce重放', value: 'NONCE_REPLAY' },
-]
-const securityEventLabels = Object.fromEntries(securityEventOptions.map(item => [item.value, item.label])) as Record<string, string>
-const callbackStatusLabel = (value: string) => callbackStatusLabels[value] || value
-const collectionStatusLabel = (value: string) => collectionStatusLabels[value] || value
-const securityEventLabel = (value: string) => securityEventLabels[value] || value
-const securityModeLabel = (value: string) => value === 'VERSIONED_NONCE' ? '版本密钥+Nonce' : '旧共享密钥'
+const { getLabel: resultLabel } = useDict('PAYMENT_CALLBACK_RESULT')
+const { getLabel: callbackStatusLabel } = useDict('PAYMENT_CALLBACK_STATUS')
+const { getLabel: collectionStatusLabel } = useDict('PAYMENT_COLLECTION_STATUS')
+const { getLabel: securityEventLabel } = useDict('PAYMENT_SECURITY_EVENT_TYPE')
+const { getLabel: securityModeLabel } = useDict('PAYMENT_SIGNATURE_MODE')
+const { getLabel: securitySeverityLabel } = useDict('SECURITY_SEVERITY')
 const errorText = (error: unknown) => error instanceof Error ? error.message : '查询失败，请稍后重试'
 
 async function fetchCallbacks() {

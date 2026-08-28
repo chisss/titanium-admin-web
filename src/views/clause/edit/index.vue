@@ -49,11 +49,7 @@
           </el-col>
           <el-col :sm="12">
             <el-form-item label="条款类型" prop="clauseType">
-              <el-select v-model="form.clauseType" placeholder="请选择" style="width: 100%">
-                <el-option label="主条款" value="MAIN" />
-                <el-option label="附加条款" value="ADDITIONAL" />
-                <el-option label="免责条款" value="EXCLUSION" />
-              </el-select>
+              <TiDictSelect v-model="form.clauseType" dict-type="CLAUSE_TYPE" placeholder="请选择" style="width: 100%" />
             </el-form-item>
           </el-col>
           <el-col :sm="12">
@@ -145,16 +141,12 @@
           </el-col>
           <el-col :span="12">
             <el-form-item label="责任类型" prop="coverageType">
-              <el-select v-model="coverageForm.coverageType" style="width: 100%">
-                <el-option v-for="o in COVERAGE_TYPES" :key="o.value" :label="o.label" :value="o.value" />
-              </el-select>
+              <TiDictSelect v-model="coverageForm.coverageType" dict-type="COVERAGE_TYPE" :clearable="false" style="width: 100%" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
             <el-form-item label="赔付类型" prop="payoutType">
-              <el-select v-model="coverageForm.payoutType" style="width: 100%">
-                <el-option v-for="o in PAYOUT_TYPES" :key="o.value" :label="o.label" :value="o.value" />
-              </el-select>
+              <TiDictSelect v-model="coverageForm.payoutType" dict-type="PAYOUT_TYPE" :clearable="false" style="width: 100%" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
@@ -276,6 +268,7 @@ import {
 } from '@/api/clause'
 import { insuranceTypesOf } from '@/constants/insurance'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
+import { useDict } from '@/composables/useDict'
 import { useUserStore } from '@/stores/user'
 
 const route = useRoute()
@@ -314,20 +307,6 @@ const onCategoryChange = () => {
   form.insuranceType = undefined
 }
 
-// ===== 保险责任枚举选项 =====
-const COVERAGE_TYPES = [
-  { label: '重疾', value: 'CRITICAL_ILLNESS' },
-  { label: '医疗', value: 'MEDICAL' },
-  { label: '意外', value: 'ACCIDENT' },
-  { label: '身故', value: 'DEATH' },
-]
-const PAYOUT_TYPES = [
-  { label: '报销', value: 'REIMBURSEMENT' },
-  { label: '比例赔付', value: 'PROPORTIONAL' },
-  { label: '按损赔付', value: 'ACTUAL_LOSS' },
-  { label: '定额给付', value: 'FIXED' },
-  { label: '周期给付/津贴', value: 'PERIODIC' },
-]
 // 责任类型 → 默认触发类型
 const TRIGGER_BY_COVERAGE: Record<string, string> = {
   CRITICAL_ILLNESS: 'CRITICAL_ILLNESS',
@@ -336,8 +315,10 @@ const TRIGGER_BY_COVERAGE: Record<string, string> = {
   DEATH: 'DEATH',
 }
 
-const coverageTypeLabel = (v?: string) => COVERAGE_TYPES.find((o) => o.value === v)?.label ?? v ?? '-'
-const payoutTypeLabel = (v?: string) => PAYOUT_TYPES.find((o) => o.value === v)?.label ?? v ?? '-'
+const { getLabel: coverageTypeDictLabel } = useDict('COVERAGE_TYPE')
+const { getLabel: payoutTypeDictLabel } = useDict('PAYOUT_TYPE')
+const coverageTypeLabel = (v?: string) => v ? coverageTypeDictLabel(v) : '-'
+const payoutTypeLabel = (v?: string) => v ? payoutTypeDictLabel(v) : '-'
 const formatAmount = (v?: number) => (v == null ? '-' : `¥${Number(v).toLocaleString()}`)
 
 const coverageSummary = (row: CoverageVO): string => {

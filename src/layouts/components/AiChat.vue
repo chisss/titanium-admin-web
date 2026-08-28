@@ -12,8 +12,13 @@
         @keydown.enter="sendMessage"
         @focus="expanded || $emit('expand')"
       />
-      <el-button type="primary" :icon="Promotion" @click="sendMessage">发送</el-button>
-      <el-button text :icon="expanded ? ArrowDown : ArrowUp" @click="$emit('toggle')" />
+      <el-button type="primary" :icon="Promotion" aria-label="发送消息" @click="sendMessage">发送</el-button>
+      <el-button
+        text
+        :icon="expanded ? ArrowDown : ArrowUp"
+        :aria-label="expanded ? '收起智能助手' : '展开智能助手'"
+        @click="$emit('toggle')"
+      />
     </div>
 
     <!-- 展开状态：显示对话历史 -->

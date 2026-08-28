@@ -13,12 +13,7 @@
         <el-input v-model="queryParams.productCode" placeholder="精确查询" clearable style="width: 160px" />
       </el-form-item>
       <el-form-item label="意向状态">
-        <el-select v-model="queryParams.status" placeholder="请选择" clearable style="width: 140px">
-          <el-option label="草稿" value="DRAFT" />
-          <el-option label="已提交" value="SUBMITTED" />
-          <el-option label="已转投保单" value="CONVERTED_TO_APPLICATION" />
-          <el-option label="作废" value="VOIDED" />
-        </el-select>
+        <TiDictSelect v-model="queryParams.status" dict-type="POLICY_INTENT_STATUS" placeholder="请选择" style="width: 140px" />
       </el-form-item>
       <el-form-item label="创建日期">
         <el-date-picker
@@ -150,6 +145,8 @@ import TiTable from '@/components/TiTable/index.vue'
 import TiSearchForm from '@/components/TiSearchForm/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import TiCopyText from '@/components/TiCopyText/index.vue'
+import TiDictSelect from '@/components/TiDictSelect/index.vue'
+import { useDict } from '@/composables/useDict'
 
 /** 意向单查询参数 */
 const queryParams = reactive({
@@ -160,30 +157,9 @@ const queryParams = reactive({
   dateRange: undefined as string[] | undefined,
 })
 
-/** 意向状态标签 */
-const getStatusLabel = (status: string): string => {
-  const statusMap: Record<string, string> = {
-    DRAFT: '草稿',
-    SUBMITTED: '已提交',
-    CONVERTED_TO_APPLICATION: '已转投保单',
-    VOIDED: '作废',
-  }
-  return statusMap[status] || status
-}
-
-/** 渠道来源标签 */
-const getChannelLabel = (channel?: string): string => {
-  if (!channel) return '-'
-  const channelMap: Record<string, string> = {
-    AGENT: '代理人',
-    BANCASSURANCE: '银保',
-    ONLINE: '线上直销',
-    BROKER: '经纪人',
-    TELEMARKETING: '电销',
-    GROUP_SALES: '团险直销',
-  }
-  return channelMap[channel] || channel
-}
+const { getLabel: getStatusLabel } = useDict('POLICY_INTENT_STATUS')
+const { getLabel: salesChannelLabel } = useDict('SALES_CHANNEL')
+const getChannelLabel = (channel?: string): string => channel ? salesChannelLabel(channel) : '-'
 
 /** 表格数据 */
 const { tableData, tableLoading, pagination, fetchData, handleSearch, handleReset, onPageChange, onSizeChange } =

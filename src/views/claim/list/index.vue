@@ -9,13 +9,7 @@
         <el-input v-model="queryParams.policyNo" clearable style="width: 160px" />
       </el-form-item>
       <el-form-item label="案件状态">
-        <el-select v-model="queryParams.status" clearable placeholder="全部" style="width: 130px">
-          <el-option label="已报案" value="REPORTED" />
-          <el-option label="查勘中" value="INVESTIGATING" />
-          <el-option label="定损中" value="APPROVING" />
-          <el-option label="已赔付" value="SETTLED" />
-          <el-option label="拒赔" value="REJECTED" />
-        </el-select>
+        <TiDictSelect v-model="queryParams.status" dict-type="CLAIM_STATUS" placeholder="全部" style="width: 130px" />
       </el-form-item>
       <el-form-item label="报案时间">
         <el-date-picker
@@ -38,7 +32,7 @@
       </el-table-column>
       <el-table-column prop="status" label="状态" width="100">
         <template #default="{ row }">
-          <TiStatusTag :value="row.status" />
+          <TiStatusTag :value="row.status" :label="claimStatusLabel(row.status)" />
         </template>
       </el-table-column>
       <el-table-column prop="reportTime" label="报案时间" width="160" />
@@ -57,6 +51,10 @@ import { View } from '@element-plus/icons-vue'
 import TiTable from '@/components/TiTable/index.vue'
 import TiSearchForm from '@/components/TiSearchForm/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
+import TiDictSelect from '@/components/TiDictSelect/index.vue'
+import { useDict } from '@/composables/useDict'
+
+const { getLabel: claimStatusLabel } = useDict('CLAIM_STATUS')
 
 const queryParams = reactive({
   claimNo: '',

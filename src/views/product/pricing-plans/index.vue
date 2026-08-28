@@ -11,7 +11,7 @@
             <el-option v-for="product in products" :key="product.id" :label="`${product.name} (${product.code})`" :value="product.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="状态"><el-select v-model="status" clearable style="width: 140px" @change="loadPlans"><el-option v-for="item in statusOptions" :key="item.value" v-bind="item" /></el-select></el-form-item>
+        <el-form-item label="状态"><TiDictSelect v-model="status" dict-type="CONFIG_LIFECYCLE_STATUS" style="width: 140px" @change="loadPlans" /></el-form-item>
         <el-button type="primary" @click="loadPlans">查询</el-button>
       </el-form>
       <el-button type="primary" :disabled="!productId" v-permission="'product:pricing:create'" @click="openCreate">新建定价包</el-button>
@@ -49,7 +49,7 @@
         <el-form-item label="产品版本"><el-input v-model="form.productVersion" disabled /></el-form-item>
         <el-form-item label="定价包版本"><el-input v-model="form.planVersion" /></el-form-item>
         <el-form-item label="定价模式"><el-segmented v-model="form.pricingMode" :options="pricingModeOptions" @change="handlePricingModeChange" /></el-form-item>
-        <el-form-item label="币种"><el-select v-model="form.currency" filterable><el-option v-for="item in CURRENCY_OPTIONS" :key="item.value" v-bind="item" /></el-select></el-form-item>
+        <el-form-item label="币种"><TiDictSelect v-model="form.currency" dict-type="CURRENCY" :clearable="false" filterable /></el-form-item>
         <el-form-item label="生效时间"><el-date-picker v-model="form.effectiveFrom" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" /></el-form-item>
         <template v-if="form.pricingMode === 'RATE_TABLE'">
           <el-form-item label="已发布费率表">
@@ -96,7 +96,7 @@
         </el-form-item>
         <el-form-item label="特征契约 JSON"><el-input v-model="form.featureContractText" type="textarea" :rows="5" placeholder='可选，如 {"contractId":"pricing","contractVersion":"V1.0","requirements":[]}' /></el-form-item>
         <el-form-item label="舍入位数"><el-input-number v-model="form.roundingScale" :min="0" :max="8" /></el-form-item>
-        <el-form-item label="舍入模式"><el-select v-model="form.roundingMode"><el-option label="四舍五入" value="HALF_UP" /><el-option label="向下取整" value="DOWN" /></el-select></el-form-item>
+        <el-form-item label="舍入模式"><TiDictSelect v-model="form.roundingMode" dict-type="ROUNDING_MODE" :clearable="false" /></el-form-item>
       </el-form>
       <template #footer><el-button @click="createVisible = false">取消</el-button><el-button type="primary" @click="submitCreate">创建</el-button></template>
     </el-dialog>
@@ -108,7 +108,7 @@
         <el-table-column label="业务时间" width="190"><template #default="{ row }"><el-date-picker v-model="row.businessTime" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" /></template></el-table-column>
         <el-table-column label="保额" width="140"><template #default="{ row }"><el-input-number v-model="row.sumInsured" :min="0" :precision="2" controls-position="right" /></template></el-table-column>
         <el-table-column label="年龄" width="100"><template #default="{ row }"><el-input-number v-model="row.age" :min="0" :max="150" controls-position="right" /></template></el-table-column>
-        <el-table-column label="性别" width="100"><template #default="{ row }"><el-select v-model="row.gender"><el-option label="男" value="M" /><el-option label="女" value="F" /><el-option label="不限" value="ALL" /></el-select></template></el-table-column>
+        <el-table-column label="性别" width="100"><template #default="{ row }"><TiDictSelect v-model="row.gender" dict-type="GENDER" :clearable="false" /></template></el-table-column>
         <el-table-column label="缴费期" width="105"><template #default="{ row }"><el-input-number v-model="row.paymentTermYears" :min="1" controls-position="right" /></template></el-table-column>
         <el-table-column label="保障期" width="105"><template #default="{ row }"><el-input-number v-model="row.coverageTermYears" :min="1" controls-position="right" /></template></el-table-column>
         <el-table-column label="缴费次数" width="105"><template #default="{ row }"><el-input-number v-model="row.paymentPeriods" :min="1" controls-position="right" /></template></el-table-column>
@@ -158,7 +158,7 @@
         </el-descriptions-item>
         <el-descriptions-item label="费用模型" :span="2">{{ detail ? calculationModelLabel(detail) : '-' }}</el-descriptions-item>
         <el-descriptions-item label="币种">{{ detail?.currency }}</el-descriptions-item>
-        <el-descriptions-item label="舍入规则">{{ detail?.roundingMode }} / {{ detail?.roundingScale }} 位</el-descriptions-item>
+        <el-descriptions-item label="舍入规则">{{ roundingModeLabel(detail?.roundingMode || '') }} / {{ detail?.roundingScale }} 位</el-descriptions-item>
         <el-descriptions-item label="生效时间">{{ detail?.effectiveFrom }}</el-descriptions-item>
         <el-descriptions-item v-if="detail?.artifactHash" label="工件哈希" :span="3"><span class="hash-text">{{ detail.artifactHash }}</span></el-descriptions-item>
       </el-descriptions>
@@ -175,7 +175,8 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useMediaQuery } from '@vueuse/core'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
-import { CURRENCY_OPTIONS } from '@/constants/locale'
+import TiDictSelect from '@/components/TiDictSelect/index.vue'
+import { useDict } from '@/composables/useDict'
 import { getProductList } from '@/api/product'
 import { getRuleSet, listRuleSets, type RuleSet } from '@/api/rule-engine'
 import { listCalculationModels, listDynamicFactors, listTaxPolicies, type CalculationModel, type DynamicFactor, type TaxPolicy } from '@/api/actuarial'
@@ -189,14 +190,13 @@ const createVisible = ref(false); const testCaseVisible = ref(false); const deta
 const selectedRateTableId = ref(''); const selectedRuleSetId = ref(''); const selectedCalculationModelId = ref(''); const selectedTaxPolicyIds = ref<string[]>([]); const selectedCommissionSchemeIds = ref<string[]>([]); const selectedDynamicFactorIds = ref<string[]>([])
 const isNarrowScreen = useMediaQuery('(max-width: 767px)')
 const form = reactive({ productVersion: 'V1.0', planVersion: 'V1.0', pricingMode: 'RATE_TABLE', currency: 'CNY', effectiveFrom: '', rateTableCode: '', rateTableVersion: '', rateDimensionKeys: [] as string[], artifactCode: '', artifactVersion: '', inputSchemaVersion: '', artifactHash: '', calculationModelCode: '', calculationModelVersion: '', calculationModelHash: '', featureContractText: '', roundingScale: 2, roundingMode: 'HALF_UP', taxPolicyRefs: [] as Array<{ policyCode: string; policyVersion: string; contentHash: string }>, commissionSchemeRefs: [] as CommissionSchemeRef[], dynamicFactorRefs: [] as DynamicFactorRef[] })
-const statusOptions = [{ label: '草稿', value: 'DRAFT' }, { label: '已审批', value: 'APPROVED' }, { label: '已发布', value: 'PUBLISHED' }, { label: '已退役', value: 'RETIRED' }]
-const pricingModeOptions = [{ label: '费率表', value: 'RATE_TABLE' }, { label: '精算公式', value: 'ACTUARIAL_FORMULA' }]
+const { dictOptions: pricingModeOptions, getLabel: pricingModeLabel } = useDict('PRICING_MODE')
+const { getLabel: statusLabel } = useDict('CONFIG_LIFECYCLE_STATUS')
+const { getLabel: dimensionLabel } = useDict('RATE_DIMENSION')
+const { getLabel: roundingModeLabel } = useDict('ROUNDING_MODE')
+const { getLabel: genderDictLabel } = useDict('GENDER')
 const activeRuleSets = computed(() => ruleSets.value.filter((item) => item.status === 'ACTIVE' && item.artifactHash))
-const statusLabel = (value: string) => statusOptions.find((item) => item.value === value)?.label || value
-const pricingModeLabel = (value: string) => pricingModeOptions.find((item) => item.value === value)?.label || value
-const dimensionLabels: Record<string, string> = { age: '年龄', gender: '性别', paymentTerm: '缴费年限', coverageTerm: '保障年限' }
-const dimensionLabel = (value: string) => dimensionLabels[value] || value
-const genderLabel = (value?: string) => ({ M: '男', F: '女', ALL: '不限' }[value || ''] || value || '-')
+const genderLabel = (value?: string) => value ? genderDictLabel(value) : '-'
 const referenceLabel = (row: unknown) => { const plan = row as PricingPlan; const rate = plan.rateTableCode ? `${plan.rateTableCode}/${plan.rateTableVersion || '-'}` : ''; const rule = plan.artifactCode ? `${plan.artifactCode}/${plan.artifactVersion || '-'}` : ''; return [rate, rule].filter(Boolean).join(' + ') || '-' }
 const calculationModelLabel = (row: unknown) => { const plan = row as PricingPlan; return plan.calculationModelCode ? `${plan.calculationModelCode} / ${plan.calculationModelVersion}` : '兼容基础保费' }
 const taxPolicyLabel = (row: unknown) => { const plan = row as PricingPlan; return plan.taxPolicyRefs?.length ? plan.taxPolicyRefs.map((item) => `${item.policyCode}/${item.policyVersion}`).join('、') : '未配置' }

@@ -1,9 +1,9 @@
 <template>
   <!-- 字典管理页 - 核心功能：字典国际化配置 -->
   <div class="ti-page dict-page">
-    <el-row :gutter="16" style="height: 100%">
+    <el-row :gutter="16" class="dict-layout">
       <!-- 左侧：字典类型列表 -->
-      <el-col :span="8">
+      <el-col :xs="24" :sm="8">
         <div class="ti-card dict-type-panel">
           <div class="dict-type-panel__header">
             <span class="dict-type-panel__title">字典类型</span>
@@ -32,8 +32,8 @@
       </el-col>
 
       <!-- 右侧：选中类型的字典数据 -->
-      <el-col :span="16">
-        <div class="ti-card" style="height: 100%">
+      <el-col :xs="24" :sm="16">
+        <div class="ti-card dict-data-panel">
           <div class="dict-data-header">
             <span class="dict-data-title">
               {{ selectedType ? `${selectedType.name}（${selectedType.code}）` : '请选择字典类型' }}
@@ -99,6 +99,9 @@
         <el-form-item label="描述">
           <el-input v-model="typeForm.description" type="textarea" :rows="2" />
         </el-form-item>
+        <el-form-item label="状态">
+          <el-switch v-model="typeForm.statusActive" active-text="启用" inactive-text="停用" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="typeDialogVisible = false">取消</el-button>
@@ -128,11 +131,7 @@
               :key="index"
               class="i18n-editor__row"
             >
-              <el-select v-model="item.lang" placeholder="语言" style="width: 140px">
-                <el-option label="简体中文 (zh-CN)" value="zh-CN" />
-                <el-option label="English (en-US)" value="en-US" />
-                <el-option label="繁體中文 (zh-TW)" value="zh-TW" />
-              </el-select>
+              <TiDictSelect v-model="item.lang" dict-type="SUPPORTED_LOCALE" placeholder="语言" style="width: 140px" />
               <el-input v-model="item.label" :placeholder="`${item.lang} 标签`" style="flex: 1" />
               <el-button text type="danger" :icon="Delete" @click="removeI18nEntry(index)" />
             </div>
@@ -142,15 +141,6 @@
           </div>
         </el-form-item>
 
-        <el-form-item label="颜色标识">
-          <el-select v-model="dataForm.color" clearable placeholder="标签颜色（可选）" style="width: 180px">
-            <el-option label="成功（绿）" value="success" />
-            <el-option label="警告（橙）" value="warning" />
-            <el-option label="危险（红）" value="danger" />
-            <el-option label="信息（灰）" value="info" />
-            <el-option label="主色（蓝）" value="primary" />
-          </el-select>
-        </el-form-item>
         <el-form-item label="排序">
           <el-input-number v-model="dataForm.sort" :min="0" />
         </el-form-item>
@@ -180,10 +170,13 @@ import {
   getDictDataByType, createDictData, updateDictData, deleteDictData,
 } from '@/api/dict'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
+import TiDictSelect from '@/components/TiDictSelect/index.vue'
+import { useDictStore } from '@/stores/dict'
 import type { DictType, DictData } from '@/types/business.d'
 
 // 字典类型列表
 const typeList = ref<DictType[]>([])
+const dictStore = useDictStore()
 const typeSearch = ref('')
 const selectedType = ref<DictType | null>(null)
 const filteredTypes = computed(() =>
@@ -205,7 +198,7 @@ const selectType = async (type: DictType) => {
   selectedType.value = type
   dataLoading.value = true
   try {
-    dictDataList.value = await getDictDataByType(type.code)
+    dictDataList.value = await getDictDataByType(type.code, true)
   } finally {
     dataLoading.value = false
   }
@@ -218,7 +211,7 @@ const typeDialogVisible = ref(false)
 const editTypeId = ref<string | null>(null)
 const saving = ref(false)
 const typeFormRef = ref<FormInstance>()
-const typeForm = reactive({ code: '', name: '', description: '' })
+const typeForm = reactive({ code: '', name: '', description: '', statusActive: true })
 
 const typeRules: FormRules = {
   code: [{ required: true, message: '请输入类型编码', trigger: 'blur' }],
@@ -227,7 +220,12 @@ const typeRules: FormRules = {
 
 const openTypeDialog = (row?: DictType) => {
   editTypeId.value = row?.id ?? null
-  Object.assign(typeForm, row ?? { code: '', name: '', description: '' })
+  Object.assign(typeForm, row ? {
+    code: row.code,
+    name: row.name,
+    description: row.description || '',
+    statusActive: row.status === 'ACTIVE',
+  } : { code: '', name: '', description: '', statusActive: true })
   typeDialogVisible.value = true
 }
 
@@ -236,7 +234,13 @@ const handleSaveType = async () => {
   if (!valid) return
   saving.value = true
   try {
-    if (editTypeId.value) { await updateDictType(editTypeId.value, typeForm) } else { await createDictType(typeForm) }
+    const payload: Partial<DictType> = {
+      code: typeForm.code,
+      name: typeForm.name,
+      description: typeForm.description || undefined,
+      status: typeForm.statusActive ? 'ACTIVE' : 'INACTIVE',
+    }
+    if (editTypeId.value) { await updateDictType(editTypeId.value, payload) } else { await createDictType(payload) }
     ElMessage.success('保存成功')
     typeDialogVisible.value = false
     loadTypes()
@@ -248,6 +252,7 @@ const handleSaveType = async () => {
 const handleDeleteType = async (row: DictType) => {
   await ElMessageBox.confirm(`确认删除字典类型"${row.name}"？关联字典数据将一并删除。`, '警告', { type: 'warning' })
   await deleteDictType(row.id)
+  dictStore.clearCache(row.code)
   ElMessage.success('删除成功')
   if (selectedType.value?.id === row.id) selectedType.value = null
   loadTypes()
@@ -268,7 +273,6 @@ const i18nEntries = ref<I18nEntry[]>([
 const dataForm = reactive({
   value: '',
   label: '',
-  color: '',
   sort: 0,
   remark: '',
   statusActive: true,
@@ -293,7 +297,6 @@ const openDataDialog = (row?: DictData) => {
     Object.assign(dataForm, {
       value: row.value,
       label: row.label,
-      color: row.extra?.color ?? '',
       sort: row.sort,
       remark: row.remark,
       statusActive: row.status === 'ACTIVE',
@@ -305,7 +308,7 @@ const openDataDialog = (row?: DictData) => {
       i18nEntries.value = [{ lang: 'zh-CN', label: '' }, { lang: 'en-US', label: '' }]
     }
   } else {
-    Object.assign(dataForm, { value: '', label: '', color: '', sort: 0, remark: '', statusActive: true })
+    Object.assign(dataForm, { value: '', label: '', sort: 0, remark: '', statusActive: true })
     i18nEntries.value = [{ lang: 'zh-CN', label: '' }, { lang: 'en-US', label: '' }]
   }
   dataDialogVisible.value = true
@@ -331,7 +334,6 @@ const handleSaveData = async () => {
     sort: dataForm.sort,
     status: dataForm.statusActive ? 'ACTIVE' : 'INACTIVE',
     remark: dataForm.remark || undefined,
-    extra: dataForm.color ? { color: dataForm.color } : undefined,
   }
 
   saving.value = true
@@ -341,6 +343,7 @@ const handleSaveData = async () => {
     } else {
       await createDictData(payload)
     }
+    dictStore.clearCache(selectedType.value.code)
     ElMessage.success('保存成功')
     dataDialogVisible.value = false
     selectType(selectedType.value)
@@ -352,6 +355,7 @@ const handleSaveData = async () => {
 const handleDeleteData = async (row: DictData) => {
   await ElMessageBox.confirm(`确认删除字典项"${row.label}"？`, '警告', { type: 'warning' })
   await deleteDictData(row.id)
+  if (selectedType.value) dictStore.clearCache(selectedType.value.code)
   ElMessage.success('删除成功')
   if (selectedType.value) selectType(selectedType.value)
 }
@@ -361,7 +365,7 @@ const handleDeleteData = async (row: DictData) => {
 .dict-page {
   height: calc(100vh - 120px);
 
-  .el-row, .el-col {
+  .dict-layout, .el-col {
     height: 100%;
   }
 }
@@ -412,6 +416,7 @@ const handleDeleteData = async (row: DictData) => {
     display: flex;
     flex-direction: column;
     gap: 2px;
+    min-width: 0;
   }
 
   &__name {
@@ -432,6 +437,10 @@ const handleDeleteData = async (row: DictData) => {
   &:hover &__actions {
     display: flex;
   }
+}
+
+.dict-data-panel {
+  height: 100%;
 }
 
 .dict-data-header {
@@ -464,6 +473,54 @@ const handleDeleteData = async (row: DictData) => {
     align-items: center;
     gap: 8px;
     margin-bottom: 8px;
+  }
+}
+
+@media (max-width: 767px) {
+  .dict-page {
+    height: auto;
+    min-height: calc(100vh - 96px);
+
+    .dict-layout {
+      height: auto;
+      row-gap: 12px;
+    }
+
+    .el-col {
+      height: auto;
+    }
+  }
+
+  .dict-type-panel {
+    height: 300px;
+    padding: 12px;
+  }
+
+  .dict-type-item {
+    gap: 8px;
+
+    &__name,
+    &__code {
+      overflow-wrap: anywhere;
+    }
+
+    &__actions {
+      display: flex;
+      flex: none;
+    }
+  }
+
+  .dict-data-panel {
+    min-height: 420px;
+  }
+
+  .dict-data-header {
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .dict-data-title {
+    overflow-wrap: anywhere;
   }
 }
 </style>

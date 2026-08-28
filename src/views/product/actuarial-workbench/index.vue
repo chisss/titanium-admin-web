@@ -20,11 +20,7 @@
             <el-option v-for="product in products" :key="product.id" :label="`${product.name} (${product.code})`" :value="product.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="状态">
-          <el-select v-model="status" clearable class="status-select" @change="loadAssets">
-            <el-option v-for="option in statusOptions" :key="option.value" v-bind="option" />
-          </el-select>
-        </el-form-item>
+        <el-form-item label="状态"><TiDictSelect v-model="status" dict-type="CONFIG_LIFECYCLE_STATUS" class="status-select" @change="loadAssets" /></el-form-item>
         <el-button :icon="Refresh" :loading="loading" aria-label="刷新精算配置" @click="loadAssets" />
       </el-form>
       <div v-if="currentProduct" class="context-meta">
@@ -252,7 +248,7 @@
           <el-form-item label="模型编码" prop="modelCode"><el-input v-model="modelForm.modelCode" placeholder="例如 LIFE_PRICE_V1" /></el-form-item>
           <el-form-item label="版本" prop="modelVersion"><el-input v-model="modelForm.modelVersion" placeholder="例如 V1" /></el-form-item>
           <el-form-item label="名称" prop="modelName"><el-input v-model="modelForm.modelName" /></el-form-item>
-          <el-form-item label="币种" prop="currency"><el-select v-model="modelForm.currency" filterable><el-option v-for="option in CURRENCY_OPTIONS" :key="option.value" v-bind="option" /></el-select></el-form-item>
+          <el-form-item label="币种" prop="currency"><TiDictSelect v-model="modelForm.currency" dict-type="CURRENCY" :clearable="false" filterable /></el-form-item>
           <el-form-item label="生效时间" prop="effectiveFrom"><el-date-picker v-model="modelForm.effectiveFrom" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" /></el-form-item>
         </div>
         <div class="editor-heading"><div><h3>计算节点</h3><span>非输出节点必须绑定一个已发布费用项。</span></div><el-button @click="addComputeNode">新增节点</el-button></div>
@@ -317,7 +313,8 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
-import { CURRENCY_OPTIONS } from '@/constants/locale'
+import TiDictSelect from '@/components/TiDictSelect/index.vue'
+import { useDict } from '@/composables/useDict'
 import { getProductList } from '@/api/product'
 import type { ProductVO } from '@/types/business.d'
 import { approveCalculationModel, approveChargeComponent, approveDynamicFactor, approveTaxPolicy, createCalculationModel, createChargeComponent, createDynamicFactor, createTaxPolicy, getActuarialMaskingPolicy, getCalculationModel, getChargeComponent, getDynamicFactor, getPremiumCalculation, getTaxPolicy, listCalculationModels, listChargeComponents, listDynamicFactors, listTaxPolicies, publishCalculationModel, publishChargeComponent, publishDynamicFactor, publishTaxPolicy, retireCalculationModel, retireChargeComponent, retireDynamicFactor, retireTaxPolicy, updateActuarialMaskingPolicy, type ActuarialMaskingPolicy, type CalculationEdge, type CalculationLine, type CalculationModel, type CalculationNode, type ChargeComponent, type DynamicFactor, type PremiumCalculation, type TaxPolicy } from '@/api/actuarial'
@@ -334,23 +331,21 @@ const componentFormRef = ref<FormInstance>(); const modelFormRef = ref<FormInsta
 const currentProduct = computed(() => products.value.find((item) => item.id === productId.value))
 const publishedComponents = computed(() => components.value.filter((item) => item.status === 'PUBLISHED'))
 const detailTitle = computed(() => componentDetail.value ? '费用项详情' : modelDetail.value ? '计算模型详情' : taxPolicyDetail.value ? '税费策略详情' : '动态因子详情')
-const statusOptions = [{ label: '草稿', value: 'DRAFT' }, { label: '已审批', value: 'APPROVED' }, { label: '已发布', value: 'PUBLISHED' }, { label: '已退役', value: 'RETIRED' }]
-const categoryOptions = [{ label: '风险保费', value: 'RISK_PREMIUM' }, { label: '费用加载', value: 'EXPENSE_LOADING' }, { label: '产品附加费', value: 'PRODUCT_FEE' }, { label: '动态调整', value: 'DYNAMIC_ADJUSTMENT' }, { label: '核保调整', value: 'UNDERWRITING_ADJUSTMENT' }, { label: '税费', value: 'TAX' }, { label: '印花税', value: 'STAMP_DUTY' }, { label: '监管征费', value: 'REGULATORY_LEVY' }, { label: '渠道佣金', value: 'COMMISSION' }, { label: '再保险成本', value: 'REINSURANCE_COST' }, { label: '其他内部成本', value: 'OTHER_INTERNAL_COST' }]
-const taxCategoryOptions = [{ label: '税费', value: 'TAX' }, { label: '印花税', value: 'STAMP_DUTY' }, { label: '监管征费', value: 'REGULATORY_LEVY' }]
-const taxPriceModeOptions = [{ label: '价外税', value: 'EXCLUSIVE' }, { label: '价内税', value: 'INCLUSIVE' }]
-const factorSourceOptions = [{ label: '请求输入', value: 'REQUEST' }, { label: '领域 API', value: 'DOMAIN_API' }, { label: '加工特征', value: 'DERIVED' }, { label: '外部实时', value: 'EXTERNAL_REALTIME' }]
-const factorTimeOptions = [{ label: '请求时点', value: 'REQUEST_TIME' }, { label: '业务时点', value: 'BUSINESS_TIME' }, { label: '观测时点', value: 'OBSERVED_AT' }]
-const factorMissingOptions = [{ label: '拒绝计算', value: 'REJECT' }, { label: '使用默认值', value: 'USE_DEFAULT' }, { label: '跳过因子', value: 'SKIP' }]
-const factorTransformOptions = [{ label: '原值', value: 'IDENTITY' }, { label: '线性', value: 'LINEAR' }]
-const channelOptions = [{ label: '客户价格', value: 'CUSTOMER_PRICE' }, { label: '内部成本', value: 'INTERNAL_COST' }]
-const directionOptions = [{ label: '增加', value: 'DEBIT' }, { label: '扣减', value: 'CREDIT' }]
-const payerOptions = [{ label: '投保人', value: 'POLICYHOLDER' }, { label: '保险人', value: 'INSURER' }, { label: '渠道', value: 'CHANNEL' }, { label: '其他', value: 'OTHER' }]
-const sourceOptions = [{ label: '基础保费', value: 'BASE_PREMIUM' }, { label: '固定金额', value: 'FIXED_AMOUNT' }, { label: '比例计算', value: 'PERCENTAGE' }, { label: '费率表', value: 'RATE_TABLE' }, { label: '公式工件', value: 'FORMULA' }, { label: '外部结果', value: 'EXTERNAL_RESULT' }]
-const nodeTypeOptions = [{ label: '输入', value: 'INPUT' }, { label: '计算', value: 'COMPUTE' }, { label: '输出', value: 'OUTPUT' }]
-const operatorOptions = [{ label: '标准保费', value: 'STANDARD_PREMIUM' }, { label: '固定金额', value: 'FIXED_AMOUNT' }, { label: '按输入比例', value: 'PERCENTAGE_OF' }, { label: '合计', value: 'SUM' }]
+const { getLabel: statusLabel } = useDict('CONFIG_LIFECYCLE_STATUS')
+const { dictOptions: categoryOptions } = useDict('PRICE_COMPONENT_CATEGORY')
+const { dictOptions: taxCategoryOptions } = useDict('TAX_CATEGORY')
+const { dictOptions: taxPriceModeOptions, getLabel: taxPriceModeLabel } = useDict('TAX_PRICE_MODE')
+const { dictOptions: factorSourceOptions } = useDict('FACTOR_SOURCE_TYPE')
+const { dictOptions: factorTimeOptions } = useDict('FACTOR_VALUE_TIME')
+const { dictOptions: factorMissingOptions } = useDict('FACTOR_MISSING_POLICY')
+const { dictOptions: factorTransformOptions } = useDict('FACTOR_TRANSFORM_TYPE')
+const { dictOptions: channelOptions } = useDict('AMOUNT_CHANNEL')
+const { dictOptions: directionOptions } = useDict('ACCOUNTING_DIRECTION')
+const { dictOptions: payerOptions } = useDict('PAYER_TYPE')
+const { dictOptions: sourceOptions } = useDict('CALCULATION_SOURCE')
+const { dictOptions: nodeTypeOptions } = useDict('CALCULATION_NODE_TYPE')
+const { dictOptions: operatorOptions } = useDict('CALCULATION_OPERATOR')
 const labelOf = (options: Array<{ label: string; value: string }>, value: string) => options.find((item) => item.value === value)?.label || value
-const statusLabel = (value: string) => labelOf(statusOptions, value)
-const taxPriceModeLabel = (value: string) => labelOf(taxPriceModeOptions, value)
 const percentText = (value?: number) => value === undefined || value === null ? '-' : `${(value * 100).toFixed(4).replace(/0+$/, '').replace(/\.$/, '')}%`
 const amountText = (value?: number, masked = false) => value === undefined || value === null ? masked ? '已脱敏' : '-' : String(value)
 const factorTransformLabel = (value: unknown) => { const factor = value as DynamicFactor; return factor.transformType === 'IDENTITY' ? '原值' : `${factor.multiplier} × x + ${factor.offset}` }

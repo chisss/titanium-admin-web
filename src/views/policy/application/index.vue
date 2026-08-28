@@ -13,16 +13,7 @@
         <el-input v-model="queryParams.productId" placeholder="精确查询" clearable style="width: 180px" />
       </el-form-item>
       <el-form-item label="投保状态">
-        <el-select v-model="queryParams.status" placeholder="请选择" clearable style="width: 140px">
-          <el-option label="草稿" value="DRAFT" />
-          <el-option label="已提交" value="SUBMITTED" />
-          <el-option label="核保中" value="UNDERWRITING" />
-          <el-option label="核保通过" value="UNDERWRITING_APPROVED" />
-          <el-option label="核保拒绝" value="UNDERWRITING_REJECTED" />
-          <el-option label="核保暂缓" value="UNDERWRITING_SUSPENDED" />
-          <el-option label="已承保" value="ISSUED" />
-          <el-option label="作废" value="VOIDED" />
-        </el-select>
+        <TiDictSelect v-model="queryParams.status" dict-type="POLICY_APPLICATION_STATUS" placeholder="请选择" style="width: 140px" />
       </el-form-item>
       <el-form-item label="投保日期">
         <el-date-picker
@@ -158,6 +149,8 @@ import TiTable from '@/components/TiTable/index.vue'
 import TiSearchForm from '@/components/TiSearchForm/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import TiCopyText from '@/components/TiCopyText/index.vue'
+import TiDictSelect from '@/components/TiDictSelect/index.vue'
+import { useDict } from '@/composables/useDict'
 
 /** 投保单查询参数 */
 const queryParams = reactive({
@@ -168,20 +161,7 @@ const queryParams = reactive({
   dateRange: undefined as string[] | undefined,
 })
 
-/** 投保单状态标签 */
-const getStatusLabel = (status: string): string => {
-  const statusMap: Record<string, string> = {
-    DRAFT: '草稿',
-    SUBMITTED: '已提交',
-    UNDERWRITING: '核保中',
-    UNDERWRITING_APPROVED: '核保通过',
-    UNDERWRITING_REJECTED: '核保拒绝',
-    UNDERWRITING_SUSPENDED: '核保暂缓',
-    ISSUED: '已承保',
-    VOIDED: '作废',
-  }
-  return statusMap[status] || status
-}
+const { getLabel: getStatusLabel } = useDict('POLICY_APPLICATION_STATUS')
 
 /** 表格数据 */
 const { tableData, tableLoading, pagination, fetchData, handleSearch, handleReset, onPageChange, onSizeChange } =

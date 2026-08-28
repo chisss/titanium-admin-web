@@ -9,10 +9,7 @@
         <el-input v-model="queryParams.nickname" clearable style="width: 150px" />
       </el-form-item>
       <el-form-item label="状态">
-        <el-select v-model="queryParams.status" clearable placeholder="全部" style="width: 110px">
-          <el-option label="正常" value="ACTIVE" />
-          <el-option label="禁用" value="INACTIVE" />
-        </el-select>
+        <TiDictSelect v-model="queryParams.status" dict-type="COMMON_STATUS" placeholder="全部" style="width: 110px" />
       </el-form-item>
     </TiSearchForm>
 
@@ -44,7 +41,7 @@
       <el-table-column prop="mobile" label="手机号" width="130" />
       <el-table-column prop="status" label="状态" width="90">
         <template #default="{ row }">
-          <TiStatusTag :value="row.status" />
+          <TiStatusTag :value="row.status" :label="commonStatusLabel(row.status)" />
         </template>
       </el-table-column>
       <el-table-column prop="createdAt" label="创建时间" width="160" />
@@ -115,6 +112,10 @@ import { useTable } from '@/composables/useTable'
 import TiTable from '@/components/TiTable/index.vue'
 import TiSearchForm from '@/components/TiSearchForm/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
+import TiDictSelect from '@/components/TiDictSelect/index.vue'
+import { useDict } from '@/composables/useDict'
+
+const { getLabel: commonStatusLabel } = useDict('COMMON_STATUS')
 
 const queryParams = reactive({ username: '', nickname: '', status: undefined as string | undefined })
 

@@ -24,9 +24,7 @@
         <el-tab-pane label="出单配置" name="issuance">
           <el-form label-width="140px" style="max-width: 640px">
             <el-form-item label="出单模式">
-              <el-select v-model="templateForm.issuanceMode" placeholder="选择出单模式" style="width: 360px">
-                <el-option v-for="opt in issuanceModeOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
-              </el-select>
+              <TiDictSelect v-model="templateForm.issuanceMode" dict-type="ISSUANCE_MODE" placeholder="选择出单模式" style="width: 360px" />
             </el-form-item>
             <el-form-item label="模板名称">
               <el-input v-model="templateForm.templateName" placeholder="模板名称" style="width: 360px" />
@@ -38,17 +36,16 @@
         <el-tab-pane label="保全配置" name="maintenance">
           <el-form label-width="140px" style="max-width: 720px">
             <el-form-item label="可支持保全项">
-              <el-select
+              <TiDictSelect
                 v-model="maintenanceForm.allowedTypes"
+                dict-type="MAINTENANCE_TYPE"
                 multiple
                 filterable
                 collapse-tags
                 collapse-tags-tooltip
                 placeholder="选择该产品支持的保全类型"
                 style="width: 520px"
-              >
-                <el-option v-for="opt in maintenanceTypeOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
-              </el-select>
+              />
             </el-form-item>
             <el-form-item label="犹豫期(天)">
               <el-input-number v-model="maintenanceForm.freeLookPeriodDays" :min="0" :max="365" />
@@ -66,17 +63,16 @@
         <el-tab-pane label="理赔配置" name="claim">
           <el-form label-width="140px" style="max-width: 720px">
             <el-form-item label="理赔阶段">
-              <el-select
+              <TiDictSelect
                 v-model="claimForm.claimStages"
+                dict-type="CLAIM_STAGE"
                 multiple
                 filterable
                 allow-create
                 default-first-option
                 placeholder="选择或输入理赔阶段(有序)"
                 style="width: 520px"
-              >
-                <el-option v-for="opt in claimStageOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
-              </el-select>
+              />
             </el-form-item>
             <el-form-item label="报案时效(天)">
               <el-input-number v-model="claimForm.reportDeadlineDays" :min="0" :max="365" />
@@ -88,17 +84,16 @@
               <el-input v-model="claimForm.claimRuleSet" placeholder="理赔审核规则集编码(可选)" style="width: 360px" />
             </el-form-item>
             <el-form-item label="所需材料">
-              <el-select
+              <TiDictSelect
                 v-model="claimForm.requiredDocuments"
+                dict-type="CLAIM_DOCUMENT"
                 multiple
                 filterable
                 allow-create
                 default-first-option
                 placeholder="选择或输入理赔所需材料"
                 style="width: 520px"
-              >
-                <el-option v-for="opt in claimDocOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
-              </el-select>
+              />
             </el-form-item>
           </el-form>
         </el-tab-pane>
@@ -107,9 +102,7 @@
         <el-tab-pane label="缴费配置" name="billing">
           <el-form label-width="140px" style="max-width: 720px">
             <el-form-item label="允许缴费方式">
-              <el-select v-model="billingForm.allowedPaymentModes" multiple placeholder="选择允许的缴费频率" style="width: 520px">
-                <el-option v-for="opt in paymentModeOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
-              </el-select>
+              <TiDictSelect v-model="billingForm.allowedPaymentModes" dict-type="PAYMENT_FREQUENCY" multiple placeholder="选择允许的缴费频率" style="width: 520px" />
             </el-form-item>
             <el-form-item label="宽限期(天)">
               <el-input-number v-model="billingForm.gracePeriodDays" :min="0" :max="365" />
@@ -151,9 +144,7 @@
           />
           <el-form label-width="140px" style="max-width: 640px">
             <el-form-item label="红利分配方式">
-              <el-select v-model="dividendForm.distribution" clearable placeholder="选择红利分配方式" style="width: 360px">
-                <el-option v-for="opt in dividendOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
-              </el-select>
+              <TiDictSelect v-model="dividendForm.distribution" dict-type="DIVIDEND_DISTRIBUTION" placeholder="选择红利分配方式" style="width: 360px" />
             </el-form-item>
             <el-form-item label="低档演示利率">
               <el-input-number v-model="dividendForm.lowDemoRate" :min="0" :max="1" :precision="4" :step="0.005" />
@@ -179,9 +170,7 @@
           />
           <el-form label-width="140px" style="max-width: 760px">
             <el-form-item label="险种三级分类">
-              <el-select v-model="lifeForm.productType" clearable placeholder="定期寿/终身寿/两全/年金" style="width: 260px">
-                <el-option v-for="opt in productTypeOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
-              </el-select>
+              <TiDictSelect v-model="lifeForm.productType" dict-type="LIFE_PRODUCT_TYPE" placeholder="定期寿/终身寿/两全/年金" style="width: 260px" />
             </el-form-item>
             <el-form-item label="投保年龄区间">
               <el-input-number v-model="lifeForm.minAge" :min="0" :max="120" placeholder="最小" />
@@ -276,6 +265,7 @@ import {
   type UpdateTemplateForm,
 } from '@/api/product'
 import type { ProductDetailVO } from '@/types/business.d'
+import TiDictSelect from '@/components/TiDictSelect/index.vue'
 
 const route = useRoute()
 const loading = ref(false)
@@ -288,69 +278,6 @@ const templateId = ref<string>('')
 // 寿险线：展示「保额管理/寿险规格」页签（命中不同的 life-config 端点）
 const LIFE_LINES = ['LIFE', 'ANNUITY', 'UNIVERSAL', 'PARTICIPATING', 'INVESTMENT_LINKED']
 const isLifeLine = computed(() => !!product.value?.insuranceType && LIFE_LINES.includes(product.value.insuranceType))
-
-// ===== 选项字典（对齐后端枚举常量名） =====
-const issuanceModeOptions = [
-  { value: 'ONE_STEP', label: '一步出单（报价即保单）' },
-  { value: 'TWO_STEP', label: '两步出单（投保单→保单）' },
-  { value: 'THREE_STEP', label: '三步出单（意向→投保→核保→保单）' },
-  { value: 'CUSTOM', label: '自定义出单' },
-]
-const maintenanceTypeOptions = [
-  { value: 'POLICY_HOLDER_CHANGE', label: '投保人变更' },
-  { value: 'BENEFICIARY_CHANGE', label: '受益人变更' },
-  { value: 'PAYMENT_METHOD_CHANGE', label: '缴费方式变更' },
-  { value: 'ADDITIONAL_PAYMENT', label: '增额缴费' },
-  { value: 'REDUCTION_PAYMENT', label: '减额缴费' },
-  { value: 'POLICY_SUSPENSION', label: '保单中止' },
-  { value: 'POLICY_RESUMPTION', label: '保单复效' },
-  { value: 'POLICY_TERMINATION', label: '保单终止' },
-  { value: 'POLICY_INFO_CHANGE', label: '保单信息变更' },
-  { value: 'POLICY_PERIOD_CHANGE', label: '保险期间变更' },
-  { value: 'COVERAGE_AMOUNT_CHANGE', label: '保额变更' },
-  { value: 'INSURED_INFO_CHANGE', label: '被保人信息变更' },
-  { value: 'SUBJECT_CHANGE', label: '标的变更' },
-  { value: 'COVERAGE_CHANGE', label: '保障责任变更' },
-  { value: 'PARTIAL_WITHDRAWAL', label: '部分领取' },
-  { value: 'TOP_UP', label: '追加保费' },
-  { value: 'POLICY_LOAN', label: '保单贷款' },
-  { value: 'LOAN_REPAYMENT', label: '保单贷款还款' },
-  { value: 'REDUCED_PAID_UP', label: '减额缴清' },
-]
-const claimStageOptions = [
-  { value: 'REPORT', label: '报案' },
-  { value: 'REGISTER', label: '立案' },
-  { value: 'SURVEY', label: '查勘' },
-  { value: 'AUDIT', label: '审核' },
-  { value: 'APPROVE', label: '核赔' },
-  { value: 'SETTLE', label: '结案' },
-]
-const claimDocOptions = [
-  { value: 'ID_CARD', label: '身份证' },
-  { value: 'DIAGNOSIS', label: '诊断证明' },
-  { value: 'INVOICE', label: '医疗发票' },
-  { value: 'DISCHARGE_SUMMARY', label: '出院小结' },
-  { value: 'BANK_ACCOUNT', label: '银行账户' },
-]
-const paymentModeOptions = [
-  { value: 'LUMP_SUM', label: '趸缴' },
-  { value: 'ANNUAL', label: '年缴' },
-  { value: 'SEMI_ANNUAL', label: '半年缴' },
-  { value: 'QUARTERLY', label: '季缴' },
-  { value: 'MONTHLY', label: '月缴' },
-]
-const dividendOptions = [
-  { value: 'CASH', label: '现金红利' },
-  { value: 'ACCUMULATION', label: '累积生息' },
-  { value: 'PAID_UP_ADDITION', label: '购买交清增额' },
-  { value: 'PREMIUM_OFFSET', label: '抵缴保费' },
-]
-const productTypeOptions = [
-  { value: 'TERM_LIFE', label: '定期寿险' },
-  { value: 'WHOLE_LIFE', label: '终身寿险' },
-  { value: 'ENDOWMENT', label: '两全保险' },
-  { value: 'ANNUITY', label: '年金保险' },
-]
 
 // ===== 表单模型 =====
 const templateForm = reactive<{ templateName?: string; issuanceMode?: string }>({})

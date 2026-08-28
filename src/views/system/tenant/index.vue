@@ -9,11 +9,7 @@
         <el-input v-model="queryParams.code" clearable style="width: 150px" />
       </el-form-item>
       <el-form-item label="状态">
-        <el-select v-model="queryParams.status" clearable placeholder="全部" style="width: 110px">
-          <el-option label="正常" value="ACTIVE" />
-          <el-option label="禁用" value="INACTIVE" />
-          <el-option label="试用" value="TRIAL" />
-        </el-select>
+        <TiDictSelect v-model="queryParams.status" dict-type="COMMON_STATUS" placeholder="全部" style="width: 110px" />
       </el-form-item>
     </TiSearchForm>
 
@@ -44,7 +40,7 @@
       <el-table-column prop="contactMobile" label="联系电话" width="130" />
       <el-table-column prop="status" label="状态" width="90">
         <template #default="{ row }">
-          <TiStatusTag :value="row.status" />
+          <TiStatusTag :value="row.status" :label="commonStatusLabel(row.status)" />
         </template>
       </el-table-column>
       <el-table-column label="国家/币种" width="130">
@@ -127,6 +123,8 @@ import TiTable from '@/components/TiTable/index.vue'
 import TiSearchForm from '@/components/TiSearchForm/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import TiCopyText from '@/components/TiCopyText/index.vue'
+import TiDictSelect from '@/components/TiDictSelect/index.vue'
+import { useDict } from '@/composables/useDict'
 import type { TenantVO } from '@/types/business.d'
 import {
   COUNTRY_OPTIONS,
@@ -135,6 +133,8 @@ import {
   TIMEZONE_OPTIONS,
   COUNTRY_DEFAULT_CURRENCY,
 } from '@/constants/locale'
+
+const { getLabel: commonStatusLabel } = useDict('COMMON_STATUS')
 
 const queryParams = reactive({ name: '', code: '', status: undefined as string | undefined })
 

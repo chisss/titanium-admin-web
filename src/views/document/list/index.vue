@@ -12,11 +12,7 @@
         <TiDictSelect v-model="queryParams.documentType" dict-type="DOCUMENT_TYPE" style="width: 150px" />
       </el-form-item>
       <el-form-item label="状态">
-        <el-select v-model="queryParams.status" clearable placeholder="全部" style="width: 130px">
-          <el-option label="待签署" value="PENDING_SIGN" />
-          <el-option label="已签署" value="SIGNED" />
-          <el-option label="已归档" value="ARCHIVED" />
-        </el-select>
+        <TiDictSelect v-model="queryParams.status" dict-type="DOCUMENT_STATUS" placeholder="全部" style="width: 130px" />
       </el-form-item>
     </TiSearchForm>
 
@@ -34,7 +30,7 @@
           <TiCopyText :text="row.documentNo" />
         </template>
       </el-table-column>
-      <el-table-column prop="documentType" label="文档类型" width="140" />
+      <el-table-column prop="documentType" label="文档类型" width="140"><template #default="{ row }">{{ documentTypeLabel(row.documentType) }}</template></el-table-column>
       <el-table-column prop="policyNo" label="关联保单号" width="160" class-name="ti-code-column">
         <template #default="{ row }">{{ row.policyNo || '-' }}</template>
       </el-table-column>
@@ -43,7 +39,7 @@
       </el-table-column>
       <el-table-column prop="status" label="状态" width="100">
         <template #default="{ row }">
-          <TiStatusTag :value="row.status" :color="STATUS_COLOR[row.status]" :label="STATUS_LABEL[row.status]" />
+          <TiStatusTag :value="row.status" :color="STATUS_COLOR[row.status]" :label="documentStatusLabel(row.status)" />
         </template>
       </el-table-column>
       <el-table-column prop="createdAt" label="创建时间" width="160" />
@@ -77,6 +73,7 @@ import TiSearchForm from '@/components/TiSearchForm/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
 import TiCopyText from '@/components/TiCopyText/index.vue'
+import { useDict } from '@/composables/useDict'
 
 /** 状态标签颜色映射 */
 const STATUS_COLOR: Record<string, string> = {
@@ -85,12 +82,8 @@ const STATUS_COLOR: Record<string, string> = {
   ARCHIVED: 'info',
 }
 
-/** 状态中文标签映射 */
-const STATUS_LABEL: Record<string, string> = {
-  PENDING_SIGN: '待签署',
-  SIGNED: '已签署',
-  ARCHIVED: '已归档',
-}
+const { getLabel: documentStatusLabel } = useDict('DOCUMENT_STATUS')
+const { getLabel: documentTypeLabel } = useDict('DOCUMENT_TYPE')
 
 const queryParams = reactive({
   policyNo: '',
@@ -108,7 +101,7 @@ fetchData()
 const handleView = async (row: DocumentVO) => {
   const detail = await getDocumentDetail(row.id)
   ElMessageBox.alert(
-    `文档编号：${detail.documentNo}<br/>文档类型：${detail.documentType}<br/>关联保单：${detail.policyNo || '-'}<br/>状态：${STATUS_LABEL[detail.status] || detail.status}`,
+    `文档编号：${detail.documentNo}<br/>文档类型：${documentTypeLabel(detail.documentType)}<br/>关联保单：${detail.policyNo || '-'}<br/>状态：${documentStatusLabel(detail.status)}`,
     '文档详情',
     { dangerouslyUseHTMLString: true },
   )

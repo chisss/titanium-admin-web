@@ -13,7 +13,7 @@
             <el-option v-for="product in products" :key="product.id" :label="`${product.name} (${product.code})`" :value="product.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="状态"><el-select v-model="status" clearable style="width: 140px" @change="loadTables"><el-option v-for="item in statusOptions" :key="item.value" v-bind="item" /></el-select></el-form-item>
+        <el-form-item label="状态"><TiDictSelect v-model="status" dict-type="RATE_TABLE_STATUS" style="width: 140px" @change="loadTables" /></el-form-item>
         <el-button type="primary" @click="loadTables">查询</el-button>
       </el-form>
       <el-button type="primary" :disabled="!productId" v-permission="'product:rate-table:create'" @click="createDialog = true">新建费率表</el-button>
@@ -22,7 +22,7 @@
     <el-table v-else v-loading="loading" :data="tables" border>
       <el-table-column prop="tableCode" label="费率表编码" min-width="160" />
       <el-table-column prop="tableVersion" label="版本" width="100" />
-      <el-table-column prop="rateUnit" label="费率单位" width="150" />
+      <el-table-column prop="rateUnit" label="费率单位" width="150"><template #default="{ row }">{{ rateUnitLabel(row.rateUnit) }}</template></el-table-column>
       <el-table-column prop="currency" label="币种" width="90" />
       <el-table-column prop="rowCount" label="费率行数" width="100" />
       <el-table-column label="状态" width="110"><template #default="{ row }"><TiStatusTag :value="row.status" :label="statusLabel(row.status)" /></template></el-table-column>
@@ -45,10 +45,10 @@
       <el-form :model="createForm" label-width="110px">
         <el-form-item label="费率表编码"><el-input v-model="createForm.tableCode" /></el-form-item>
         <el-form-item label="版本"><el-input v-model="createForm.tableVersion" /></el-form-item>
-        <el-form-item label="费率单位"><el-select v-model="createForm.rateUnit"><el-option label="保额比例" value="SUM_INSURED_RATIO" /><el-option label="每千元保额" value="PER_THOUSAND_SUM_INSURED" /><el-option label="固定金额" value="FIXED_AMOUNT" /></el-select></el-form-item>
-        <el-form-item label="币种"><el-select v-model="createForm.currency" filterable><el-option v-for="item in CURRENCY_OPTIONS" :key="item.value" v-bind="item" /></el-select></el-form-item>
+        <el-form-item label="费率单位"><TiDictSelect v-model="createForm.rateUnit" dict-type="RATE_UNIT" :clearable="false" /></el-form-item>
+        <el-form-item label="币种"><TiDictSelect v-model="createForm.currency" dict-type="CURRENCY" :clearable="false" filterable /></el-form-item>
         <el-form-item label="生效时间"><el-date-picker v-model="createForm.effectiveFrom" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" /></el-form-item>
-        <el-form-item label="维度键"><el-select v-model="createForm.dimensionKeys" multiple filterable><el-option label="年龄" value="age" /><el-option label="性别" value="gender" /><el-option label="缴费年限" value="paymentTerm" /><el-option label="保障年限" value="coverageTerm" /></el-select></el-form-item>
+        <el-form-item label="维度键"><TiDictSelect v-model="createForm.dimensionKeys" dict-type="RATE_DIMENSION" multiple filterable /></el-form-item>
       </el-form>
       <template #footer><el-button @click="createDialog = false">取消</el-button><el-button type="primary" @click="submitCreate">创建</el-button></template>
     </el-dialog>
@@ -57,7 +57,7 @@
       <el-table :data="editingRows" border>
         <el-table-column label="年龄起" width="100"><template #default="{ row }"><el-input-number v-model="row.ageFrom" :min="0" controls-position="right" /></template></el-table-column>
         <el-table-column label="年龄止(开区间)" width="130"><template #default="{ row }"><el-input-number v-model="row.ageToExclusive" :min="1" controls-position="right" /></template></el-table-column>
-        <el-table-column label="性别" width="120"><template #default="{ row }"><el-select v-model="row.gender"><el-option label="男" value="M" /><el-option label="女" value="F" /><el-option label="不限" value="ALL" /></el-select></template></el-table-column>
+        <el-table-column label="性别" width="120"><template #default="{ row }"><TiDictSelect v-model="row.gender" dict-type="GENDER" :clearable="false" /></template></el-table-column>
         <el-table-column label="缴费年限" width="120"><template #default="{ row }"><el-input-number v-model="row.paymentTermYears" :min="1" controls-position="right" /></template></el-table-column>
         <el-table-column label="保障年限" width="120"><template #default="{ row }"><el-input-number v-model="row.coverageTermYears" :min="1" controls-position="right" /></template></el-table-column>
         <el-table-column label="费率" width="140"><template #default="{ row }"><el-input-number v-model="row.rate" :min="0" :precision="8" controls-position="right" /></template></el-table-column>
@@ -74,7 +74,7 @@
         <el-descriptions-item label="费率表">{{ detail?.tableCode }}</el-descriptions-item>
         <el-descriptions-item label="版本">{{ detail?.tableVersion }}</el-descriptions-item>
         <el-descriptions-item label="状态">{{ statusLabel(detail?.status || '') }}</el-descriptions-item>
-        <el-descriptions-item label="费率单位">{{ detail?.rateUnit }}</el-descriptions-item>
+        <el-descriptions-item label="费率单位">{{ rateUnitLabel(detail?.rateUnit || '') }}</el-descriptions-item>
         <el-descriptions-item label="币种">{{ detail?.currency }}</el-descriptions-item>
         <el-descriptions-item label="生效时间">{{ detail?.effectiveFrom }}</el-descriptions-item>
         <el-descriptions-item label="定价维度" :span="3">
@@ -100,7 +100,8 @@
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
-import { CURRENCY_OPTIONS } from '@/constants/locale'
+import TiDictSelect from '@/components/TiDictSelect/index.vue'
+import { useDict } from '@/composables/useDict'
 import { listRateTables, getRateTable, createRateTable, replaceRateTableRows, validateRateTable, publishRateTable, retireRateTable, type RateTable, type RateTableRow } from '@/api/pricing'
 import { getProductList } from '@/api/product'
 import type { ProductVO } from '@/types/business.d'
@@ -117,11 +118,11 @@ const detail = ref<RateTable | null>(null)
 const current = ref<RateTable | null>(null)
 const editingRows = ref<RateTableRow[]>([])
 const createForm = reactive({ tableCode: '', tableVersion: 'V1.0', rateUnit: 'SUM_INSURED_RATIO', currency: 'CNY', effectiveFrom: '', dimensionKeys: ['age'] })
-const statusOptions = [{ label: '草稿', value: 'DRAFT' }, { label: '已发布', value: 'PUBLISHED' }, { label: '已退役', value: 'RETIRED' }]
-const statusLabel = (value: string) => statusOptions.find((item) => item.value === value)?.label || value
-const dimensionLabels: Record<string, string> = { age: '年龄', gender: '性别', paymentTerm: '缴费年限', coverageTerm: '保障年限' }
-const dimensionLabel = (value: string) => dimensionLabels[value] || value
-const genderLabel = (value?: string) => ({ M: '男', F: '女', ALL: '不限' }[value || ''] || value || '-')
+const { getLabel: statusLabel } = useDict('RATE_TABLE_STATUS')
+const { getLabel: dimensionLabel } = useDict('RATE_DIMENSION')
+const { getLabel: rateUnitLabel } = useDict('RATE_UNIT')
+const { getLabel: genderDictLabel } = useDict('GENDER')
+const genderLabel = (value?: string) => value ? genderDictLabel(value) : '-'
 
 async function loadTables() {
   if (!productId.value) return

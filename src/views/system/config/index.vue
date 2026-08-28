@@ -40,11 +40,7 @@
         <el-tab-pane label="短信配置" name="sms">
           <el-form :model="form.smsConfig" label-width="120px" style="max-width: 480px">
             <el-form-item label="服务商">
-              <el-select v-model="form.smsConfig.provider" placeholder="请选择" style="width: 100%">
-                <el-option label="阿里云" value="ALIYUN" />
-                <el-option label="腾讯云" value="TENCENT" />
-                <el-option label="华为云" value="HUAWEI" />
-              </el-select>
+              <TiDictSelect v-model="form.smsConfig.provider" dict-type="CLOUD_SERVICE_PROVIDER" placeholder="请选择" style="width: 100%" />
             </el-form-item>
             <el-form-item label="AccessKey">
               <el-input v-model="form.smsConfig.accessKey" placeholder="访问密钥" show-password />
@@ -69,6 +65,7 @@
 import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getSystemConfigs, saveSystemConfigs, type SystemConfig } from '@/api/systemConfig'
+import TiDictSelect from '@/components/TiDictSelect/index.vue'
 
 const activeTab = ref('global')
 const saving = ref(false)

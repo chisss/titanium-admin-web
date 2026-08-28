@@ -12,14 +12,7 @@
         <TiDictSelect v-model="queryParams.category" dict-type="INSURANCE_CATEGORY" style="width: 150px" />
       </el-form-item>
       <el-form-item label="状态">
-        <el-select v-model="queryParams.status" clearable placeholder="全部" style="width: 120px">
-          <el-option label="草稿" value="DRAFT" />
-          <el-option label="待审批" value="PENDING_APPROVAL" />
-          <el-option label="生效中" value="ACTIVE" />
-          <el-option label="已停用" value="INACTIVE" />
-          <el-option label="已过期" value="EXPIRED" />
-          <el-option label="已归档" value="ARCHIVED" />
-        </el-select>
+        <TiDictSelect v-model="queryParams.status" dict-type="CLAUSE_STATUS" placeholder="全部" style="width: 120px" />
       </el-form-item>
     </TiSearchForm>
 
@@ -57,7 +50,7 @@
       <el-table-column prop="version" label="版本" width="80" />
       <el-table-column prop="status" label="状态" width="100">
         <template #default="{ row }">
-          <TiStatusTag :value="row.status" />
+          <TiStatusTag :value="row.status" :label="clauseStatusLabel(row.status)" />
         </template>
       </el-table-column>
       <el-table-column prop="effectiveDate" label="生效日期" width="110" />
@@ -132,14 +125,7 @@
           <el-text>{{ approvalRow?.name }}</el-text>
         </el-form-item>
         <el-form-item label="审批类型" prop="approvalType">
-          <el-select v-model="approvalForm.approvalType" placeholder="请选择审批类型" style="width: 100%">
-            <el-option
-              v-for="option in APPROVAL_TYPE_OPTIONS"
-              :key="option.value"
-              :label="option.label"
-              :value="option.value"
-            />
-          </el-select>
+          <TiDictSelect v-model="approvalForm.approvalType" dict-type="CLAUSE_APPROVAL_TYPE" placeholder="请选择审批类型" style="width: 100%" />
         </el-form-item>
         <el-form-item :label="approvalAction === 'reject' ? '驳回原因' : '审批意见'" prop="comment">
           <el-input
@@ -193,6 +179,7 @@ const userStore = useUserStore()
 
 // 险种分类编码 → 中文标签（与产品详情页同口径，避免列表直显原始码）
 const { getLabel: getCategoryLabel } = useDict('INSURANCE_CATEGORY')
+const { getLabel: clauseStatusLabel } = useDict('CLAUSE_STATUS')
 
 const queryParams = reactive({
   name: '',
@@ -231,11 +218,6 @@ const handleSubmitApproval = async (row: ClauseVO) => {
 
 type ApprovalAction = 'approve' | 'reject'
 
-const APPROVAL_TYPE_OPTIONS: Array<{ label: string; value: ClauseApprovalType }> = [
-  { label: '法务审批', value: 'LEGAL' },
-  { label: '精算审批', value: 'ACTUARIAL' },
-  { label: '管理审批', value: 'MANAGEMENT' },
-]
 const approvalDialogVisible = ref(false)
 const approvalSaving = ref(false)
 const approvalFormRef = ref<FormInstance>()

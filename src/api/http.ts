@@ -41,6 +41,10 @@ http.interceptors.response.use(
     }
 
     if (res.code === 200) {
+      const etag = response.headers.etag as string | undefined
+      if (etag && res.data && typeof res.data === 'object' && !Array.isArray(res.data)) {
+        return { ...res.data, etag }
+      }
       return res.data
     }
 

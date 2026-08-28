@@ -30,7 +30,9 @@ interface DictDataRaw {
   dictValue: string
   dictLabel: string
   dictSort?: number
-  status?: string
+  status?: 'ACTIVE' | 'INACTIVE' | '0' | '1'
+  i18nLabels?: Record<string, string>
+  remark?: string
 }
 
 /**
@@ -38,8 +40,10 @@ interface DictDataRaw {
  * 后端入口为 GET /web/v1/dicts/{dictType}/data，返回 {dictValue,dictLabel,dictSort,status}，
  * 此处映射为前端 DictData 结构（value/label/sort）供 useDict 使用
  */
-export async function getDictDataByType(typeCode: string): Promise<DictData[]> {
-  const raw = (await http.get(`/web/v1/dicts/${typeCode}/data`)) as unknown as DictDataRaw[]
+export async function getDictDataByType(typeCode: string, includeInactive = false): Promise<DictData[]> {
+  const raw = (await http.get(`/web/v1/dicts/${typeCode}/data`, {
+    params: { includeInactive },
+  })) as unknown as DictDataRaw[]
   return (raw || []).map((it) => ({
     id: it.id,
     dictTypeId: '',
@@ -47,21 +51,24 @@ export async function getDictDataByType(typeCode: string): Promise<DictData[]> {
     value: it.dictValue,
     label: it.dictLabel,
     sort: it.dictSort ?? 0,
-    status: (it.status === '0' ? 'ACTIVE' : 'INACTIVE') as DictData['status'],
+    status: (it.status === 'ACTIVE' || it.status === '0' ? 'ACTIVE' : 'INACTIVE') as DictData['status'],
+    i18nLabels: it.i18nLabels,
+    remark: it.remark,
   }))
 }
 
 /** 新增字典数据 */
 export function createDictData(data: Partial<DictData>): Promise<void> {
-  return http.post('/web/v1/dicts/items', data)
+  if (!data.dictTypeCode) return Promise.reject(new Error('缺少字典类型编码'))
+  return http.post(`/web/v1/dicts/${data.dictTypeCode}/data`, data)
 }
 
 /** 更新字典数据（含 i18n 标签） */
 export function updateDictData(id: string, data: Partial<DictData>): Promise<void> {
-  return http.put(`/web/v1/dicts/items/${id}`, data)
+  return http.put(`/web/v1/dicts/data/${id}`, data)
 }
 
 /** 删除字典数据 */
 export function deleteDictData(id: string): Promise<void> {
-  return http.delete(`/web/v1/dicts/items/${id}`)
+  return http.delete(`/web/v1/dicts/data/${id}`)
 }

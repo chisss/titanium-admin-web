@@ -6,12 +6,7 @@
         <TiDictSelect v-model="queryParams.reportType" dict-type="REGULATORY_REPORT_TYPE" style="width: 180px" />
       </el-form-item>
       <el-form-item label="状态">
-        <el-select v-model="queryParams.status" clearable placeholder="全部" style="width: 130px">
-          <el-option label="草稿" value="DRAFT" />
-          <el-option label="待审" value="SUBMITTED" />
-          <el-option label="已批准" value="APPROVED" />
-          <el-option label="已驳回" value="REJECTED" />
-        </el-select>
+        <TiDictSelect v-model="queryParams.status" dict-type="REGULATORY_STATUS" placeholder="全部" style="width: 130px" />
       </el-form-item>
       <el-form-item label="报告日期">
         <el-date-picker
@@ -49,7 +44,7 @@
         </template>
       </el-table-column>
       <el-table-column prop="reportType" label="报告类型" min-width="160" show-overflow-tooltip>
-        <template #default="{ row }">{{ row.reportTypeLabel || row.reportType }}</template>
+        <template #default="{ row }">{{ reportTypeLabel(row.reportType) }}</template>
       </el-table-column>
       <el-table-column prop="reportDate" label="报告日期" width="120">
         <template #default="{ row }">{{ row.reportDate || '-' }}</template>
@@ -59,7 +54,7 @@
       </el-table-column>
       <el-table-column prop="status" label="状态" width="100">
         <template #default="{ row }">
-          <TiStatusTag :value="row.status" :color="STATUS_COLOR[row.status]" :label="STATUS_LABEL[row.status]" />
+          <TiStatusTag :value="row.status" :color="STATUS_COLOR[row.status]" :label="regulatoryStatusLabel(row.status)" />
         </template>
       </el-table-column>
       <!-- @vue-generic {RegulatoryReportVO} -->
@@ -128,22 +123,18 @@ import TiSearchForm from '@/components/TiSearchForm/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
 import TiCopyText from '@/components/TiCopyText/index.vue'
+import { useDict } from '@/composables/useDict'
 
 /** 状态标签颜色映射 */
 const STATUS_COLOR: Record<string, string> = {
-  DRAFT: 'info',
+  PENDING: 'info',
   SUBMITTED: 'warning',
   APPROVED: 'success',
   REJECTED: 'danger',
 }
 
-/** 状态中文标签映射 */
-const STATUS_LABEL: Record<string, string> = {
-  DRAFT: '草稿',
-  SUBMITTED: '待审',
-  APPROVED: '已批准',
-  REJECTED: '已驳回',
-}
+const { getLabel: regulatoryStatusLabel } = useDict('REGULATORY_STATUS')
+const { getLabel: reportTypeLabel } = useDict('REGULATORY_REPORT_TYPE')
 
 const queryParams = reactive({
   reportType: undefined as string | undefined,
@@ -204,7 +195,7 @@ const handleSave = async () => {
 const handleView = async (row: RegulatoryReportVO) => {
   const detail = await getRegulatoryReportDetail(row.id)
   ElMessageBox.alert(
-    `报告编号：${detail.reportNo}<br/>报告类型：${detail.reportTypeLabel || detail.reportType}<br/>状态：${STATUS_LABEL[detail.status] || detail.status}`,
+    `报告编号：${detail.reportNo}<br/>报告类型：${detail.reportTypeLabel || detail.reportType}<br/>状态：${regulatoryStatusLabel(detail.status)}`,
     '报告详情',
     { dangerouslyUseHTMLString: true },
   )

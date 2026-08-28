@@ -6,19 +6,10 @@
         <el-input v-model="queryParams.customerId" placeholder="精确查询" clearable style="width: 180px" />
       </el-form-item>
       <el-form-item label="发送渠道">
-        <el-select v-model="queryParams.channel" clearable placeholder="全部" style="width: 130px">
-          <el-option label="短信" value="SMS" />
-          <el-option label="邮件" value="EMAIL" />
-          <el-option label="站内信" value="IN_APP" />
-        </el-select>
+        <TiDictSelect v-model="queryParams.channel" dict-type="NOTIFICATION_CHANNEL" placeholder="全部" style="width: 130px" />
       </el-form-item>
       <el-form-item label="状态">
-        <el-select v-model="queryParams.status" clearable placeholder="全部" style="width: 130px">
-          <el-option label="待发送" value="PENDING" />
-          <el-option label="已发送" value="SENT" />
-          <el-option label="发送失败" value="FAILED" />
-          <el-option label="已读" value="READ" />
-        </el-select>
+        <TiDictSelect v-model="queryParams.status" dict-type="NOTIFICATION_STATUS" placeholder="全部" style="width: 130px" />
       </el-form-item>
     </TiSearchForm>
 
@@ -56,7 +47,7 @@
       <el-table-column prop="channel" label="发送渠道" width="120">
         <template #default="{ row }">
           <el-icon class="ti-channel-icon"><component :is="CHANNEL_ICON[row.channel]" /></el-icon>
-          <span>{{ CHANNEL_LABEL[row.channel] || row.channel }}</span>
+          <span>{{ notificationChannelLabel(row.channel) }}</span>
         </template>
       </el-table-column>
       <el-table-column prop="content" label="内容摘要" min-width="240">
@@ -64,7 +55,7 @@
       </el-table-column>
       <el-table-column prop="status" label="状态" width="100">
         <template #default="{ row }">
-          <TiStatusTag :value="row.status" :color="STATUS_COLOR[row.status]" :label="STATUS_LABEL[row.status]" />
+          <TiStatusTag :value="row.status" :color="STATUS_COLOR[row.status]" :label="notificationStatusLabel(row.status)" />
         </template>
       </el-table-column>
       <el-table-column prop="sentAt" label="发送时间" width="160">
@@ -82,11 +73,7 @@
     <el-dialog v-model="dialogVisible" title="发送新通知" width="560px">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="90px">
         <el-form-item label="发送渠道" prop="channel">
-          <el-select v-model="form.channel" placeholder="请选择" style="width: 100%">
-            <el-option label="短信" value="SMS" />
-            <el-option label="邮件" value="EMAIL" />
-            <el-option label="站内信" value="IN_APP" />
-          </el-select>
+          <TiDictSelect v-model="form.channel" dict-type="NOTIFICATION_CHANNEL" placeholder="请选择" style="width: 100%" />
         </el-form-item>
         <el-form-item label="客户ID" prop="customerId">
           <el-input v-model="form.customerId" />
@@ -118,6 +105,8 @@ import { useTable } from '@/composables/useTable'
 import TiTable from '@/components/TiTable/index.vue'
 import TiSearchForm from '@/components/TiSearchForm/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
+import TiDictSelect from '@/components/TiDictSelect/index.vue'
+import { useDict } from '@/composables/useDict'
 
 /** 渠道图标映射 */
 const CHANNEL_ICON: Record<string, Component> = {
@@ -126,12 +115,8 @@ const CHANNEL_ICON: Record<string, Component> = {
   IN_APP: Bell,
 }
 
-/** 渠道中文标签映射 */
-const CHANNEL_LABEL: Record<string, string> = {
-  SMS: '短信',
-  EMAIL: '邮件',
-  IN_APP: '站内信',
-}
+const { getLabel: notificationChannelLabel } = useDict('NOTIFICATION_CHANNEL')
+const { getLabel: notificationStatusLabel } = useDict('NOTIFICATION_STATUS')
 
 /** 状态标签颜色映射 */
 const STATUS_COLOR: Record<string, string> = {
@@ -139,14 +124,6 @@ const STATUS_COLOR: Record<string, string> = {
   SENT: 'success',
   FAILED: 'danger',
   READ: 'info',
-}
-
-/** 状态中文标签映射 */
-const STATUS_LABEL: Record<string, string> = {
-  PENDING: '待发送',
-  SENT: '已发送',
-  FAILED: '发送失败',
-  READ: '已读',
 }
 
 const queryParams = reactive({

@@ -9,10 +9,7 @@
         <el-input v-model="queryParams.module" clearable style="width: 140px" />
       </el-form-item>
       <el-form-item label="操作状态">
-        <el-select v-model="queryParams.status" clearable placeholder="全部" style="width: 110px">
-          <el-option label="成功" value="SUCCESS" />
-          <el-option label="失败" value="FAIL" />
-        </el-select>
+        <TiDictSelect v-model="queryParams.status" dict-type="OPERATION_RESULT" placeholder="全部" style="width: 110px" />
       </el-form-item>
       <el-form-item label="操作时间">
         <el-date-picker
@@ -46,7 +43,7 @@
       <el-table-column prop="status" label="状态" width="90">
         <template #default="{ row }">
           <el-tag :type="row.status === 'SUCCESS' ? 'success' : 'danger'" size="small">
-            {{ row.status === 'SUCCESS' ? '成功' : '失败' }}
+            {{ operationResultLabel(row.status) }}
           </el-tag>
         </template>
       </el-table-column>
@@ -70,7 +67,7 @@
         <el-descriptions-item label="耗时">{{ selectedLog.duration }} ms</el-descriptions-item>
         <el-descriptions-item label="状态">
           <el-tag :type="selectedLog.status === 'SUCCESS' ? 'success' : 'danger'" size="small">
-            {{ selectedLog.status === 'SUCCESS' ? '成功' : '失败' }}
+            {{ operationResultLabel(selectedLog.status) }}
           </el-tag>
         </el-descriptions-item>
         <el-descriptions-item label="操作时间" :span="2">{{ selectedLog.createdAt }}</el-descriptions-item>
@@ -89,8 +86,12 @@ import { getOperationLogs } from '@/api/log'
 import { useTable } from '@/composables/useTable'
 import TiTable from '@/components/TiTable/index.vue'
 import TiSearchForm from '@/components/TiSearchForm/index.vue'
+import TiDictSelect from '@/components/TiDictSelect/index.vue'
+import { useDict } from '@/composables/useDict'
 import type { OperationLog } from '@/types/business.d'
 import type { PageResult } from '@/types/api.d'
+
+const { getLabel: operationResultLabel } = useDict('OPERATION_RESULT')
 
 const queryParams = reactive({
   username: '',

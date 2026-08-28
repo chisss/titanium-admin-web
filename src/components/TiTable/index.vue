@@ -11,7 +11,7 @@
     >
       <slot />
       <template #empty>
-        <slot name="empty" />
+        <slot name="empty"><el-empty :description="t('common.noData')" :image-size="72" /></slot>
       </template>
     </el-table>
     <div v-if="total > 0" class="ti-pagination">
@@ -30,6 +30,9 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 /** TiTable 属性 */
 interface Props {
   /** 表格数据 */

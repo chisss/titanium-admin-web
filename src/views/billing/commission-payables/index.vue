@@ -7,9 +7,7 @@
 
     <TiSearchForm :model="queryParams" @search="handleSearch" @reset="handleReset">
       <el-form-item label="状态">
-        <el-select v-model="queryParams.status" clearable placeholder="全部" style="width: 150px">
-          <el-option v-for="item in statusOptions" :key="item.value" v-bind="item" />
-        </el-select>
+        <TiDictSelect v-model="queryParams.status" dict-type="COMMISSION_PAYABLE_STATUS" placeholder="全部" style="width: 150px" />
       </el-form-item>
       <el-form-item label="渠道">
         <el-select v-model="queryParams.channelId" clearable filterable placeholder="全部渠道" style="width: 240px">
@@ -99,19 +97,18 @@ import TiSearchForm from '@/components/TiSearchForm/index.vue'
 import TiTable from '@/components/TiTable/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import TiCopyText from '@/components/TiCopyText/index.vue'
+import TiDictSelect from '@/components/TiDictSelect/index.vue'
+import { useDict } from '@/composables/useDict'
 
 const router = useRouter()
 const channels = ref<ChannelVO[]>([])
 const isNarrowScreen = useMediaQuery('(max-width: 767px)')
 const queryParams = reactive({ status: undefined as CommissionPayableStatus | undefined, channelId: '', beneficiaryId: '' })
-const statusOptions = [
-  { label: '待结算', value: 'PENDING' }, { label: '部分结算', value: 'PARTIALLY_SETTLED' }, { label: '已结算', value: 'SETTLED' },
-  { label: '回拨中', value: 'CLAWBACK_PENDING' }, { label: '已回拨', value: 'CLAWED_BACK' }, { label: '已取消', value: 'CANCELLED' },
-]
-const statusLabel = (value: string) => statusOptions.find((item) => item.value === value)?.label || value
+const { getLabel: statusLabel } = useDict('COMMISSION_PAYABLE_STATUS')
+const { getLabel: beneficiaryTypeLabel } = useDict('COMMISSION_BENEFICIARY_TYPE')
 const amountText = (value?: number, currency = 'CNY') => value === undefined || value === null ? '***' : `${currency} ${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 const rateText = (value?: number) => value === undefined || value === null ? '***' : `${(value * 100).toFixed(4).replace(/0+$/, '').replace(/\.$/, '')}%`
-const beneficiaryLabel = (value: unknown) => { const row = value as CommissionPayableVO; return row.beneficiaryId === '***' ? '***' : `${row.beneficiaryType} / ${row.beneficiaryId}` }
+const beneficiaryLabel = (value: unknown) => { const row = value as CommissionPayableVO; return row.beneficiaryId === '***' ? '***' : `${beneficiaryTypeLabel(row.beneficiaryType)} / ${row.beneficiaryId}` }
 const canSettle = (value: unknown) => { const row = value as CommissionPayableVO; return ['PENDING', 'PARTIALLY_SETTLED'].includes(row.status) && row.payableAmount !== undefined }
 const canClawback = (value: unknown) => { const row = value as CommissionPayableVO; return ['PARTIALLY_SETTLED', 'SETTLED'].includes(row.status) && (row.settledAmount || 0) > 0 }
 

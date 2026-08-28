@@ -247,14 +247,7 @@
           <el-table :data="form.documentConfig.documentTemplates" size="small" border style="width: 100%">
             <el-table-column label="文档类型" width="180">
               <template #default="{ row }">
-                <el-select v-model="row.documentType" placeholder="选择类型" size="small" style="width: 100%">
-                  <el-option
-                    v-for="opt in documentTypeOptions"
-                    :key="opt.value"
-                    :label="opt.label"
-                    :value="opt.value"
-                  />
-                </el-select>
+                <TiDictSelect v-model="row.documentType" dict-type="PRODUCT_DOCUMENT_TYPE" placeholder="选择类型" size="small" style="width: 100%" />
               </template>
             </el-table-column>
             <el-table-column label="模板编码" width="150">
@@ -269,11 +262,7 @@
             </el-table-column>
             <el-table-column label="输出格式" width="110">
               <template #default="{ row }">
-                <el-select v-model="row.outputFormat" size="small" style="width: 100%">
-                  <el-option label="PDF" value="PDF" />
-                  <el-option label="JPG" value="JPG" />
-                  <el-option label="PNG" value="PNG" />
-                </el-select>
+                <TiDictSelect v-model="row.outputFormat" dict-type="PRODUCT_DOCUMENT_FORMAT" :clearable="false" size="small" style="width: 100%" />
               </template>
             </el-table-column>
             <el-table-column label="自动生成" width="90" align="center">
@@ -335,11 +324,7 @@
           <el-input v-model="templateForm.templateCode" placeholder="如：TPL-MED-001" />
         </el-form-item>
         <el-form-item label="出单模式">
-          <el-select v-model="templateForm.issuanceMode" style="width: 100%">
-            <el-option label="一步出单（录入即出单）" value="ONE_STEP" />
-            <el-option label="两步出单（投保→保单）" value="TWO_STEP" />
-            <el-option label="三步出单（意向→投保→核保→保单）" value="THREE_STEP" />
-          </el-select>
+          <TiDictSelect v-model="templateForm.issuanceMode" dict-type="ISSUANCE_MODE" :clearable="false" style="width: 100%" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -398,16 +383,6 @@ const form = reactive<CreateProductForm>({
   pricingMode: 'RATE_TABLE',
   documentConfig: { requiredMaterials: [], documentTemplates: [] },
 })
-
-// 文档类型选项（对齐后端 DocumentType 枚举常量名）
-const documentTypeOptions = [
-  { value: 'APPLICATION_FORM', label: '投保单' },
-  { value: 'POLICY', label: '保单' },
-  { value: 'HEALTH_NOTICE', label: '健康告知书' },
-  { value: 'CLAIM_MATERIAL_LIST', label: '理赔材料清单' },
-  { value: 'RENEWAL_NOTICE', label: '续保通知书' },
-  { value: 'PREMIUM_RECEIPT', label: '保费收据' },
-]
 
 // 文档配置行操作
 function addMaterial() {

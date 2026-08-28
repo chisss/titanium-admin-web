@@ -12,10 +12,7 @@
         <TiDictSelect v-model="queryParams.channelType" dict-type="CHANNEL_TYPE" style="width: 150px" />
       </el-form-item>
       <el-form-item label="状态">
-        <el-select v-model="queryParams.status" clearable placeholder="全部" style="width: 120px">
-          <el-option label="启用" value="ACTIVE" />
-          <el-option label="停用" value="INACTIVE" />
-        </el-select>
+        <TiDictSelect v-model="queryParams.status" dict-type="COMMON_STATUS" placeholder="全部" style="width: 120px" />
       </el-form-item>
     </TiSearchForm>
 
@@ -53,7 +50,7 @@
       </el-table-column>
       <el-table-column prop="status" label="状态" width="100">
         <template #default="{ row }">
-          <TiStatusTag :value="row.status" :label="row.status === 'ACTIVE' ? '启用' : '停用'" />
+          <TiStatusTag :value="row.status" :label="commonStatusLabel(row.status)" />
         </template>
       </el-table-column>
       <el-table-column prop="createdAt" label="创建时间" width="160" />
@@ -129,6 +126,9 @@ import TiSearchForm from '@/components/TiSearchForm/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
 import TiCopyText from '@/components/TiCopyText/index.vue'
+import { useDict } from '@/composables/useDict'
+
+const { getLabel: commonStatusLabel } = useDict('COMMON_STATUS')
 
 const queryParams = reactive({
   channelName: '',

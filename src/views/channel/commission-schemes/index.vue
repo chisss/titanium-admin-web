@@ -18,9 +18,7 @@
           </el-select>
         </el-form-item>
         <el-form-item label="状态">
-          <el-select v-model="queryParams.status" clearable placeholder="全部" style="width: 130px" @change="handleSearch">
-            <el-option v-for="item in statusOptions" :key="item.value" v-bind="item" />
-          </el-select>
+          <TiDictSelect v-model="queryParams.status" dict-type="CONFIG_LIFECYCLE_STATUS" placeholder="全部" style="width: 130px" @change="handleSearch" />
         </el-form-item>
         <el-button type="primary" @click="handleSearch">查询</el-button>
       </el-form>
@@ -66,15 +64,13 @@
           <el-form-item label="方案编码" prop="schemeCode"><el-input v-model="form.schemeCode" /></el-form-item>
           <el-form-item label="方案版本" prop="schemeVersion"><el-input v-model="form.schemeVersion" /></el-form-item>
           <el-form-item label="方案名称" prop="schemeName"><el-input v-model="form.schemeName" /></el-form-item>
-          <el-form-item label="币种" prop="currency"><el-select v-model="form.currency" filterable><el-option v-for="item in CURRENCY_OPTIONS" :key="item.value" v-bind="item" /></el-select></el-form-item>
+          <el-form-item label="币种" prop="currency"><TiDictSelect v-model="form.currency" dict-type="CURRENCY" :clearable="false" filterable /></el-form-item>
           <el-form-item label="计算方式" prop="calculationMethod"><el-segmented v-model="form.calculationMethod" :options="methodOptions" /></el-form-item>
           <el-form-item v-if="form.calculationMethod === 'PERCENTAGE'" label="佣金比例" prop="rate"><el-input-number v-model="form.rate" :min="0" :max="1" :step="0.01" :precision="6" /></el-form-item>
           <el-form-item v-if="form.calculationMethod === 'FIXED'" label="定额佣金" prop="fixedAmount"><el-input-number v-model="form.fixedAmount" :min="0" :precision="2" /></el-form-item>
           <el-form-item label="佣金封顶"><el-input-number v-model="form.capAmount" :min="0" :precision="2" placeholder="不封顶" /></el-form-item>
           <el-form-item label="佣金基数" prop="baseComponentCodes">
-            <el-select v-model="form.baseComponentCodes" multiple filterable allow-create default-first-option placeholder="选择或输入费用项编码">
-              <el-option v-for="code in baseComponentOptions" :key="code" :label="code" :value="code" />
-            </el-select>
+            <TiDictSelect v-model="form.baseComponentCodes" dict-type="COMMISSION_BASE_COMPONENT" multiple filterable allow-create default-first-option placeholder="选择或输入费用项编码" />
           </el-form-item>
           <el-form-item label="适用保单年度"><div class="inline-range"><el-input-number v-model="form.policyYearFrom" :min="1" /><span>至</span><el-input-number v-model="form.policyYearTo" :min="form.policyYearFrom" /></div></el-form-item>
           <el-form-item label="结算期数"><el-input-number v-model="form.installmentCount" :min="1" /></el-form-item>
@@ -98,7 +94,7 @@
 
         <el-divider content-position="left">分润指令</el-divider>
         <el-table :data="form.splits" border size="small">
-          <el-table-column label="受益方类型" min-width="150"><template #default="{ row }"><el-select v-model="row.beneficiaryType"><el-option label="渠道" value="CHANNEL" /><el-option label="代理人" value="AGENT" /><el-option label="经纪人" value="BROKER" /></el-select></template></el-table-column>
+          <el-table-column label="受益方类型" min-width="150"><template #default="{ row }"><TiDictSelect v-model="row.beneficiaryType" dict-type="COMMISSION_BENEFICIARY_TYPE" :clearable="false" /></template></el-table-column>
           <el-table-column label="受益方ID" min-width="190"><template #default="{ row }"><el-input v-model="row.beneficiaryId" /></template></el-table-column>
           <el-table-column label="分润比例" min-width="150"><template #default="{ row }"><el-input-number v-model="row.splitRate" :min="0" :max="1" :precision="6" /></template></el-table-column>
           <el-table-column label="顺序" width="110"><template #default="{ row }"><el-input-number v-model="row.sortOrder" :min="1" /></template></el-table-column>
@@ -139,20 +135,18 @@ import {
 } from '@/api/channel'
 import type { ProductVO } from '@/types/business.d'
 import type { PageResult } from '@/types/api.d'
-import { CURRENCY_OPTIONS } from '@/constants/locale'
 import { useTable } from '@/composables/useTable'
 import TiTable from '@/components/TiTable/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
+import TiDictSelect from '@/components/TiDictSelect/index.vue'
+import { useDict } from '@/composables/useDict'
 
 const channels = ref<ChannelVO[]>([])
 const products = ref<ProductVO[]>([])
 const queryParams = reactive({ channelId: '', productId: '', status: undefined as CommissionSchemeStatus | undefined })
 const isNarrowScreen = useMediaQuery('(max-width: 767px)')
-const statusOptions = [{ label: '草稿', value: 'DRAFT' }, { label: '已审批', value: 'APPROVED' }, { label: '已发布', value: 'PUBLISHED' }, { label: '已退役', value: 'RETIRED' }]
-const methodOptions = [{ label: '比例', value: 'PERCENTAGE' }, { label: '定额', value: 'FIXED' }, { label: '阶梯', value: 'TIERED' }]
-const baseComponentOptions = ['BASE_PREMIUM', 'RISK_PREMIUM', 'GROSS_PREMIUM']
-const statusLabel = (value: string) => statusOptions.find((item) => item.value === value)?.label || value
-const methodLabel = (value: string) => methodOptions.find((item) => item.value === value)?.label || value
+const { dictOptions: methodOptions, getLabel: methodLabel } = useDict('COMMISSION_METHOD')
+const { getLabel: statusLabel } = useDict('CONFIG_LIFECYCLE_STATUS')
 const rateText = (value?: number) => value === undefined ? '-' : `${(value * 100).toFixed(4).replace(/0+$/, '').replace(/\.$/, '')}%`
 const amountText = (value?: number, currency = 'CNY') => value === undefined ? '-' : `${currency} ${value.toFixed(2)}`
 const calculationLabel = (value: unknown) => { const row = value as CommissionScheme; return row.calculationMethod === 'PERCENTAGE' ? rateText(row.rate) : row.calculationMethod === 'FIXED' ? amountText(row.fixedAmount, row.currency) : `${row.tiers.length} 个阶梯` }

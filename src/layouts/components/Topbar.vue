@@ -7,6 +7,7 @@
         class="topbar__collapse-btn"
         :icon="collapsed ? Expand : Fold"
         text
+        :aria-label="collapsed ? '展开侧栏' : '收起侧栏'"
         @click="toggleSidebar"
       />
       <el-breadcrumb separator="/" class="topbar__breadcrumb">
@@ -24,7 +25,7 @@
     <div class="topbar__right">
       <!-- 语言切换 -->
       <el-dropdown trigger="click" @command="handleLocaleChange">
-        <el-button text class="topbar__lang-btn">
+        <el-button text class="topbar__lang-btn" :aria-label="`切换语言，当前${currentLocaleName}`">
           <span class="topbar__lang-icon" aria-hidden="true">🌐</span>
           <span class="topbar__lang-label">{{ currentLocaleName }}</span>
           <el-icon class="el-icon--right"><ArrowDown /></el-icon>
@@ -44,7 +45,7 @@
 
       <!-- 用户头像 + 下拉菜单 -->
       <el-dropdown trigger="click" @command="handleUserCommand">
-        <div class="topbar__user">
+        <div class="topbar__user" role="button" tabindex="0" aria-label="用户菜单">
           <el-avatar :size="32" :src="userStore.avatar">
             {{ userStore.displayName.charAt(0) }}
           </el-avatar>

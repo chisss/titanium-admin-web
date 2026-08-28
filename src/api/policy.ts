@@ -28,6 +28,7 @@ export interface CustomerPolicyVO {
 
 /** 保单受益人读模型（字段与 policy-query 的 PolicyBeneficiaryQueryResult 对齐） */
 export interface PolicyBeneficiaryVO {
+  beneficiaryId?: string
   customerId?: string
   beneficiaryName?: string
   beneficiaryType?: string

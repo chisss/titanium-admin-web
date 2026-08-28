@@ -9,12 +9,7 @@
         <el-input v-model="queryParams.policyId" clearable style="width: 160px" />
       </el-form-item>
       <el-form-item label="账单状态">
-        <el-select v-model="queryParams.status" clearable placeholder="全部" style="width: 130px">
-          <el-option label="待缴费" value="ISSUED" />
-          <el-option label="已缴费" value="PAID" />
-          <el-option label="已逾期" value="OVERDUE" />
-          <el-option label="已取消" value="CANCELLED" />
-        </el-select>
+        <TiDictSelect v-model="queryParams.status" dict-type="BILL_STATUS" placeholder="全部" style="width: 130px" />
       </el-form-item>
       <el-form-item label="到期日">
         <el-date-picker
@@ -82,9 +77,12 @@ import TiTable from '@/components/TiTable/index.vue'
 import TiSearchForm from '@/components/TiSearchForm/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import TiCopyText from '@/components/TiCopyText/index.vue'
+import TiDictSelect from '@/components/TiDictSelect/index.vue'
+import { useDict } from '@/composables/useDict'
 import type { PageResult } from '@/types/api.d'
 
 const router = useRouter()
+const { getLabel: billStatusLabel } = useDict('BILL_STATUS')
 
 const queryParams = reactive({
   billNo: '',
@@ -100,16 +98,6 @@ const { tableData, tableLoading, pagination, fetchData, handleSearch, handleRese
   }, queryParams)
 
 fetchData()
-
-const BILL_STATUS_LABELS: Record<BillVO['status'], string> = {
-  ISSUED: '待缴费',
-  PAID: '已缴费',
-  OVERDUE: '已逾期',
-  CANCELLED: '已取消',
-}
-
-/** 将 Billing 内部状态枚举转换为后台展示文案。 */
-const billStatusLabel = (status: BillVO['status']) => BILL_STATUS_LABELS[status] || status
 
 /** 跳转详情页 */
 const toDetail = (id?: string) => {

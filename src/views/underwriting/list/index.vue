@@ -9,13 +9,7 @@
         <el-input v-model="queryParams.insuredName" clearable style="width: 130px" />
       </el-form-item>
       <el-form-item label="核保状态">
-        <el-select v-model="queryParams.status" clearable placeholder="全部" style="width: 150px">
-          <el-option label="待核保" value="PENDING" />
-          <el-option label="智能核保中" value="AUTO_REVIEWING" />
-          <el-option label="人工核保中" value="MANUAL_REVIEWING" />
-          <el-option label="核保通过" value="APPROVED" />
-          <el-option label="核保拒绝" value="DECLINED" />
-        </el-select>
+        <TiDictSelect v-model="queryParams.status" dict-type="UNDERWRITING_STATUS" placeholder="全部" style="width: 150px" />
       </el-form-item>
       <el-form-item label="申请时间">
         <el-date-picker
@@ -55,7 +49,7 @@
       <el-table-column prop="applyTime" label="申请时间" width="160" />
       <el-table-column prop="status" label="核保状态" width="120">
         <template #default="{ row }">
-          <TiStatusTag :value="row.status" />
+          <TiStatusTag :value="row.status" :label="underwritingStatusLabel(row.status)" />
         </template>
       </el-table-column>
       <el-table-column prop="decisionTime" label="决策时间" width="160">
@@ -91,9 +85,12 @@ import TiTable from '@/components/TiTable/index.vue'
 import TiSearchForm from '@/components/TiSearchForm/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import TiCopyText from '@/components/TiCopyText/index.vue'
+import TiDictSelect from '@/components/TiDictSelect/index.vue'
+import { useDict } from '@/composables/useDict'
 import type { PageResult } from '@/types/api.d'
 
 const router = useRouter()
+const { getLabel: underwritingStatusLabel } = useDict('UNDERWRITING_STATUS')
 
 const queryParams = reactive({
   caseNo: '',

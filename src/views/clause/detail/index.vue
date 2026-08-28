@@ -73,26 +73,14 @@ const loading = ref(false)
 const clause = ref<ClauseVO | null>(null)
 
 const { getLabel: getCategoryLabel } = useDict('INSURANCE_CATEGORY')
+const { getLabel: clauseTypeDictLabel } = useDict('CLAUSE_TYPE')
+const { getLabel: coverageTypeDictLabel } = useDict('COVERAGE_TYPE')
+const { getLabel: payoutTypeDictLabel } = useDict('PAYOUT_TYPE')
 
 // —— 标签/格式化工具（后端枚举码 → 中文，空值统一占位 '-'，与条款编辑页同口径） ——
-const clauseTypeLabel = (v?: string) =>
-  v === 'MAIN' ? '主条款' : v === 'ADDITIONAL' ? '附加条款' : v === 'EXCLUSION' ? '免责条款' : v || '-'
-
-const COVERAGE_TYPES: Record<string, string> = {
-  CRITICAL_ILLNESS: '重疾',
-  MEDICAL: '医疗',
-  ACCIDENT: '意外',
-  DEATH: '身故',
-}
-const PAYOUT_TYPES: Record<string, string> = {
-  REIMBURSEMENT: '报销',
-  PROPORTIONAL: '比例赔付',
-  ACTUAL_LOSS: '按损赔付',
-  FIXED: '定额给付',
-  PERIODIC: '周期给付/津贴',
-}
-const coverageTypeLabel = (v?: string) => (v ? COVERAGE_TYPES[v] ?? v : '-')
-const payoutTypeLabel = (v?: string) => (v ? PAYOUT_TYPES[v] ?? v : '-')
+const clauseTypeLabel = (v?: string) => v ? clauseTypeDictLabel(v) : '-'
+const coverageTypeLabel = (v?: string) => v ? coverageTypeDictLabel(v) : '-'
+const payoutTypeLabel = (v?: string) => v ? payoutTypeDictLabel(v) : '-'
 
 /** 保险金额展示：优先最高保额，退化到赔付上限/日津贴 */
 const coverageAmountText = (row: CoverageVO): string => {

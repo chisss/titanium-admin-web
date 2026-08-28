@@ -193,16 +193,10 @@ export const dynamicRoutes: RouteRecordRaw[] = [
             meta: { title: '保全工作台', permission: 'maintenance:view', hidden: true },
           },
           {
-            path: 'detail/:id',
-            name: 'MaintenanceDetail',
-            component: () => import('@/views/maintenance/detail/index.vue'),
-            meta: { title: '保全详情', permission: 'maintenance:view', hidden: true },
-          },
-          {
             path: 'configuration',
             name: 'MaintenanceConfiguration',
             component: () => import('@/views/maintenance/configuration/index.vue'),
-            meta: { title: '保全项配置', permission: 'maintenance:list' },
+            meta: { title: '保全项配置', permission: 'maintenance:config:view' },
           },
         ],
       },

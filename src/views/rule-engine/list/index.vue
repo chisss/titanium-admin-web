@@ -3,7 +3,7 @@
     <div class="page-intro"><h2>规则集管理</h2><p>统一维护核保、定价、理赔和保全规则。规则发布前请先验证输入特征与执行结果。</p></div>
     <div class="ti-toolbar">
       <el-form inline>
-        <el-form-item label="规则类型"><el-select v-model="type" style="width: 150px" @change="load"><el-option v-for="item in types" :key="item.value" v-bind="item" /></el-select></el-form-item>
+        <el-form-item label="规则类型"><TiDictSelect v-model="type" dict-type="RULE_SET_TYPE" :clearable="false" style="width: 150px" @change="load" /></el-form-item>
         <el-button :icon="Refresh" @click="load">刷新</el-button>
       </el-form>
       <el-button type="primary" v-permission="'rule-engine:create'" @click="openCreate">新建规则集</el-button>
@@ -27,7 +27,7 @@
         <el-form-item label="名称"><el-input v-model="form.ruleSetName" /></el-form-item>
         <el-form-item label="版本"><el-input v-model="form.ruleSetVersion" /></el-form-item>
         <el-form-item label="输入版本"><el-input v-model="form.inputSchemaVersion" /></el-form-item>
-        <el-form-item label="类型"><el-select v-model="form.ruleSetType"><el-option v-for="item in types" :key="item.value" v-bind="item" /></el-select></el-form-item>
+        <el-form-item label="类型"><TiDictSelect v-model="form.ruleSetType" dict-type="RULE_SET_TYPE" :clearable="false" /></el-form-item>
         <el-form-item label="描述"><el-input v-model="form.description" type="textarea" /></el-form-item>
       </el-form>
       <template #footer><el-button @click="createVisible = false">取消</el-button><el-button type="primary" @click="submitCreate">创建并配置规则</el-button></template>
@@ -61,7 +61,7 @@
         <el-form-item label="规则名称"><el-input v-model="ruleForm.rule.ruleName" /></el-form-item>
         <el-form-item label="优先级"><el-input-number v-model="ruleForm.rule.priority" :min="0" /></el-form-item>
         <el-form-item label="条件表达式"><el-input v-model="ruleForm.rule.condition" placeholder="如 age < 60" /></el-form-item>
-        <el-form-item label="命中动作"><el-select v-model="ruleForm.rule.action"><el-option label="通过" value="PASS" /><el-option label="拒绝" value="REJECT" /><el-option label="人工复核" value="REFER" /></el-select></el-form-item>
+        <el-form-item label="命中动作"><TiDictSelect v-model="ruleForm.rule.action" dict-type="RULE_ACTION" :clearable="false" /></el-form-item>
         <el-form-item label="计算表达式"><el-input v-model="ruleForm.rule.computeExpression" placeholder="如 sumInsured * baseRate" /></el-form-item>
         <el-form-item label="动作参数"><el-input v-model="ruleForm.actionParamsText" type="textarea" placeholder="JSON 对象，可留空" /></el-form-item>
       </el-form>
@@ -75,15 +75,16 @@ import { reactive, ref } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
+import TiDictSelect from '@/components/TiDictSelect/index.vue'
+import { useDict } from '@/composables/useDict'
 import { activateRuleSet, addRule, createRuleSet, deactivateRuleSet, getRuleSet, listRuleSets, type RuleSet } from '@/api/rule-engine'
 
 const type = ref('PRICING'); const loading = ref(false); const ruleSets = ref<RuleSet[]>([]); const createVisible = ref(false); const detailVisible = ref(false); const detail = ref<RuleSet | null>(null); const ruleVisible = ref(false)
 const ruleForm = reactive({ actionParamsText: '{}', rule: { ruleName: '', priority: 10, condition: '', action: 'PASS', computeExpression: '' } })
-const types = [{ label: '定价', value: 'PRICING' }, { label: '核保', value: 'UNDERWRITING' }, { label: '校验', value: 'VALIDATION' }, { label: '理赔', value: 'CLAIM' }, { label: '保全', value: 'MAINTENANCE' }]
 const form = reactive({ ruleSetCode: '', ruleSetName: '', ruleSetVersion: 'V1.0', inputSchemaVersion: 'V1.0', ruleSetType: 'PRICING', description: '' })
-const statusLabel = (value: string) => ({ DRAFT: '草稿', ACTIVE: '已激活', INACTIVE: '已停用' }[value] || value)
-const typeLabel = (value: string) => types.find((item) => item.value === value)?.label || value
-const actionLabel = (value: string) => ({ PASS: '通过', REJECT: '拒绝', REFER: '人工复核' }[value] || value)
+const { getLabel: statusLabel } = useDict('RULE_SET_STATUS')
+const { getLabel: typeLabel } = useDict('RULE_SET_TYPE')
+const { getLabel: actionLabel } = useDict('RULE_ACTION')
 const formatParams = (value?: Record<string, unknown>) => value && Object.keys(value).length ? JSON.stringify(value) : '-'
 
 async function load() { loading.value = true; try { const result = await listRuleSets(type.value); ruleSets.value = result.list || [] } finally { loading.value = false } }

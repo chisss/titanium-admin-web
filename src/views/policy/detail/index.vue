@@ -84,7 +84,16 @@
 
         <!-- Tab4：保全记录 -->
         <el-tab-pane label="保全记录" name="maintenance">
-          <el-empty description="暂无保全记录" :image-size="80" />
+          <el-table v-loading="maintenanceLoading" :data="maintenanceRecords" border stripe>
+            <el-table-column prop="caseId" label="案件 ID" min-width="190" />
+            <el-table-column label="保全项" min-width="190"><template #default="{ row }">{{ row.itemCodes?.join('、') || '-' }}</template></el-table-column>
+            <el-table-column prop="source" label="来源" width="110"><template #default="{ row }">{{ row.source === 'MANUAL' ? '后台人工' : 'API 自动' }}</template></el-table-column>
+            <el-table-column prop="status" label="案件状态" width="120"><template #default="{ row }"><TiStatusTag :value="row.status" /></template></el-table-column>
+            <el-table-column prop="effectStatus" label="生效状态" width="120"><template #default="{ row }"><TiStatusTag :value="row.effectStatus || 'NOT_STARTED'" /></template></el-table-column>
+            <el-table-column prop="createdAt" label="创建时间" width="175" />
+            <el-table-column label="查看" width="100"><template #default="{ row }"><el-button link type="primary" @click="$router.push(`/maintenance/workbench/${row.caseId}`)">工作台</el-button></template></el-table-column>
+            <template #empty><el-empty description="暂无保全记录" :image-size="80" /></template>
+          </el-table>
         </el-tab-pane>
 
         <!-- Tab5：操作日志 -->
@@ -127,12 +136,7 @@
       </el-alert>
       <el-form :model="forms.terminate" label-width="110px">
         <el-form-item label="终止原因" required>
-          <el-select v-model="forms.terminate.terminationReason" style="width: 100%">
-            <el-option label="客户主动退保" value="WITHDRAWAL" />
-            <el-option label="保费逾期失效" value="LAPSE" />
-            <el-option label="满期终止" value="EXPIRATION" />
-            <el-option label="保险责任终止" value="CONTRACT_TERMINATION" />
-          </el-select>
+          <TiDictSelect v-model="forms.terminate.terminationReason" dict-type="POLICY_TERMINATION_REASON" :clearable="false" style="width: 100%" />
         </el-form-item>
         <el-form-item label="备注说明">
           <el-input v-model="forms.terminate.reason" type="textarea" :rows="2" />
@@ -151,13 +155,7 @@
           <el-input v-model="forms.endorsement.endorsementNo" placeholder="请输入批单号" />
         </el-form-item>
         <el-form-item label="批改类型" required>
-          <el-select v-model="forms.endorsement.updateType" style="width: 100%">
-            <el-option label="受益人变更" value="BENEFICIARY_CHANGE" />
-            <el-option label="保单信息变更" value="POLICY_INFO_CHANGE" />
-            <el-option label="保额变更" value="COVERAGE_CHANGE" />
-            <el-option label="被保人信息变更" value="INSURED_INFO_CHANGE" />
-            <el-option label="投保人变更" value="HOLDER_CHANGE" />
-          </el-select>
+          <TiDictSelect v-model="forms.endorsement.updateType" dict-type="MAINTENANCE_TYPE" :clearable="false" style="width: 100%" />
         </el-form-item>
         <el-form-item label="变更说明" required>
           <el-input v-model="forms.endorsement.changeSummary" type="textarea" :rows="3" placeholder="请描述具体变更内容" />
@@ -175,7 +173,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, reactive } from 'vue'
+import { ref, computed, onMounted, reactive, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -189,13 +187,17 @@ import {
   type PolicyDataUpdateType, type TerminationReason,
 } from '@/api/policy'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
+import TiDictSelect from '@/components/TiDictSelect/index.vue'
 import type { PolicyVO } from '@/types/business.d'
+import { getMaintenanceCaseList, type MaintenanceCaseSummary } from '@/api/maintenance'
 
 const route = useRoute()
 const loading = ref(false)
 const submitting = ref(false)
 const policy = ref<PolicyVO | null>(null)
 const activeTab = ref('basic')
+const maintenanceLoading = ref(false)
+const maintenanceRecords = ref<MaintenanceCaseSummary[]>([])
 
 /** 对话框开关 */
 const dialogs = reactive({
@@ -335,6 +337,25 @@ const loadPolicy = async () => {
     loading.value = false
   }
 }
+
+const loadMaintenanceRecords = async () => {
+  if (!policy.value || maintenanceLoading.value) return
+  maintenanceLoading.value = true
+  try {
+    const result = await getMaintenanceCaseList({
+      policyNumber: policy.value.policyNo,
+      pageNum: 1,
+      pageSize: 100,
+    })
+    maintenanceRecords.value = result.list || []
+  } finally {
+    maintenanceLoading.value = false
+  }
+}
+
+watch(activeTab, (tab) => {
+  if (tab === 'maintenance') loadMaintenanceRecords()
+})
 
 onMounted(loadPolicy)
 </script>
