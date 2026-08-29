@@ -27,7 +27,6 @@
       @size-change="onSizeChange"
     >
       <el-table-column prop="payableId" label="应付编号" min-width="190"><template #default="{ row }"><TiCopyText :text="row.payableId" /></template></el-table-column>
-      <el-table-column prop="policyId" label="保单ID" min-width="180"><template #default="{ row }"><TiCopyText :text="row.policyId" /></template></el-table-column>
       <el-table-column label="佣金方案" min-width="180"><template #default="{ row }">{{ row.schemeCode }} / {{ row.schemeVersion }}</template></el-table-column>
       <el-table-column label="受益方" min-width="180"><template #default="{ row }">{{ beneficiaryLabel(row) }}</template></el-table-column>
       <el-table-column label="应付金额" width="135"><template #default="{ row }">{{ amountText(row.payableAmount, row.currency) }}</template></el-table-column>
@@ -61,7 +60,6 @@
         <el-descriptions-item label="应付编号" :span="2">{{ detail.payableId }}</el-descriptions-item>
         <el-descriptions-item label="状态">{{ statusLabel(detail.status) }}</el-descriptions-item>
         <el-descriptions-item label="账单ID">{{ detail.billId }}</el-descriptions-item>
-        <el-descriptions-item label="保单ID">{{ detail.policyId }}</el-descriptions-item>
         <el-descriptions-item label="计算ID">{{ detail.calculationId }}</el-descriptions-item>
         <el-descriptions-item label="渠道">{{ detail.channelId }}</el-descriptions-item>
         <el-descriptions-item label="方案">{{ detail.schemeCode }} / {{ detail.schemeVersion }}</el-descriptions-item>

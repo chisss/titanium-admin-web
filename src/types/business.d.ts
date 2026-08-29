@@ -32,6 +32,7 @@ export type UnderwritingStatus = 'PENDING' | 'AUTO_REVIEWING' | 'MANUAL_REVIEWIN
 /** 产品信息 */
 export interface ProductVO {
   id: string
+  productNo?: string
   name: string
   code: string
   category: InsuranceCategory
@@ -103,6 +104,7 @@ export interface PolicyVO {
   policyNo: string
   policyForm?: string
   productName: string
+  productNo?: string
   productCode: string
   policyHolderId: string
   policyHolderName: string
@@ -119,6 +121,7 @@ export interface PolicyVO {
 
 /** 客户信息 */
 export interface CustomerVO {
+  customerNo?: string
   customerId: string
   fullName: string
   customerType: string

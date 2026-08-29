@@ -4,6 +4,7 @@ import type { PageParams, PageResult } from '@/types/api.d'
 
 /** 保全工单 VO，与 Maintenance Web 出参保持一致。 */
 export interface MaintenanceVO {
+  maintenanceNo?: string
   id: string
   policyId: string
   customerId: string
@@ -127,6 +128,7 @@ export interface MaintenanceListParams extends PageParams {
 
 /** 独立保全案件列表摘要。 */
 export interface MaintenanceCaseSummary {
+  maintenanceNo?: string
   caseId: string
   policyId: string
   policyNumber?: string

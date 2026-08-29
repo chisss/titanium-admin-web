@@ -6,9 +6,6 @@
       <el-form-item label="意向单号">
         <el-input v-model="queryParams.proposalNo" placeholder="精确查询" clearable style="width: 180px" />
       </el-form-item>
-      <el-form-item label="客户ID">
-        <el-input v-model="queryParams.customerId" placeholder="精确查询" clearable style="width: 180px" />
-      </el-form-item>
       <el-form-item label="产品编码">
         <el-input v-model="queryParams.productCode" placeholder="精确查询" clearable style="width: 160px" />
       </el-form-item>
@@ -55,7 +52,6 @@
           <TiCopyText :text="row.proposalNo" />
         </template>
       </el-table-column>
-      <el-table-column prop="customerId" label="客户ID" width="180" show-overflow-tooltip />
       <el-table-column prop="expectedProductCode" label="产品编码" min-width="150" show-overflow-tooltip />
       <el-table-column prop="bizNo" label="出单业务号" min-width="190" show-overflow-tooltip />
       <el-table-column prop="status" label="意向状态" width="110">
@@ -96,7 +92,6 @@
       <div v-loading="detailLoading" class="detail-content">
         <el-descriptions v-if="proposalDetail" :column="2" border>
           <el-descriptions-item label="意向单号">{{ proposalDetail.proposalNo }}</el-descriptions-item>
-          <el-descriptions-item label="意向单ID">{{ proposalDetail.proposalId }}</el-descriptions-item>
           <el-descriptions-item label="出单业务号">{{ proposalDetail.bizNo || '-' }}</el-descriptions-item>
           <el-descriptions-item label="意向状态">
             <TiStatusTag
@@ -104,7 +99,6 @@
               :label="getStatusLabel(proposalDetail.status)"
             />
           </el-descriptions-item>
-          <el-descriptions-item label="客户ID">{{ proposalDetail.customerId || '-' }}</el-descriptions-item>
           <el-descriptions-item label="保单形态">{{ proposalDetail.policyForm || '-' }}</el-descriptions-item>
           <el-descriptions-item label="产品编码">
             {{ proposalDetail.expectedProductCode || '-' }}

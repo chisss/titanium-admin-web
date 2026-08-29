@@ -1,9 +1,7 @@
 <template>
   <div class="ti-page maintenance-list">
     <TiSearchForm :model="queryParams" @search="handleSearch" @reset="handleReset">
-      <el-form-item label="案件 ID"><el-input v-model="queryParams.caseId" clearable /></el-form-item>
       <el-form-item label="保单号"><el-input v-model="queryParams.policyNumber" clearable /></el-form-item>
-      <el-form-item label="客户 ID"><el-input v-model="queryParams.customerId" clearable /></el-form-item>
       <el-form-item label="保全项"><el-input v-model="queryParams.itemCode" clearable placeholder="项目编码" /></el-form-item>
       <el-form-item label="来源">
         <TiDictSelect v-model="queryParams.source" dict-type="MAINTENANCE_CHANNEL" placeholder="全部" style="width: 140px" />
@@ -30,9 +28,11 @@
       @page-change="onPageChange"
       @size-change="onSizeChange"
     >
-      <el-table-column prop="id" label="保全ID" min-width="180" class-name="ti-code-column"><template #default="{ row }">{{ row.caseId }}</template></el-table-column>
-      <el-table-column prop="policyId" label="保单ID" min-width="150"><template #default="{ row }">{{ row.policyNumber || row.policyId }}</template></el-table-column>
-      <el-table-column prop="customerId" label="客户ID" min-width="145" />
+      <el-table-column prop="maintenanceNo" label="保全号" min-width="170" />
+      <el-table-column prop="id" label="保全ID" min-width="180" show-overflow-tooltip />
+      <el-table-column prop="policyId" label="保单ID" min-width="180" show-overflow-tooltip />
+      <el-table-column prop="customerId" label="客户ID" min-width="180" show-overflow-tooltip />
+      <el-table-column prop="policyNumber" label="保单号" min-width="150" />
       <el-table-column label="保全项" min-width="190"><template #default="{ row }">{{ row.itemCodes?.join('、') || '-' }}</template></el-table-column>
       <el-table-column prop="source" label="来源" width="100"><template #default="{ row }">{{ maintenanceChannelLabel(row.source) }}</template></el-table-column>
       <el-table-column prop="status" label="案件状态" width="125"><template #default="{ row }"><TiStatusTag :value="row.status" :label="maintenanceStatusLabel(row.status)" /></template></el-table-column>
@@ -48,10 +48,9 @@
     <div class="mobile-case-list" v-loading="tableLoading">
       <article v-for="row in tableData" :key="row.caseId" class="case-card">
         <div class="case-card__heading">
-          <strong>{{ row.policyNumber || row.policyId }}</strong>
+          <strong>{{ row.policyNumber || '-' }}</strong>
           <TiStatusTag :value="row.status" />
         </div>
-        <div class="case-card__id">{{ row.caseId }}</div>
         <div class="case-card__items">{{ row.itemCodes?.join('、') || '-' }}</div>
         <div class="case-card__meta">
           <span>{{ maintenanceChannelLabel(row.source) }}</span>
@@ -101,7 +100,6 @@ fetchData()
   .mobile-case-list { display: grid; gap: 10px; }
   .case-card { border: 1px solid var(--el-border-color); border-radius: 6px; padding: 12px; background: var(--el-bg-color); }
   .case-card__heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-  .case-card__id { margin-top: 5px; color: var(--el-text-color-secondary); font-family: monospace; font-size: 12px; word-break: break-all; }
   .case-card__items { margin: 10px 0; font-weight: 500; }
   .case-card__meta { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 12px; color: var(--el-text-color-secondary); font-size: 12px; }
   .case-card__meta span:last-child { grid-column: 1 / -1; }

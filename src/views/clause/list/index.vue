@@ -34,6 +34,7 @@
       @size-change="onSizeChange"
     >
       <el-table-column type="index" label="序号" width="60" align="center" fixed="left" />
+      <el-table-column prop="clauseNo" label="条款号" width="180" />
       <el-table-column prop="code" label="条款编码" width="180" class-name="ti-code-column">
         <template #default="{ row }">
           <TiCopyText :text="row.code" />

@@ -4,7 +4,7 @@
       <div class="workbench-heading">
         <div>
           <el-button text :icon="ArrowLeft" @click="router.back()">返回</el-button>
-          <h3>保全工作台 <span class="case-id">{{ detail.caseId }}</span></h3>
+          <h3>保全工作台</h3>
         </div>
         <div class="heading-actions">
           <TiStatusTag :value="detail.status" :label="maintenanceCaseStatusLabel(detail.status)" />

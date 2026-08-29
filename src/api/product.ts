@@ -57,6 +57,7 @@ export function toProductInsuranceType(category?: string): string | undefined {
 function fromProductVO(vo: Record<string, any>): ProductVO {
   return {
     id: vo.productId ?? vo.id,
+    productNo: vo.productNo,
     name: vo.productName ?? vo.name ?? '',
     code: vo.productCode ?? vo.code ?? '',
     category: (toCategoryFromProductType(vo.insuranceType) ?? '') as ProductVO['category'],

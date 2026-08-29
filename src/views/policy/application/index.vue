@@ -6,12 +6,6 @@
       <el-form-item label="投保单号">
         <el-input v-model="queryParams.insuranceNo" placeholder="精确查询" clearable style="width: 180px" />
       </el-form-item>
-      <el-form-item label="投保人ID">
-        <el-input v-model="queryParams.holderId" placeholder="精确查询" clearable style="width: 180px" />
-      </el-form-item>
-      <el-form-item label="主险产品ID">
-        <el-input v-model="queryParams.productId" placeholder="精确查询" clearable style="width: 180px" />
-      </el-form-item>
       <el-form-item label="投保状态">
         <TiDictSelect v-model="queryParams.status" dict-type="POLICY_APPLICATION_STATUS" placeholder="请选择" style="width: 140px" />
       </el-form-item>
@@ -55,8 +49,6 @@
           <TiCopyText :text="row.insuranceNo" />
         </template>
       </el-table-column>
-      <el-table-column prop="productId" label="主险产品ID" min-width="160" show-overflow-tooltip />
-      <el-table-column prop="holderId" label="投保人ID" width="180" show-overflow-tooltip />
       <el-table-column prop="bizNo" label="出单业务号" min-width="190" show-overflow-tooltip />
       <el-table-column prop="status" label="投保状态" width="120">
         <template #default="{ row }">
@@ -91,7 +83,6 @@
       <div v-loading="detailLoading" class="detail-content">
         <el-descriptions v-if="insuranceDetail" :column="2" border>
           <el-descriptions-item label="投保单号">{{ insuranceDetail.insuranceNo }}</el-descriptions-item>
-          <el-descriptions-item label="投保单ID">{{ insuranceDetail.insuranceId }}</el-descriptions-item>
           <el-descriptions-item label="出单业务号">{{ insuranceDetail.bizNo || '-' }}</el-descriptions-item>
           <el-descriptions-item label="投保状态">
             <TiStatusTag
@@ -100,10 +91,8 @@
             />
           </el-descriptions-item>
           <el-descriptions-item label="关联意向单ID">{{ insuranceDetail.proposalId || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="投保人ID">{{ insuranceDetail.holderId || '-' }}</el-descriptions-item>
           <el-descriptions-item label="保单形态">{{ insuranceDetail.policyForm || '-' }}</el-descriptions-item>
           <el-descriptions-item label="被保险人数">{{ insuranceDetail.insuredCount ?? '-' }}</el-descriptions-item>
-          <el-descriptions-item label="主险产品ID">{{ insuranceDetail.productId || '-' }}</el-descriptions-item>
           <el-descriptions-item label="险种分类">{{ insuranceDetail.insuranceType || '-' }}</el-descriptions-item>
           <el-descriptions-item label="基本保额">
             {{ formatMoney(insuranceDetail.sumInsured, insuranceDetail.currency) }}

@@ -61,9 +61,7 @@
             <el-descriptions-item label="保单形态">{{ policy.policyForm || '-' }}</el-descriptions-item>
             <el-descriptions-item label="产品名称">{{ policy.productName }}</el-descriptions-item>
             <el-descriptions-item label="投保人">{{ policy.policyHolderName }}</el-descriptions-item>
-            <el-descriptions-item label="投保人ID">{{ policy.policyHolderId || '-' }}</el-descriptions-item>
             <el-descriptions-item label="被保人">{{ policy.insuredName }}</el-descriptions-item>
-            <el-descriptions-item label="被保人ID">{{ policy.insuredId || '-' }}</el-descriptions-item>
             <el-descriptions-item label="年缴保费">¥{{ policy.premium?.toLocaleString() }}</el-descriptions-item>
             <el-descriptions-item label="基本保额">¥{{ policy.sumInsured?.toLocaleString() }}</el-descriptions-item>
             <el-descriptions-item label="生效日期">{{ policy.effectiveDate }}</el-descriptions-item>
@@ -85,7 +83,6 @@
         <!-- Tab4：保全记录 -->
         <el-tab-pane label="保全记录" name="maintenance">
           <el-table v-loading="maintenanceLoading" :data="maintenanceRecords" border stripe>
-            <el-table-column prop="caseId" label="案件 ID" min-width="190" />
             <el-table-column label="保全项" min-width="190"><template #default="{ row }">{{ row.itemCodes?.join('、') || '-' }}</template></el-table-column>
             <el-table-column prop="source" label="来源" width="110"><template #default="{ row }">{{ row.source === 'MANUAL' ? '后台人工' : 'API 自动' }}</template></el-table-column>
             <el-table-column prop="status" label="案件状态" width="120"><template #default="{ row }"><TiStatusTag :value="row.status" /></template></el-table-column>

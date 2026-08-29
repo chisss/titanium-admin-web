@@ -23,6 +23,7 @@
       @size-change="onSizeChange"
     >
       <el-table-column prop="fullName" label="客户姓名" width="140" />
+      <el-table-column prop="customerNo" label="客户号" width="180" />
       <el-table-column prop="idType" label="证件类型" width="130">
         <template #default="{ row }">
           {{ row.idType === 'CHINA_ID_CARD' ? '居民身份证' : row.idType }}

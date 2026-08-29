@@ -33,17 +33,11 @@
     >
       <el-table-column prop="billId" label="账单号" width="180" class-name="ti-code-column">
         <template #default="{ row }">
-          <TiCopyText :text="row.billNo || row.billId" />
+          <TiCopyText :text="row.billNo || '-'" />
         </template>
       </el-table-column>
-      <el-table-column prop="policyId" label="保单ID" width="180" class-name="ti-code-column">
-        <template #default="{ row }">
-          <TiCopyText :text="row.policyId" />
-        </template>
-      </el-table-column>
-      <el-table-column prop="customerId" label="客户ID" width="180">
-        <template #default="{ row }">{{ row.customerId || '-' }}</template>
-      </el-table-column>
+      <el-table-column prop="policyId" label="保单ID" width="180" show-overflow-tooltip />
+      <el-table-column prop="customerId" label="客户ID" width="180" show-overflow-tooltip />
       <el-table-column prop="amount" label="金额" width="120">
         <template #default="{ row }">¥{{ row.amount?.toLocaleString() }}</template>
       </el-table-column>

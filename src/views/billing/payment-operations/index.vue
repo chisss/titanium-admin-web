@@ -93,13 +93,11 @@
       <el-tab-pane label="收款对账" name="collections">
         <TiSearchForm :model="collectionQuery" :has-advanced="true" @search="searchCollections" @reset="resetCollections">
           <el-form-item label="收款订单"><el-input v-model="collectionQuery.orderId" clearable /></el-form-item>
-          <el-form-item label="保单ID"><el-input v-model="collectionQuery.policyId" clearable /></el-form-item>
           <el-form-item label="状态">
             <TiDictSelect v-model="collectionQuery.status" dict-type="PAYMENT_COLLECTION_STATUS" placeholder="全部" style="width: 130px" />
           </el-form-item>
           <template #advanced>
             <el-form-item label="支付订单"><el-input v-model="collectionQuery.paymentId" clearable /></el-form-item>
-            <el-form-item label="客户ID"><el-input v-model="collectionQuery.customerId" clearable /></el-form-item>
             <el-form-item label="Payment状态"><el-input v-model="collectionQuery.paymentStatus" clearable /></el-form-item>
             <el-form-item label="更新时间">
               <el-date-picker v-model="collectionTimeRange" type="datetimerange" value-format="YYYY-MM-DDTHH:mm:ss" start-placeholder="开始时间" end-placeholder="结束时间" />
@@ -113,8 +111,6 @@
             <el-table-column prop="orderId" label="收款订单" min-width="190"><template #default="{ row }"><TiCopyText :text="row.orderId" /></template></el-table-column>
             <el-table-column prop="postingId" label="入账ID" min-width="190"><template #default="{ row }"><TiCopyText :text="row.postingId" /></template></el-table-column>
             <el-table-column prop="paymentId" label="支付订单" min-width="190"><template #default="{ row }"><TiCopyText :text="row.paymentId" /></template></el-table-column>
-            <el-table-column prop="policyId" label="保单ID" min-width="175"><template #default="{ row }"><TiCopyText :text="row.policyId" /></template></el-table-column>
-            <el-table-column prop="customerId" label="客户ID" min-width="175"><template #default="{ row }"><TiCopyText :text="row.customerId" /></template></el-table-column>
             <el-table-column label="金额" width="135"><template #default="{ row }">{{ amountText(row.amount, row.currency) }}</template></el-table-column>
             <el-table-column label="Billing状态" width="115"><template #default="{ row }"><TiStatusTag :value="row.status" :label="collectionStatusLabel(row.status)" /></template></el-table-column>
             <el-table-column label="Payment状态" width="120"><template #default="{ row }"><TiStatusTag :value="row.paymentStatus" /></template></el-table-column>

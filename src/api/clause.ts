@@ -5,6 +5,7 @@ import { CATEGORY_BY_INSURANCE_TYPE } from '@/constants/insurance'
 
 /** 条款信息（前端视图模型，字段名对齐列表/编辑页） */
 export interface ClauseVO {
+  clauseNo?: string
   id: string
   code: string
   name: string
@@ -58,6 +59,7 @@ function fromClauseVO(vo: Record<string, any>): ClauseVO {
     : vo.insuranceType?.name ?? vo.insuranceType?.code
   return {
     id: vo.clauseId ?? vo.id,
+    clauseNo: vo.clauseNo,
     code: vo.clauseCode ?? vo.code,
     name: vo.clauseName ?? vo.name,
     category: toCategory(insuranceType) ?? vo.category ?? '',

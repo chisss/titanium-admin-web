@@ -64,6 +64,9 @@
       @size-change="onSizeChange"
     >
       <el-table-column type="index" label="序号" width="60" align="center" fixed="left" />
+      <el-table-column prop="productNo" label="产品号" width="180" class-name="ti-code-column">
+        <template #default="{ row }"><TiCopyText :text="row.productNo || '-'" /></template>
+      </el-table-column>
       <el-table-column prop="code" label="产品代码" width="180" class-name="ti-code-column">
         <template #default="{ row }">
           <TiCopyText :text="row.code" />
