@@ -30,6 +30,18 @@
               <el-input v-model="templateForm.templateName" placeholder="模板名称" style="width: 360px" />
             </el-form-item>
           </el-form>
+          <el-alert
+            v-if="definition"
+            type="info"
+            :closable="false"
+            style="margin-top: 16px; max-width: 720px"
+            :title="`标的类型：${definition.subjectType} · 默认定价：${definition.defaultPricingMode}`"
+          >
+            <template #default>
+              必填标的字段：{{ definition.requiredSubjectFields.join('、') || '无' }}
+              <span style="margin-left: 16px">默认责任：{{ definition.defaultCoverageCodes.join('、') || '无' }}</span>
+            </template>
+          </el-alert>
         </el-tab-pane>
 
         <!-- 保全配置（可支持保全项） -->
@@ -259,10 +271,12 @@ import { ArrowLeft } from '@element-plus/icons-vue'
 import {
   getProductDetail,
   getTemplate,
+  getInsuranceProductDefinitions,
   updateTemplate,
   configureLifeProduct,
   getLifeProductConfig,
   type UpdateTemplateForm,
+  type InsuranceProductDefinitionVO,
 } from '@/api/product'
 import type { ProductDetailVO } from '@/types/business.d'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
@@ -274,6 +288,8 @@ const activeTab = ref('issuance')
 
 const product = ref<ProductDetailVO | null>(null)
 const templateId = ref<string>('')
+const definitions = ref<InsuranceProductDefinitionVO[]>([])
+const definition = computed(() => definitions.value.find((item) => item.insuranceType === product.value?.insuranceType))
 
 // 寿险线：展示「保额管理/寿险规格」页签（命中不同的 life-config 端点）
 const LIFE_LINES = ['LIFE', 'ANNUITY', 'UNIVERSAL', 'PARTICIPATING', 'INVESTMENT_LINKED']
@@ -392,6 +408,7 @@ onMounted(async () => {
   const productId = route.params.id as string
   loading.value = true
   try {
+    definitions.value = await getInsuranceProductDefinitions().catch(() => [])
     product.value = await getProductDetail(productId)
     templateId.value = product.value?.templateId ?? ''
     if (templateId.value) await prefillFromTemplate(templateId.value)

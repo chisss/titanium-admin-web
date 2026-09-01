@@ -68,6 +68,29 @@
             <el-descriptions-item label="到期日期">{{ policy.expiryDate }}</el-descriptions-item>
             <el-descriptions-item label="创建时间">{{ policy.createTime || '-' }}</el-descriptions-item>
           </el-descriptions>
+
+          <section v-if="subjects.length" class="subject-section">
+            <div class="subject-section__header">
+              <h4>被保标的</h4>
+              <span>{{ subjects.length }} 项</span>
+            </div>
+            <div class="subject-list">
+              <article v-for="subject in subjects" :key="subject.subjectId || subject.subjectName" class="subject-item">
+                <div class="subject-item__title">
+                  <strong>{{ subject.subjectName || subjectTypeLabel(subject.subjectType) }}</strong>
+                  <TiStatusTag v-if="subject.riskLevel" :value="subject.riskLevel" />
+                </div>
+                <el-descriptions :column="3" border size="small">
+                  <el-descriptions-item label="标的类型">{{ subjectTypeLabel(subject.subjectType) }}</el-descriptions-item>
+                  <el-descriptions-item label="标的保额">{{ formatAmount(subject.subjectSumInsured) }}</el-descriptions-item>
+                  <el-descriptions-item v-for="field in subjectFields(subject)" :key="field.key" :label="field.label">
+                    {{ field.value }}
+                  </el-descriptions-item>
+                </el-descriptions>
+              </article>
+            </div>
+          </section>
+          <el-empty v-else-if="!loading" description="暂无被保标的信息" :image-size="64" />
         </el-tab-pane>
 
         <!-- Tab2：理赔记录 -->
@@ -178,7 +201,7 @@ import {
   Delete, Discount, Money, Coin, Wallet, Flag, Edit, CopyDocument,
 } from '@element-plus/icons-vue'
 import {
-  getPolicyDetail, suspendPolicy, resumePolicy, terminatePolicy,
+  getPolicyDetail, getPolicySubjects, suspendPolicy, resumePolicy, terminatePolicy,
   cancelPolicy, waivePremium, distributeDividend, startAnnuityPayout,
   payAnnuityBenefit, maturePolicy, applyEndorsement,
   type PolicyDataUpdateType, type TerminationReason,
@@ -186,12 +209,14 @@ import {
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
 import type { PolicyVO } from '@/types/business.d'
+import type { PolicySubjectVO } from '@/api/policy'
 import { getMaintenanceCaseList, type MaintenanceCaseSummary } from '@/api/maintenance'
 
 const route = useRoute()
 const loading = ref(false)
 const submitting = ref(false)
 const policy = ref<PolicyVO | null>(null)
+const subjects = ref<PolicySubjectVO[]>([])
 const activeTab = ref('basic')
 const maintenanceLoading = ref(false)
 const maintenanceRecords = ref<MaintenanceCaseSummary[]>([])
@@ -325,11 +350,51 @@ const copyText = (text: string) => {
   navigator.clipboard.writeText(text).then(() => ElMessage.success('已复制'))
 }
 
+const subjectTypeLabel = (type?: string) => ({
+  VEHICLE: '车辆', PROPERTY: '财产', ORGANIZATION: '组织', PERSON: '人员',
+  HOUSEHOLD: '家庭财产', CARGO: '货物', VESSEL: '船舶', AIRCRAFT: '航空器',
+}[type || ''] || type || '标的')
+
+const formatAmount = (amount?: number) => amount == null ? '-' : `¥${amount.toLocaleString()}`
+
+const subjectFieldLabels: Record<string, string> = {
+  licensePlate: '车牌号', vin: 'VIN', firstRegistrationDate: '初次登记日期',
+  usageType: '用途类型', ncd: 'NCD 系数', model: '厂牌型号',
+  address: '地址', propertyAddress: '财产地址', buildingStructure: '建筑结构',
+  fireProtectionGrade: '消防等级', fireProtectionLevel: '消防等级', occupancyType: '占用性质',
+  propertyUsage: '财产用途', propertyValue: '财产价值', industry: '行业', employeeCount: '员工数',
+  payroll: '工资总额', payrollAmount: '工资总额', workplaceAddress: '工作场所地址', age: '年龄', gender: '性别',
+  occupation: '职业类别', smokingStatus: '吸烟状况',
+}
+
+const subjectFields = (subject: PolicySubjectVO) => {
+  let attributes: Record<string, unknown> = {}
+  if (subject.attributesJson) {
+    try {
+      const parsed = JSON.parse(subject.attributesJson)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) attributes = parsed
+    } catch {
+      attributes = {}
+    }
+  }
+  return Object.entries(attributes).map(([key, value]) => ({
+    key,
+    label: subjectFieldLabels[key] || key,
+    value: value == null || value === '' ? '-' : String(value),
+  }))
+}
+
 /** 加载保单详情 */
 const loadPolicy = async () => {
   loading.value = true
   try {
     policy.value = await getPolicyDetail(route.params.id as string)
+    try {
+      subjects.value = await getPolicySubjects(route.params.id as string)
+    } catch {
+      // 标的是详情扩展数据，下游暂不可用时保留主保单详情并显示空态。
+      subjects.value = []
+    }
   } finally {
     loading.value = false
   }

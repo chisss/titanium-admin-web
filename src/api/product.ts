@@ -33,7 +33,9 @@ function toCategoryFromProductType(insuranceType?: string): string | undefined {
   if (t.includes('LIFE') || t === 'ENDOWMENT' || t === 'ANNUITY') return 'LIFE'
   if (['MEDICAL', 'CRITICAL_ILLNESS', 'DISABILITY_INCOME', 'LONG_TERM_CARE'].includes(t)) return 'HEALTH'
   if (t.includes('ACCIDENT')) return 'ACCIDENT'
-  if (['AUTO', 'HOUSEHOLD_PROPERTY', 'ENTERPRISE_PROPERTY', 'AGRICULTURAL', 'MARINE_CARGO'].includes(t)) return 'PROPERTY'
+  if (['AUTO', 'HOUSEHOLD_PROPERTY', 'ENTERPRISE_PROPERTY', 'AGRICULTURAL', 'MARINE_CARGO',
+    'PUBLIC_LIABILITY', 'EMPLOYER_LIABILITY', 'PRODUCT_LIABILITY', 'PROFESSIONAL_LIABILITY',
+    'CREDIT', 'GUARANTEE'].includes(t)) return 'PROPERTY'
   return insuranceType
 }
 
@@ -390,6 +392,22 @@ export interface ProductTemplateVO {
   reinsuranceConfig?: ReinsuranceConfigForm
   dividendConfig?: DividendConfigForm
   lifeProductSpec?: LifeProductSpecVO
+}
+
+/** 九类险种标准定义目录项（由 Product API 提供） */
+export interface InsuranceProductDefinitionVO {
+  insuranceType: string
+  subjectType: string
+  defaultIssuanceMode: string
+  defaultPricingMode: string
+  requiredSubjectFields: string[]
+  defaultCoverageCodes: string[]
+  underwritingRuleSet: string
+}
+
+/** 查询标准险种定义目录，供产品配置页动态渲染标的字段 */
+export function getInsuranceProductDefinitions(): Promise<InsuranceProductDefinitionVO[]> {
+  return http.get('/web/v1/proxy/products/definitions')
 }
 
 /** 更新产品模板行为配置载荷（对齐后端 UpdateProductTemplateDTO，仅传需变更项） */

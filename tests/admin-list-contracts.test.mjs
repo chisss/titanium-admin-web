@@ -45,3 +45,18 @@ test('账单页面准确标注ID字段并移除无效投保人筛选', () => {
   assert.match(billingDetailSource, /label="客户ID">\{\{ bill\.customerId \|\| '-' \}\}/)
   assert.match(billingDetailSource, /label="到期日">\{\{ bill\.dueDate \|\| '-' \}\}/)
 })
+
+test('保单详情加载并展示险种专属标的信息', async () => {
+  const policyApiSource = await readFile(new URL('../src/api/policy.ts', import.meta.url), 'utf8')
+  const policyDetailSource = await readFile(
+    new URL('../src/views/policy/detail/index.vue', import.meta.url),
+    'utf8',
+  )
+  assert.match(policyApiSource, /getPolicySubjects\(policyId: string\)/)
+  assert.match(policyApiSource, /\/web\/v1\/proxy\/policies\/\$\{policyId\}\/subjects/)
+  assert.match(policyDetailSource, /getPolicySubjects\(route\.params\.id as string\)/)
+  assert.match(policyDetailSource, /subjectFieldLabels/)
+  assert.match(policyDetailSource, /licensePlate: '车牌号'/)
+  assert.match(policyDetailSource, /subjectTypeLabel\(subject\.subjectType\)/)
+  assert.match(policyDetailSource, /暂无被保标的信息/)
+})

@@ -38,6 +38,19 @@ export interface PolicyBeneficiaryVO {
   tenantId?: string
 }
 
+/** 保单标的读模型（attributesJson 由产品 Schema 定义） */
+export interface PolicySubjectVO {
+  policyId?: string
+  policyProductId?: string
+  subjectId?: string
+  subjectName?: string
+  subjectType?: string
+  customerId?: string
+  subjectSumInsured?: number
+  riskLevel?: string
+  attributesJson?: string
+}
+
 /** 查询保单列表（兼容 Admin 代理分页对象与旧版裸数组响应） */
 export async function getPolicyList(params?: Partial<PageParams> & Record<string, unknown>): Promise<PageResult<PolicyVO>> {
   const { pageNum, pageSize, policyHolderName, ...filters } = params ?? {}
@@ -61,6 +74,11 @@ export async function getPolicyList(params?: Partial<PageParams> & Record<string
 /** 获取保单详情 */
 export function getPolicyDetail(id: string): Promise<PolicyVO> {
   return http.get(`/web/v1/proxy/policies/${id}`)
+}
+
+/** 查询保单标的及险种专属属性 */
+export function getPolicySubjects(policyId: string): Promise<PolicySubjectVO[]> {
+  return http.get(`/web/v1/proxy/policies/${policyId}/subjects`) as unknown as Promise<PolicySubjectVO[]>
 }
 
 /** 按客户及保险角色查询保单（后端 page 从 0 开始，响应为裸数组） */
