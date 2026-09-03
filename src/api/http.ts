@@ -40,7 +40,8 @@ http.interceptors.response.use(
       return response
     }
 
-    if (res.code === 200) {
+    // 成功判定：兼容旧数字信封 200 与 metadata ApiResponse 的 String 成功码 "00000000"
+    if (res.code === 200 || res.code === '00000000') {
       const etag = response.headers.etag as string | undefined
       if (etag && res.data && typeof res.data === 'object' && !Array.isArray(res.data)) {
         return { ...res.data, etag }

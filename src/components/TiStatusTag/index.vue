@@ -36,6 +36,8 @@ const COLOR_MAP: Record<string, TagType> = {
   MANUAL_REVIEWING: 'warning',
   PROCESSING: 'warning',
   PENDING_REVIEW: 'warning',
+  PAID: 'success',
+  CLOSED: 'info',
   INACTIVE: 'danger',
   CANCELLED: 'danger',
   TERMINATED: 'danger',

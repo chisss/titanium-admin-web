@@ -218,6 +218,12 @@ export const dynamicRoutes: RouteRecordRaw[] = [
             component: () => import('@/views/claim/detail/index.vue'),
             meta: { title: '理赔详情', permission: 'claim:detail', hidden: true },
           },
+          {
+            path: 'config',
+            name: 'ClaimConfig',
+            component: () => import('@/views/claim/config/index.vue'),
+            meta: { title: '理赔配置中心', permission: 'claim:config' },
+          },
         ],
       },
       // 核保管理

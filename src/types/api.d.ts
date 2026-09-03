@@ -1,9 +1,9 @@
 // API 响应通用类型定义
 
-/** 统一 API 响应结构 */
+/** 统一 API 响应结构（兼容旧数字信封 200 与 metadata ApiResponse 的成功码 "00000000"） */
 export interface ApiResponse<T = unknown> {
-  /** 业务状态码 200=成功 */
-  code: number
+  /** 业务状态码：旧数字信封 200=成功；metadata ApiResponse 用 String 码 "00000000"=成功 */
+  code: number | string
   /** 响应消息 */
   message: string
   /** 业务数据 */
