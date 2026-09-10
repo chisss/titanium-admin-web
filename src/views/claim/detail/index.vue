@@ -32,12 +32,6 @@
           <el-text class="mono">{{ claim.claimNumber }}</el-text>
         </el-descriptions-item>
         <el-descriptions-item label="理赔类型">{{ claimTypeLabel(claim.claimType) }}</el-descriptions-item>
-        <el-descriptions-item label="客户ID">
-          <TiCopyText :text="claim.customerId" />
-        </el-descriptions-item>
-        <el-descriptions-item label="保单ID">
-          <TiCopyText :text="claim.policyId" />
-        </el-descriptions-item>
         <el-descriptions-item label="出险日期">{{ formatDateTime(claim.incidentDate) }}</el-descriptions-item>
         <el-descriptions-item label="申请赔付">
           <span class="amount">¥{{ formatAmount(claim.claimAmount) }}</span>
@@ -185,7 +179,7 @@ import {
 import type { ClaimCaseVO } from '@/api/claim'
 import { useDict } from '@/composables/useDict'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
-import TiCopyText from '@/components/TiCopyText/index.vue'
+
 
 const route = useRoute()
 const router = useRouter()

@@ -70,6 +70,26 @@ export interface PricingBasicRuleView {
   maxPremium?: number
 }
 
+/** 核保配置（详情展示，对齐后端 UnderwritingConfigResponse） */
+export interface UnderwritingConfigView {
+  /** 核保模式 AUTO/MANUAL/SMART/HYBRID */
+  underwritingMode?: string
+  /** 自动核保通过条件描述 */
+  autoApprovalCondition?: string
+  /** 转人工核保的保额阈值 */
+  manualReviewAmountThreshold?: number
+  /** 核保必需材料清单 */
+  requiredDocuments?: string[]
+  /** 核保时效要求（天） */
+  underwritingSLADays?: number
+  /** 是否支持加费承保 */
+  surchargeAcceptable?: boolean
+  /** 是否支持特别约定 */
+  specialAgreementAcceptable?: boolean
+  /** 关联的规则引擎规则集编码（为空表示未接入规则引擎） */
+  ruleSetCode?: string
+}
+
 /**
  * 产品详情视图：在列表 ProductVO 基础上补充后端 ProductResponse 返回的结构化配置，
  * 供详情页完整呈现产品形态、投保条件、费率规则等（列表页不消费这些字段，故独立扩展）。
@@ -96,6 +116,8 @@ export interface ProductDetailVO extends ProductVO {
   insureCondition?: InsureConditionView
   /** 定价基础规则 */
   pricingBasicRule?: PricingBasicRuleView
+  /** 核保配置（产品级核保策略与规则集绑定） */
+  underwritingConfig?: UnderwritingConfigView
 }
 
 /** 保单信息 */

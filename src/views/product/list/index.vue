@@ -92,6 +92,11 @@
           <TiStatusTag :value="row.status" :label="getStatusLabel(row.status)" />
         </template>
       </el-table-column>
+      <el-table-column prop="version" label="版本" width="90" align="center">
+        <template #default="{ row }">
+          {{ row.version || '-' }}
+        </template>
+      </el-table-column>
       <el-table-column prop="minPremium" label="最低保费" width="120">
         <template #default="{ row }">
           {{ row.minPremium ? `¥${row.minPremium.toLocaleString()}` : '-' }}

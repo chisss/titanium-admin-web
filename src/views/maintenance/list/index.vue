@@ -29,9 +29,6 @@
       @size-change="onSizeChange"
     >
       <el-table-column prop="maintenanceNo" label="保全号" min-width="170" />
-      <el-table-column prop="id" label="保全ID" min-width="180" show-overflow-tooltip />
-      <el-table-column prop="policyId" label="保单ID" min-width="180" show-overflow-tooltip />
-      <el-table-column prop="customerId" label="客户ID" min-width="180" show-overflow-tooltip />
       <el-table-column prop="policyNumber" label="保单号" min-width="150" />
       <el-table-column label="保全项" min-width="190"><template #default="{ row }">{{ row.itemCodes?.join('、') || '-' }}</template></el-table-column>
       <el-table-column prop="source" label="来源" width="100"><template #default="{ row }">{{ maintenanceChannelLabel(row.source) }}</template></el-table-column>

@@ -10,9 +10,6 @@
       <el-form-item label="报案号">
         <el-input v-model="queryParams.claimNo" placeholder="理赔编号" clearable style="width: 180px" />
       </el-form-item>
-      <el-form-item label="保单号">
-        <el-input v-model="queryParams.policyId" placeholder="保单ID" clearable style="width: 180px" />
-      </el-form-item>
       <el-form-item label="理赔类型">
         <el-select v-model="queryParams.claimType" placeholder="全部" clearable style="width: 140px">
           <el-option v-for="opt in claimTypeOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
@@ -47,7 +44,6 @@
       @size-change="onSizeChange"
     >
       <el-table-column prop="claimNumber" label="报案号" width="190" fixed="left" class-name="ti-code-column" />
-      <el-table-column prop="policyId" label="保单号" min-width="180" show-overflow-tooltip />
       <el-table-column label="理赔类型" width="100">
         <template #default="{ row }">{{ claimTypeLabel(row.claimType) }}</template>
       </el-table-column>

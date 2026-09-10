@@ -2,9 +2,6 @@
   <!-- 通知管理列表页 -->
   <div class="ti-page">
     <TiSearchForm :model="queryParams" @search="handleSearch" @reset="handleReset">
-      <el-form-item label="客户ID">
-        <el-input v-model="queryParams.customerId" placeholder="精确查询" clearable style="width: 180px" />
-      </el-form-item>
       <el-form-item label="发送渠道">
         <TiDictSelect v-model="queryParams.channel" dict-type="NOTIFICATION_CHANNEL" placeholder="全部" style="width: 130px" />
       </el-form-item>
@@ -40,7 +37,6 @@
       @selection-change="onSelectionChange"
     >
       <el-table-column type="selection" width="48" />
-      <el-table-column prop="id" label="通知ID" width="180" show-overflow-tooltip />
       <el-table-column prop="customerName" label="客户" width="140">
         <template #default="{ row }">{{ row.customerName || row.customerId || '-' }}</template>
       </el-table-column>

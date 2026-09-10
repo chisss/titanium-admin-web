@@ -39,6 +39,12 @@ export const dynamicRoutes: RouteRecordRaw[] = [
             meta: { title: '产品详情', permission: 'product:detail', hidden: true },
           },
           {
+            path: 'revise/:id',
+            name: 'ProductRevise',
+            component: () => import('@/views/product/revise/index.vue'),
+            meta: { title: '修订产品', permission: 'product:edit', hidden: true },
+          },
+          {
             path: 'config/:id',
             name: 'ProductTemplateConfig',
             component: () => import('@/views/product/template-config/index.vue'),

@@ -10,8 +10,6 @@
 
       <el-descriptions v-if="bill" :column="detailColumnCount" border style="margin-bottom: 24px">
         <el-descriptions-item label="账单号">{{ bill.billNo || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="保单ID">{{ bill.policyId }}</el-descriptions-item>
-        <el-descriptions-item label="客户ID">{{ bill.customerId || '-' }}</el-descriptions-item>
         <el-descriptions-item label="账单金额">¥{{ bill.amount?.toLocaleString() }}</el-descriptions-item>
         <el-descriptions-item label="到期日">{{ bill.dueDate || '-' }}</el-descriptions-item>
         <el-descriptions-item label="实缴日">{{ bill.paidDate || bill.paymentDate || '-' }}</el-descriptions-item>

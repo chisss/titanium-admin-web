@@ -119,6 +119,19 @@ function fromProductDetailVO(vo: Record<string, any>): ProductDetailVO {
       minPremium: pr.minPremium,
       maxPremium: pr.maxPremium,
     },
+    // 核保配置：后端 ProductResponse 已携带，原样透传（存量产品无此配置时为 undefined）
+    underwritingConfig: vo.underwritingConfig
+      ? {
+          underwritingMode: vo.underwritingConfig.underwritingMode,
+          autoApprovalCondition: vo.underwritingConfig.autoApprovalCondition,
+          manualReviewAmountThreshold: vo.underwritingConfig.manualReviewAmountThreshold,
+          requiredDocuments: vo.underwritingConfig.requiredDocuments,
+          underwritingSLADays: vo.underwritingConfig.underwritingSLADays,
+          surchargeAcceptable: vo.underwritingConfig.surchargeAcceptable,
+          specialAgreementAcceptable: vo.underwritingConfig.specialAgreementAcceptable,
+          ruleSetCode: vo.underwritingConfig.ruleSetCode,
+        }
+      : undefined,
   }
 }
 
@@ -126,6 +139,15 @@ function fromProductDetailVO(vo: Record<string, any>): ProductDetailVO {
 export async function getProductDetail(id: string): Promise<ProductDetailVO> {
   const vo = await http.get<unknown, Record<string, any>>(`/web/v1/proxy/products/${id}`)
   return fromProductDetailVO(vo)
+}
+
+/**
+ * 获取产品详情原始载荷（修订页用）。
+ * 修订需带出全量配置（保障期间/缴费/出单/保单形态/定价合并字段等）原样回传，
+ * {@link getProductDetail} 经视图模型裁剪会丢失这些字段，故修订页直取原始 JSON。
+ */
+export async function getProductDetailRaw(id: string): Promise<Record<string, any>> {
+  return http.get<unknown, Record<string, any>>(`/web/v1/proxy/products/${id}`)
 }
 
 /** 产品绑定的条款关联（前端视图模型，对齐后端 ProductClauseQueryResult） */
@@ -200,6 +222,26 @@ export interface DocumentConfigForm {
   documentTemplates: DocumentTemplateForm[]
 }
 
+/** 核保配置（前端表单模型，对齐后端 UnderwritingConfig：核保策略 + 规则集绑定） */
+export interface UnderwritingConfigForm {
+  /** 核保模式：AUTO 自动 / MANUAL 人工 / SMART 智能（规则引擎）/ HYBRID 混合 */
+  underwritingMode: 'AUTO' | 'MANUAL' | 'SMART' | 'HYBRID'
+  /** 自动核保通过条件描述 */
+  autoApprovalCondition?: string
+  /** 转人工核保的保额阈值（元） */
+  manualReviewAmountThreshold?: number
+  /** 核保必需材料清单（材料编码/名称） */
+  requiredDocuments: string[]
+  /** 核保时效要求（天） */
+  underwritingSLADays?: number
+  /** 是否支持加费承保 */
+  surchargeAcceptable: boolean
+  /** 是否支持特别约定 */
+  specialAgreementAcceptable: boolean
+  /** 关联的规则引擎规则集编码（联动选择核保规则集；为空表示未接入规则引擎） */
+  ruleSetCode?: string
+}
+
 /** 新建产品的完整前端模型（分步向导聚合各步表单结果） */
 export interface CreateProductForm {
   /** 基本信息 */
@@ -230,6 +272,8 @@ export interface CreateProductForm {
   pricingMode?: 'RATE_TABLE' | 'ACTUARIAL_FORMULA'
   /** 文档配置（所需投保材料 + 生成文档模板，纯产品配置） */
   documentConfig: DocumentConfigForm
+  /** 核保配置（核保策略 + 核保规则集绑定，向导始终初始化，故非可选） */
+  underwritingConfig: UnderwritingConfigForm
 }
 
 /**
@@ -277,6 +321,17 @@ function toCreateProductPayload(form: CreateProductForm): Record<string, unknown
             documentTemplates: form.documentConfig.documentTemplates,
           }
         : undefined,
+    // 核保配置：始终随创建下发（产品级核保策略 + 规则集绑定，字段名对齐后端 UnderwritingConfig）
+    underwritingConfig: {
+      underwritingMode: form.underwritingConfig.underwritingMode ?? 'SMART',
+      autoApprovalCondition: form.underwritingConfig.autoApprovalCondition,
+      manualReviewAmountThreshold: form.underwritingConfig.manualReviewAmountThreshold,
+      requiredDocuments: form.underwritingConfig.requiredDocuments ?? [],
+      underwritingSLADays: form.underwritingConfig.underwritingSLADays,
+      surchargeAcceptable: form.underwritingConfig.surchargeAcceptable ?? false,
+      specialAgreementAcceptable: form.underwritingConfig.specialAgreementAcceptable ?? false,
+      ruleSetCode: form.underwritingConfig.ruleSetCode,
+    },
   }
 }
 
@@ -288,6 +343,20 @@ export function createProduct(form: CreateProductForm): Promise<string> {
 /** 更新产品 */
 export function updateProduct(id: string, data: Partial<ProductVO>): Promise<void> {
   return http.put(`/web/v1/proxy/products/${id}`, data)
+}
+
+/**
+ * 修订产品（后端 BFF POST /{id}/revise → 下游 POST /{id}/revise）。
+ * 仅 EFFECTIVE 产品可修订：不改写当前生效版本，以新版本 DRAFT 独立聚合落地（版本号递增）。
+ * 修订表单承载新版本完整配置（新名称/描述/核保配置/投保条件/条款关联等），
+ * 未被表单覆盖的值对象（保障期间/缴费/出单/保单形态等）由调用方从详情原始载荷原样带出。
+ *
+ * @param id 被修订的当前生效产品ID
+ * @param form 修订载荷（对齐下游 ReviseProductDTO）
+ * @returns 新版本产品ID
+ */
+export function reviseProduct(id: string, form: Record<string, unknown>): Promise<string> {
+  return http.post(`/web/v1/proxy/products/${id}/revise`, form)
 }
 
 /** 产品审核动作入参（BFF `/approve`、`/reject` 需 AuditProductDTO body） */

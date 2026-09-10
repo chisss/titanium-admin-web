@@ -5,9 +5,6 @@
       <el-form-item label="保单号">
         <el-input v-model="queryParams.policyNo" placeholder="精确查询" clearable style="width: 160px" />
       </el-form-item>
-      <el-form-item label="客户ID">
-        <el-input v-model="queryParams.customerId" placeholder="精确查询" clearable style="width: 160px" />
-      </el-form-item>
       <el-form-item label="文档类型">
         <TiDictSelect v-model="queryParams.documentType" dict-type="DOCUMENT_TYPE" style="width: 150px" />
       </el-form-item>

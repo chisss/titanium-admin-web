@@ -168,6 +168,84 @@
               style="width: 480px"
             />
           </el-form-item>
+
+          <!-- 核保配置：产品级核保策略 + 规则引擎规则集联动绑定 -->
+          <el-divider content-position="left">核保配置</el-divider>
+          <el-form-item label="核保模式">
+            <el-radio-group v-model="form.underwritingConfig.underwritingMode">
+              <el-radio-button value="AUTO">自动核保</el-radio-button>
+              <el-radio-button value="MANUAL">人工核保</el-radio-button>
+              <el-radio-button value="SMART">智能核保</el-radio-button>
+              <el-radio-button value="HYBRID">混合核保</el-radio-button>
+            </el-radio-group>
+          </el-form-item>
+          <el-form-item label="核保规则集">
+            <el-select
+              v-model="form.underwritingConfig.ruleSetCode"
+              placeholder="选择该产品核保流程使用的规则集（可不选）"
+              clearable
+              filterable
+              style="width: 420px"
+              :loading="ruleSetLoading"
+              no-data-text="暂无核保规则集，请先到规则引擎创建"
+            >
+              <el-option
+                v-for="rs in underwritingRuleSets"
+                :key="rs.ruleSetCode"
+                :label="`${rs.ruleSetName}（${rs.ruleSetCode}）`"
+                :value="rs.ruleSetCode"
+              />
+            </el-select>
+            <span style="margin-left: 10px; color: #909399; font-size: 12px">
+              未选择时核保域回退内置评分逻辑
+            </span>
+          </el-form-item>
+          <el-form-item label="自动核保条件">
+            <el-input
+              v-model="form.underwritingConfig.autoApprovalCondition"
+              type="textarea"
+              :rows="2"
+              placeholder="如：标准体且保额低于人工核保阈值时自动通过"
+              style="width: 480px"
+            />
+          </el-form-item>
+          <el-form-item label="转人工阈值">
+            <el-input-number
+              v-model="form.underwritingConfig.manualReviewAmountThreshold"
+              :min="0"
+              :step="10000"
+              :precision="0"
+              placeholder="保额超过该值转人工核保"
+            />
+            <span style="margin-left: 8px; color: #909399">元</span>
+          </el-form-item>
+          <el-form-item label="核保时效">
+            <el-input-number
+              v-model="form.underwritingConfig.underwritingSLADays"
+              :min="1"
+              :max="90"
+              :precision="0"
+              placeholder="核保完成时限"
+            />
+            <span style="margin-left: 8px; color: #909399">天</span>
+          </el-form-item>
+          <el-form-item label="必需材料">
+            <div style="width: 480px">
+              <div v-for="(doc, index) in form.underwritingConfig.requiredDocuments" :key="index" style="display: flex; gap: 8px; margin-bottom: 6px">
+                <el-input v-model="form.underwritingConfig.requiredDocuments[index]" placeholder="如：身份证、体检报告" size="small" />
+                <el-button link type="danger" size="small" @click="removeRequiredDocument(index)">删除</el-button>
+              </div>
+              <el-button link type="primary" size="small" @click="addRequiredDocument">+ 添加核保必需材料</el-button>
+            </div>
+          </el-form-item>
+          <el-form-item label="承保弹性">
+            <el-switch v-model="form.underwritingConfig.surchargeAcceptable" active-text="支持加费承保" />
+            <el-switch
+              v-model="form.underwritingConfig.specialAgreementAcceptable"
+              active-text="支持特别约定"
+              style="margin-left: 24px"
+            />
+          </el-form-item>
         </el-form>
 
         <!-- 第三步：费率规则 -->
@@ -299,6 +377,14 @@
             </el-descriptions-item>
             <el-descriptions-item label="投保材料">{{ form.documentConfig.requiredMaterials.length }} 项</el-descriptions-item>
             <el-descriptions-item label="文档模板">{{ form.documentConfig.documentTemplates.length }} 个</el-descriptions-item>
+            <el-descriptions-item label="核保模式">{{ underwritingModeLabel(form.underwritingConfig.underwritingMode) }}</el-descriptions-item>
+            <el-descriptions-item label="核保规则集">
+              {{ form.underwritingConfig.ruleSetCode ?? '未绑定（内置评分逻辑）' }}
+            </el-descriptions-item>
+            <el-descriptions-item label="转人工阈值">
+              ¥{{ form.underwritingConfig.manualReviewAmountThreshold?.toLocaleString() ?? '-' }}
+            </el-descriptions-item>
+            <el-descriptions-item label="核保必需材料">{{ form.underwritingConfig.requiredDocuments.length }} 项</el-descriptions-item>
           </el-descriptions>
         </div>
       </div>
@@ -349,6 +435,7 @@ import {
   type ProductTemplateVO,
 } from '@/api/product'
 import { getClauseList, getCoverages, type ClauseVO, type CoverageVO } from '@/api/clause'
+import { listRuleSets, type RuleSet } from '@/api/rule-engine'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
 import { insuranceTypesOf, insuranceTypeLabel } from '@/constants/insurance'
 import { useUserStore } from '@/stores/user'
@@ -382,6 +469,17 @@ const form = reactive<CreateProductForm>({
   pricingBasicRule: { pricingType: 'FIXED', baseRate: undefined, minPremium: undefined, maxPremium: undefined },
   pricingMode: 'RATE_TABLE',
   documentConfig: { requiredMaterials: [], documentTemplates: [] },
+  // 核保配置：默认智能核保（规则引擎），阈值 50 万转人工
+  underwritingConfig: {
+    underwritingMode: 'SMART',
+    autoApprovalCondition: '',
+    manualReviewAmountThreshold: 500000,
+    requiredDocuments: [],
+    underwritingSLADays: 5,
+    surchargeAcceptable: true,
+    specialAgreementAcceptable: false,
+    ruleSetCode: undefined,
+  },
 })
 
 // 文档配置行操作
@@ -396,6 +494,33 @@ function addMaterial() {
 function removeMaterial(index: number) {
   form.documentConfig.requiredMaterials.splice(index, 1)
 }
+
+// ===== 核保配置：必需材料行 + 核保规则集联动下拉 =====
+function addRequiredDocument() {
+  form.underwritingConfig.requiredDocuments.push('')
+}
+function removeRequiredDocument(index: number) {
+  form.underwritingConfig.requiredDocuments.splice(index, 1)
+}
+
+/** 核保规则集列表（type=UNDERWRITING，规则引擎域 RuleSetType） */
+const underwritingRuleSets = ref<RuleSet[]>([])
+const ruleSetLoading = ref(false)
+
+async function loadUnderwritingRuleSets() {
+  ruleSetLoading.value = true
+  try {
+    const res = await listRuleSets('UNDERWRITING')
+    underwritingRuleSets.value = res.list ?? []
+  } catch {
+    underwritingRuleSets.value = []
+  } finally {
+    ruleSetLoading.value = false
+  }
+}
+
+const underwritingModeLabel = (v?: string) =>
+  ({ AUTO: '自动核保', MANUAL: '人工核保', SMART: '智能核保', HYBRID: '混合核保' } as Record<string, string>)[v ?? ''] ?? '-'
 function addDocTemplate() {
   form.documentConfig.documentTemplates.push({
     documentType: undefined,
@@ -508,8 +633,8 @@ const nextStep = async () => {
   if (currentStep.value === 0) {
     const valid = await step1Ref.value?.validate().catch(() => false)
     if (!valid) return
-    // 进入险种配置：加载模板与条款
-    await Promise.all([loadTemplates(), loadClauses()])
+    // 进入险种配置：加载模板、条款与核保规则集（联动下拉数据源）
+    await Promise.all([loadTemplates(), loadClauses(), loadUnderwritingRuleSets()])
   }
   if (currentStep.value === 1) {
     const valid = await step2Ref.value?.validate().catch(() => false)

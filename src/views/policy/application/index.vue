@@ -90,7 +90,6 @@
               :label="getStatusLabel(insuranceDetail.status)"
             />
           </el-descriptions-item>
-          <el-descriptions-item label="关联意向单ID">{{ insuranceDetail.proposalId || '-' }}</el-descriptions-item>
           <el-descriptions-item label="保单形态">{{ insuranceDetail.policyForm || '-' }}</el-descriptions-item>
           <el-descriptions-item label="被保险人数">{{ insuranceDetail.insuredCount ?? '-' }}</el-descriptions-item>
           <el-descriptions-item label="险种分类">{{ insuranceDetail.insuranceType || '-' }}</el-descriptions-item>
@@ -104,15 +103,12 @@
           <el-descriptions-item label="缴费年数">{{ insuranceDetail.premiumPaymentYears ?? '-' }}</el-descriptions-item>
           <el-descriptions-item label="收费方式">{{ insuranceDetail.collectionMode || '-' }}</el-descriptions-item>
           <el-descriptions-item label="险种段数量">{{ insuranceDetail.lineCount ?? '-' }}</el-descriptions-item>
-          <el-descriptions-item label="渠道ID">{{ insuranceDetail.channelId || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="营销包ID">{{ insuranceDetail.marketPackageId || '-' }}</el-descriptions-item>
           <el-descriptions-item label="保险起期">
             {{ formatDateTime(insuranceDetail.insurancePeriodStart) }}
           </el-descriptions-item>
           <el-descriptions-item label="保险止期">
             {{ formatDateTime(insuranceDetail.insurancePeriodEnd) }}
           </el-descriptions-item>
-          <el-descriptions-item label="核保单号">{{ insuranceDetail.underwritingId || '-' }}</el-descriptions-item>
           <el-descriptions-item label="核保结论">
             {{ insuranceDetail.underwritingResultCode || '-' }}
           </el-descriptions-item>

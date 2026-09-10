@@ -8,6 +8,15 @@
         <TiStatusTag v-if="product" :value="product.status" :label="getStatusLabel(product.status)" />
         <div class="detail-header__actions">
           <el-button
+            v-if="product?.status === 'EFFECTIVE'"
+            type="primary"
+            :icon="Edit"
+            v-permission="'product:edit'"
+            @click="goRevise"
+          >
+            修订
+          </el-button>
+          <el-button
             v-if="product?.templateId"
             type="primary"
             :icon="Setting"
@@ -57,6 +66,35 @@
           <el-descriptions-item label="基础费率">{{ rate(product.pricingBasicRule?.baseRate) }}</el-descriptions-item>
           <el-descriptions-item label="最低保费">{{ money(product.pricingBasicRule?.minPremium) }}</el-descriptions-item>
           <el-descriptions-item label="最高保费">{{ money(product.pricingBasicRule?.maxPremium) }}</el-descriptions-item>
+        </el-descriptions>
+
+        <!-- 核保配置（产品级核保策略 + 规则集绑定；存量产品未配置时展示占位） -->
+        <el-divider content-position="left">核保配置</el-divider>
+        <el-descriptions :column="3" border>
+          <el-descriptions-item label="核保模式">
+            {{ underwritingModeLabel(product.underwritingConfig?.underwritingMode) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="核保规则集">
+            {{ ruleSetName(product.underwritingConfig?.ruleSetCode) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="转人工核保阈值">
+            {{ money(product.underwritingConfig?.manualReviewAmountThreshold) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="核保时效">
+            {{ days(product.underwritingConfig?.underwritingSLADays) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="加费承保">
+            {{ boolText(product.underwritingConfig?.surchargeAcceptable) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="特别约定">
+            {{ boolText(product.underwritingConfig?.specialAgreementAcceptable) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="自动核保条件" :span="3">
+            {{ product.underwritingConfig?.autoApprovalCondition || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="核保必需材料" :span="3">
+            {{ product.underwritingConfig?.requiredDocuments?.join('、') || '-' }}
+          </el-descriptions-item>
         </el-descriptions>
 
         <!-- 模板行为配置（出单/保全/理赔/缴费/再保/分红），随模板加载 -->
@@ -191,7 +229,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, Setting } from '@element-plus/icons-vue'
+import { ArrowLeft, Setting, Edit } from '@element-plus/icons-vue'
 import {
   getProductDetail,
   getProductClauses,
@@ -201,6 +239,7 @@ import {
   type ConfigureLifeProductRequest,
 } from '@/api/product'
 import { getClauseDetail, getCoverages, type CoverageVO } from '@/api/clause'
+import { listRuleSets, type RuleSet } from '@/api/rule-engine'
 import { useDict } from '@/composables/useDict'
 import { formatDateTime, formatDate } from '@/utils/date'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
@@ -214,6 +253,9 @@ const template = ref<ProductTemplateVO | null>(null)
 const lifeSpec = ref<ConfigureLifeProductRequest | null>(null)
 
 const goConfig = () => router.push(`/product/config/${route.params.id}`)
+
+/** 修订入口：仅生效中产品可修订（生成新版本 DRAFT，存量产品补配核保配置等场景） */
+const goRevise = () => router.push(`/product/revise/${route.params.id}`)
 
 const { getLabel: getCategoryLabel } = useDict('INSURANCE_CATEGORY')
 const { getLabel: getStatusLabel } = useDict('PRODUCT_STATUS')
@@ -246,6 +288,18 @@ const paymentModesText = (list?: string[]) =>
   list && list.length ? list.map(paymentFrequencyDictLabel).join('、') : '-'
 const rate = (v?: number) => (v != null ? v.toString() : '-')
 const money = (v?: number) => (v != null ? `¥${v.toLocaleString()}` : '-')
+
+/** 核保模式枚举码 → 中文（metadata ProductEnum.UnderwritingMode，前端本地映射） */
+const underwritingModeLabel = (v?: string) =>
+  ({ AUTO: '自动核保', MANUAL: '人工核保', SMART: '智能核保', HYBRID: '混合核保' } as Record<string, string>)[v ?? ''] ?? '-'
+
+/** 核保规则集编码 → 名称（联动规则引擎 UNDERWRITING 类型规则集；未绑定/缺失时降级展示编码） */
+const underwritingRuleSets = ref<RuleSet[]>([])
+const ruleSetName = (code?: string) => {
+  if (!code) return '未绑定（内置评分逻辑）'
+  const rs = underwritingRuleSets.value.find((x) => x.ruleSetCode === code)
+  return rs ? `${rs.ruleSetName}（${rs.ruleSetCode}）` : code
+}
 const rangeText = (min?: number, max?: number, unit = '') => {
   if (min == null && max == null) return '-'
   return `${min ?? '不限'} ~ ${max ?? '不限'}${unit}`
@@ -377,8 +431,12 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
-  // 模板配置、条款与保障责任独立加载，失败不影响主信息展示
-  await Promise.all([loadTemplateConfig(id), loadClauses(id)])
+  // 模板配置、条款、核保规则集（绑定规则集名称映射）独立加载，失败不影响主信息展示
+  await Promise.all([
+    loadTemplateConfig(id),
+    loadClauses(id),
+    listRuleSets('UNDERWRITING').then((res) => (underwritingRuleSets.value = res.list ?? [])).catch(() => {}),
+  ])
 })
 </script>
 

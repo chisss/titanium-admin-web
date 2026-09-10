@@ -59,9 +59,6 @@
       <el-descriptions v-if="detail" :column="isNarrowScreen ? 1 : 3" border>
         <el-descriptions-item label="应付编号" :span="2">{{ detail.payableId }}</el-descriptions-item>
         <el-descriptions-item label="状态">{{ statusLabel(detail.status) }}</el-descriptions-item>
-        <el-descriptions-item label="账单ID">{{ detail.billId }}</el-descriptions-item>
-        <el-descriptions-item label="计算ID">{{ detail.calculationId }}</el-descriptions-item>
-        <el-descriptions-item label="渠道">{{ detail.channelId }}</el-descriptions-item>
         <el-descriptions-item label="方案">{{ detail.schemeCode }} / {{ detail.schemeVersion }}</el-descriptions-item>
         <el-descriptions-item label="受益方">{{ beneficiaryLabel(detail) }}</el-descriptions-item>
         <el-descriptions-item label="计算基数">{{ amountText(detail.baseAmount, detail.currency) }}</el-descriptions-item>

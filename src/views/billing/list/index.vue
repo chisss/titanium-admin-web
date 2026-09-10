@@ -5,9 +5,6 @@
       <el-form-item label="账单号">
         <el-input v-model="queryParams.billNo" clearable style="width: 160px" />
       </el-form-item>
-      <el-form-item label="保单ID">
-        <el-input v-model="queryParams.policyId" clearable style="width: 160px" />
-      </el-form-item>
       <el-form-item label="账单状态">
         <TiDictSelect v-model="queryParams.status" dict-type="BILL_STATUS" placeholder="全部" style="width: 130px" />
       </el-form-item>
@@ -36,8 +33,7 @@
           <TiCopyText :text="row.billNo || '-'" />
         </template>
       </el-table-column>
-      <el-table-column prop="policyId" label="保单ID" width="180" show-overflow-tooltip />
-      <el-table-column prop="customerId" label="客户ID" width="180" show-overflow-tooltip />
+
       <el-table-column prop="amount" label="金额" width="120">
         <template #default="{ row }">¥{{ row.amount?.toLocaleString() }}</template>
       </el-table-column>

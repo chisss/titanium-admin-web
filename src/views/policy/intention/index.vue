@@ -111,8 +111,6 @@
             {{ formatMoney(proposalDetail.intendedPremium) }}
           </el-descriptions-item>
           <el-descriptions-item label="销售渠道">{{ getChannelLabel(proposalDetail.channel) }}</el-descriptions-item>
-          <el-descriptions-item label="渠道ID">{{ proposalDetail.channelId || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="营销包ID">{{ proposalDetail.marketPackageId || '-' }}</el-descriptions-item>
           <el-descriptions-item label="险种段数量">{{ proposalDetail.lineCount ?? '-' }}</el-descriptions-item>
           <el-descriptions-item label="保险起期">
             {{ formatDateTime(proposalDetail.insurancePeriodStart) }}
