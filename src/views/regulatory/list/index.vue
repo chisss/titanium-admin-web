@@ -8,7 +8,7 @@
       <el-form-item label="状态">
         <TiDictSelect v-model="queryParams.status" dict-type="REGULATORY_STATUS" placeholder="全部" style="width: 130px" />
       </el-form-item>
-      <el-form-item label="报告日期">
+      <el-form-item label="报告期间">
         <el-date-picker
           v-model="dateRange"
           type="daterange"
@@ -38,31 +38,37 @@
       @page-change="onPageChange"
       @size-change="onSizeChange"
     >
-      <el-table-column prop="reportNo" label="报告编号" width="180" class-name="ti-code-column">
+      <!-- 🔴 主键是 reportId：下游响应无 id / reportNo（D-501-59） -->
+      <el-table-column prop="reportId" label="报告编号" width="220" class-name="ti-code-column">
         <template #default="{ row }">
-          <TiCopyText :text="row.reportNo" />
+          <TiCopyText :text="row.reportId" />
         </template>
       </el-table-column>
-      <el-table-column prop="reportType" label="报告类型" min-width="160" show-overflow-tooltip>
+      <el-table-column prop="reportType" label="报告类型" min-width="150" show-overflow-tooltip>
         <template #default="{ row }">{{ reportTypeLabel(row.reportType) }}</template>
       </el-table-column>
-      <el-table-column prop="reportDate" label="报告日期" width="120">
-        <template #default="{ row }">{{ row.reportDate || '-' }}</template>
+      <!-- 报告期间由 startDate / endDate 合成：下游无 reportDate 字段 -->
+      <el-table-column label="报告期间" width="210">
+        <template #default="{ row }">{{ row.startDate && row.endDate ? `${row.startDate} ~ ${row.endDate}` : '-' }}</template>
       </el-table-column>
-      <el-table-column prop="submittedAt" label="提交时间" width="160">
-        <template #default="{ row }">{{ row.submittedAt || '-' }}</template>
+      <el-table-column prop="companyId" label="报送主体" min-width="150" show-overflow-tooltip>
+        <template #default="{ row }">{{ row.companyId || '-' }}</template>
       </el-table-column>
       <el-table-column prop="status" label="状态" width="100">
         <template #default="{ row }">
           <TiStatusTag :value="row.status" :color="STATUS_COLOR[row.status]" :label="regulatoryStatusLabel(row.status)" />
         </template>
       </el-table-column>
+      <el-table-column prop="updatedAt" label="更新时间" width="170">
+        <template #default="{ row }">{{ row.updatedAt || '-' }}</template>
+      </el-table-column>
       <!-- @vue-generic {RegulatoryReportVO} -->
       <el-table-column label="操作" min-width="220" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
           <el-button size="small" :icon="View" @click="handleView(row)">查看</el-button>
+          <!-- 状态机实际取值只有 PENDING/SUBMITTED/APPROVED/REJECTED，字典中的 DRAFT 从不产生 -->
           <el-button
-            v-if="row.status === 'DRAFT'"
+            v-if="row.status === 'PENDING'"
             size="small" type="primary"
             v-permission="'regulatory:submit'"
             @click="handleSubmit(row)"
@@ -89,14 +95,28 @@
       </el-table-column>
     </TiTable>
 
-    <!-- 新建报告对话框 -->
-    <el-dialog v-model="dialogVisible" title="新建监管报告" width="520px">
+    <!-- 新建报告对话框：字段以下游 CreateRegulatoryReportDTO 必填项为准 -->
+    <el-dialog v-model="dialogVisible" title="新建监管报告" width="560px">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
+        <el-form-item label="报送主体" prop="companyId">
+          <el-input v-model="form.companyId" placeholder="监管报送主体（默认为当前租户）" />
+        </el-form-item>
         <el-form-item label="报告类型" prop="reportType">
           <TiDictSelect v-model="form.reportType" dict-type="REGULATORY_REPORT_TYPE" style="width: 100%" />
         </el-form-item>
-        <el-form-item label="报告日期" prop="reportDate">
-          <el-date-picker v-model="form.reportDate" value-format="YYYY-MM-DD" style="width: 100%" />
+        <el-form-item label="报告期间" prop="period">
+          <el-date-picker
+            v-model="form.period"
+            type="daterange"
+            range-separator="至"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+            value-format="YYYY-MM-DD"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="报告总金额" prop="totalAmount">
+          <el-input-number v-model="form.totalAmount" :min="0" :precision="2" :controls="false" style="width: 100%" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -118,6 +138,7 @@ import {
 } from '@/api/regulatory'
 import type { RegulatoryReportVO } from '@/api/regulatory'
 import { useTable } from '@/composables/useTable'
+import { useUserStore } from '@/stores/user'
 import TiTable from '@/components/TiTable/index.vue'
 import TiSearchForm from '@/components/TiSearchForm/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
@@ -125,7 +146,7 @@ import TiDictSelect from '@/components/TiDictSelect/index.vue'
 import TiCopyText from '@/components/TiCopyText/index.vue'
 import { useDict } from '@/composables/useDict'
 
-/** 状态标签颜色映射 */
+/** 状态标签颜色映射（值域与下游 RegulatoryReportStatus 对齐） */
 const STATUS_COLOR: Record<string, string> = {
   PENDING: 'info',
   SUBMITTED: 'warning',
@@ -135,6 +156,7 @@ const STATUS_COLOR: Record<string, string> = {
 
 const { getLabel: regulatoryStatusLabel } = useDict('REGULATORY_STATUS')
 const { getLabel: reportTypeLabel } = useDict('REGULATORY_REPORT_TYPE')
+const userStore = useUserStore()
 
 const queryParams = reactive({
   reportType: undefined as string | undefined,
@@ -143,7 +165,7 @@ const queryParams = reactive({
   endDate: undefined as string | undefined,
 })
 
-// 报告日期范围（拆分为 startDate/endDate 后传给后端）
+// 报告期间范围（拆分为 startDate/endDate 后传给后端）
 const dateRange = ref<string[] | undefined>(undefined)
 watch(dateRange, (val) => {
   queryParams.startDate = val?.[0]
@@ -160,19 +182,29 @@ const saving = ref(false)
 const formRef = ref<FormInstance>()
 
 const form = reactive({
+  companyId: '',
   reportType: undefined as string | undefined,
-  reportDate: undefined as string | undefined,
+  period: undefined as string[] | undefined,
+  totalAmount: undefined as number | undefined,
 })
 
 const rules: FormRules = {
+  companyId: [{ required: true, message: '请输入报送主体', trigger: 'blur' }],
   reportType: [{ required: true, message: '请选择报告类型', trigger: 'change' }],
-  reportDate: [{ required: true, message: '请选择报告日期', trigger: 'change' }],
+  period: [{ required: true, message: '请选择报告期间', trigger: 'change' }],
 }
+
+/** 报告期间展示：下游以 startDate / endDate 两字段承载，缺一即整体不可用 */
+const periodText = (row: RegulatoryReportVO) =>
+  row.startDate && row.endDate ? `${row.startDate} ~ ${row.endDate}` : '-'
 
 /** 打开新建对话框 */
 const openDialog = () => {
+  // 报送主体默认取当前租户，允许按实际报送主体修改
+  form.companyId = userStore.tenantId
   form.reportType = undefined
-  form.reportDate = undefined
+  form.period = undefined
+  form.totalAmount = undefined
   dialogVisible.value = true
 }
 
@@ -182,7 +214,13 @@ const handleSave = async () => {
   if (!valid) return
   saving.value = true
   try {
-    await createRegulatoryReport(form)
+    await createRegulatoryReport({
+      companyId: form.companyId,
+      reportType: form.reportType!,
+      startDate: form.period![0],
+      endDate: form.period![1],
+      totalAmount: form.totalAmount,
+    })
     ElMessage.success('创建成功')
     dialogVisible.value = false
     fetchData()
@@ -191,44 +229,63 @@ const handleSave = async () => {
   }
 }
 
-/** 查看详情 */
+/** 查看详情（失败须有反馈：此前无 try/catch，主键取错致 404 时界面毫无反应） */
 const handleView = async (row: RegulatoryReportVO) => {
-  const detail = await getRegulatoryReportDetail(row.id)
-  ElMessageBox.alert(
-    `报告编号：${detail.reportNo}<br/>报告类型：${detail.reportTypeLabel || detail.reportType}<br/>状态：${regulatoryStatusLabel(detail.status)}`,
-    '报告详情',
-    { dangerouslyUseHTMLString: true },
-  )
+  try {
+    const detail = await getRegulatoryReportDetail(row.reportId)
+    ElMessageBox.alert(
+      `报告编号：${detail.reportId}<br/>报送主体：${detail.companyId || '-'}` +
+        `<br/>报告期间：${periodText(detail)}<br/>状态：${regulatoryStatusLabel(detail.status)}`,
+      '报告详情',
+      { dangerouslyUseHTMLString: true },
+    )
+  } catch {
+    ElMessage.error('获取报告详情失败')
+  }
 }
 
 /** 提交报告 */
 const handleSubmit = async (row: RegulatoryReportVO) => {
-  await ElMessageBox.confirm(`确认提交报告"${row.reportNo}"？`, '提示', { type: 'warning' })
-  await submitRegulatoryReport(row.id)
+  try {
+    await ElMessageBox.confirm(`确认提交报告"${row.reportId}"？`, '提示', { type: 'warning' })
+  } catch {
+    return
+  }
+  await submitRegulatoryReport(row.reportId)
   ElMessage.success('提交成功')
   fetchData()
 }
 
 /** 审批通过 */
 const handleApprove = async (row: RegulatoryReportVO) => {
-  const { value: comment } = await ElMessageBox.prompt('请输入审批意见（可选）', '审批通过', {
-    type: 'success',
-    inputPlaceholder: '审批意见',
-    confirmButtonText: '通过',
-  })
-  await approveRegulatoryReport(row.id, { comment })
+  let comment: string | undefined
+  try {
+    ({ value: comment } = await ElMessageBox.prompt('请输入审批意见（可选）', '审批通过', {
+      type: 'success',
+      inputPlaceholder: '审批意见',
+      confirmButtonText: '通过',
+    }))
+  } catch {
+    return
+  }
+  await approveRegulatoryReport(row.reportId, { comment })
   ElMessage.success('已通过')
   fetchData()
 }
 
 /** 驳回报告 */
 const handleReject = async (row: RegulatoryReportVO) => {
-  const { value: comment } = await ElMessageBox.prompt('请输入驳回原因', '驳回报告', {
-    type: 'warning',
-    inputPlaceholder: '驳回原因',
-    confirmButtonText: '驳回',
-  })
-  await rejectRegulatoryReport(row.id, { comment })
+  let comment: string | undefined
+  try {
+    ({ value: comment } = await ElMessageBox.prompt('请输入驳回原因', '驳回报告', {
+      type: 'warning',
+      inputPlaceholder: '驳回原因',
+      confirmButtonText: '驳回',
+    }))
+  } catch {
+    return
+  }
+  await rejectRegulatoryReport(row.reportId, { comment })
   ElMessage.success('已驳回')
   fetchData()
 }
