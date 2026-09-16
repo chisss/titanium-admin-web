@@ -136,7 +136,7 @@ const form = reactive({ username: '', password: '', nickname: '', mobile: '', em
 
 const rules: FormRules = {
   username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
-  password: [{ required: true, message: '请输入初始密码', trigger: 'blur' }, { min: 6, message: '密码不少于6位', trigger: 'blur' }],
+  password: [{ required: true, message: '请输入初始密码', trigger: 'blur' }, { min: 8, max: 64, message: '密码长度需为 8-64 位', trigger: 'blur' }],
   nickname: [{ required: true, message: '请输入昵称', trigger: 'blur' }],
 }
 
@@ -182,14 +182,16 @@ const handleSave = async () => {
 }
 
 const handleResetPwd = async (row: UserListItem) => {
-  // 后端重置接口语义为「重置为系统默认密码」，不接受新密码入参，故此处只做确认而非输入
-  await ElMessageBox.confirm(`确认将用户「${row.username}」的密码重置为系统默认密码？`, '重置密码', {
-    type: 'warning',
+  // 密码由管理员显式指定：后端已无「系统默认密码」语义，且不接受空口令
+  const input = await ElMessageBox.prompt(`请为用户「${row.username}」设置新密码`, '重置密码', {
+    inputType: 'password',
     confirmButtonText: '确认重置',
-  }).then(async () => {
-    await resetPassword(row.id)
-    ElMessage.success('密码已重置为系统默认密码')
-  }).catch(() => {})
+    // 与后端 @Size(min = 8) 对齐，避免前端放行、后端 400 的契约错位
+    inputValidator: (v) => (v && v.length >= 8 ? true : '密码长度需为 8-64 位'),
+  }).catch(() => null)
+  if (!input?.value) return
+  await resetPassword(row.id, input.value)
+  ElMessage.success('密码已重置')
 }
 
 const handleToggle = async (row: UserListItem) => {

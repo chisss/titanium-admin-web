@@ -85,19 +85,14 @@ export function updateUser(id: string, data: Partial<UserListItem>): Promise<voi
   return http.put(`/web/v1/users/${id}`, toUserBody(data))
 }
 
-/** 重置密码（后端语义为「重置为系统默认密码」，不接受新密码入参） */
-export function resetPassword(id: string): Promise<void> {
-  return http.put(`/web/v1/users/${id}/reset-password`)
+/** 重置密码（由管理员指定新密码，后端不再有「系统默认密码」语义） */
+export function resetPassword(id: string, password: string): Promise<void> {
+  return http.put(`/web/v1/users/${id}/reset-password`, { password })
 }
 
 /** 启用/禁用用户（状态值须按后端码 0-正常 / 1-停用 提交） */
 export function toggleUserStatus(id: string, status: UserListItem['status']): Promise<void> {
   return http.put(`/web/v1/users/${id}/status`, { status: STATUS_TO_CODE[status] })
-}
-
-/** 删除用户 */
-export function deleteUser(id: string): Promise<void> {
-  return http.delete(`/web/v1/users/${id}`)
 }
 
 /** 分配角色 */
