@@ -24,7 +24,6 @@ export interface BillVO {
   updatedAt?: string
   /** 兼容旧版管理端聚合字段 */
   id?: string
-  billNo?: string
   policyNo?: string
   holderName?: string
   paidDate?: string

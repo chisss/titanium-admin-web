@@ -4,16 +4,17 @@
     <div class="ti-card" v-loading="loading">
       <div class="detail-header">
         <el-button :icon="ArrowLeft" text @click="$router.back()">返回</el-button>
-        <h3>账单详情 - {{ bill?.billNo || bill?.billId }}</h3>
-        <TiStatusTag v-if="bill" :value="bill.status" />
+        <h3>账单详情 - {{ bill?.billId }}</h3>
+        <TiStatusTag v-if="bill" :value="bill.status" :label="billStatusLabel(bill.status)" />
       </div>
 
       <el-descriptions v-if="bill" :column="detailColumnCount" border style="margin-bottom: 24px">
-        <el-descriptions-item label="账单号">{{ bill.billNo || '-' }}</el-descriptions-item>
+        <!-- 🔴 账单号即主键 billId：此前读遗留字段 billNo 恒 '-'（D-501-47） -->
+        <el-descriptions-item label="账单号">{{ bill.billId || '-' }}</el-descriptions-item>
         <el-descriptions-item label="账单金额">¥{{ bill.amount?.toLocaleString() }}</el-descriptions-item>
-        <el-descriptions-item label="到期日">{{ bill.dueDate || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="实缴日">{{ bill.paidDate || bill.paymentDate || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="创建时间" :span="3">{{ bill.createdAt }}</el-descriptions-item>
+        <el-descriptions-item label="到期日">{{ formatDate(bill.dueDate) }}</el-descriptions-item>
+        <el-descriptions-item label="实缴日">{{ formatDate(bill.paidDate || bill.paymentDate) }}</el-descriptions-item>
+        <el-descriptions-item label="创建时间" :span="3">{{ formatDateTime(bill.createdAt) }}</el-descriptions-item>
       </el-descriptions>
 
       <!-- 缴费计划 -->
@@ -28,7 +29,8 @@
         </el-table-column>
         <el-table-column prop="status" label="状态" width="100">
           <template #default="{ row }">
-            <TiStatusTag :value="row.status" />
+            <!-- 缴费计划状态：PENDING/PAID/OVERDUE（无专用字典，走组件兜底文案 + 本页域内语义） -->
+            <TiStatusTag :value="row.status" :label="SCHEDULE_STATUS_TEXT[row.status]" />
           </template>
         </el-table-column>
       </el-table>
@@ -68,7 +70,7 @@
           <el-table-column label="基数" width="125"><template #default="{ row }">{{ internalAmountText(row.baseAmount, row.currency) }}</template></el-table-column>
           <el-table-column label="分润比例" width="105"><template #default="{ row }">{{ internalRateText(row.splitRate) }}</template></el-table-column>
           <el-table-column label="应付金额" width="130"><template #default="{ row }">{{ internalAmountText(row.payableAmount, row.currency) }}</template></el-table-column>
-          <el-table-column label="状态" width="120"><template #default="{ row }"><TiStatusTag :value="row.status" /></template></el-table-column>
+          <el-table-column label="状态" width="120"><template #default="{ row }"><TiStatusTag :value="row.status" :label="commissionPayableStatusLabel(row.status)" /></template></el-table-column>
           <el-table-column label="方案哈希" min-width="190"><template #default="{ row }"><span class="hash-text">{{ row.schemeHash }}</span></template></el-table-column>
           <template #empty><el-empty description="无佣金应付明细" :image-size="64" /></template>
         </el-table>
@@ -85,6 +87,13 @@ import { useMediaQuery } from '@vueuse/core'
 import { getBillDetail, getBillPricingFacts, getPremiumSchedule } from '@/api/billing'
 import type { BillingPricingFactVO, BillVO, PremiumScheduleVO } from '@/api/billing'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
+import { useDict } from '@/composables/useDict'
+import { formatDate, formatDateTime } from '@/utils/date'
+
+/** 账单状态/佣金应付状态取后端字典；缴费计划无专用字典，域内语义就近定义（D-501-42） */
+const { getLabel: billStatusLabel } = useDict('BILL_STATUS')
+const { getLabel: commissionPayableStatusLabel } = useDict('COMMISSION_PAYABLE_STATUS')
+const SCHEDULE_STATUS_TEXT: Record<string, string> = { PENDING: '待缴费', PAID: '已缴费', OVERDUE: '已逾期' }
 
 const route = useRoute()
 const loading = ref(false)

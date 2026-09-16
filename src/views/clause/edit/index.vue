@@ -59,7 +59,9 @@
             </el-form-item>
           </el-col>
           <el-col :sm="12">
-            <el-form-item label="生效日期">
+            <!-- 🔴 生效日期是后端强制必填（ClauseDataValidator#validateEffectivePeriod），
+                 此前既无必填标记也无校验规则 ⇒ 用户填完 5 个带星号字段仍被 400 拒绝（D-501-39） -->
+            <el-form-item label="生效日期" prop="effectiveDate">
               <el-date-picker v-model="form.effectiveDate" value-format="YYYY-MM-DD" style="width: 100%" />
             </el-form-item>
           </el-col>
@@ -292,12 +294,20 @@ const form = reactive({
   effectiveDate: undefined as string | undefined,
 })
 
+/**
+ * 表单校验规则 —— 与后端 ClauseDataValidator#validateClauseData 的必填项**逐项对齐**。
+ * 🔴 此前漏了「生效日期」与「条款内容」两项（前者连 `prop` 都没挂、后者挂了 `prop` 但无规则），
+ * 二者均由后端强制必填 ⇒ 用户填完全部带星号字段仍被 400 拒绝（D-501-39）。
+ * 后端新增必填项时此处须同步 —— 规则是硬编码列表，不会自动派生。
+ */
 const rules: FormRules = {
   code: [{ required: true, message: '请输入条款编码', trigger: 'blur' }],
   name: [{ required: true, message: '请输入条款名称', trigger: 'blur' }],
   category: [{ required: true, message: '请选择险种分类', trigger: 'change' }],
   insuranceType: [{ required: true, message: '请选择具体险种', trigger: 'change' }],
   clauseType: [{ required: true, message: '请选择条款类型', trigger: 'change' }],
+  effectiveDate: [{ required: true, message: '请选择生效日期', trigger: 'change' }],
+  content: [{ required: true, message: '请输入条款内容', trigger: 'blur' }],
 }
 
 const insuranceTypeOptions = computed(() => insuranceTypesOf(form.category))

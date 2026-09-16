@@ -15,13 +15,14 @@
         <el-button type="primary" :icon="Plus" v-permission="'notification:create'" @click="openDialog()">
           发送新通知
         </el-button>
+        <!-- 🔴 D-501-67：下游语义为 PENDING → SENT（确认送达），状态机无 READ ⇒ 按钮文案须与系统事实一致 -->
         <el-button
           :icon="Check"
           :disabled="selectedIds.length === 0"
           v-permission="'notification:read'"
           @click="handleBatchRead"
         >
-          批量标记已读
+          批量确认送达
         </el-button>
       </div>
     </div>
@@ -37,14 +38,18 @@
       @selection-change="onSelectionChange"
     >
       <el-table-column type="selection" width="48" />
-      <el-table-column prop="customerName" label="客户" width="140">
-        <template #default="{ row }">{{ row.customerName || row.customerId || '-' }}</template>
+      <!-- D-501-63：字段名对齐下游（recipient / notificationType），此前读 customerName/channel 恒空 -->
+      <el-table-column prop="recipient" label="接收人" width="160">
+        <template #default="{ row }">{{ row.recipient || '-' }}</template>
       </el-table-column>
-      <el-table-column prop="channel" label="发送渠道" width="120">
+      <el-table-column prop="notificationType" label="发送渠道" width="120">
         <template #default="{ row }">
-          <el-icon class="ti-channel-icon"><component :is="CHANNEL_ICON[row.channel]" /></el-icon>
-          <span>{{ notificationChannelLabel(row.channel) }}</span>
+          <el-icon class="ti-channel-icon"><component :is="CHANNEL_ICON[row.notificationType]" /></el-icon>
+          <span>{{ notificationChannelLabel(row.notificationType) }}</span>
         </template>
+      </el-table-column>
+      <el-table-column prop="subject" label="标题" min-width="160">
+        <template #default="{ row }">{{ row.subject || '-' }}</template>
       </el-table-column>
       <el-table-column prop="content" label="内容摘要" min-width="240">
         <template #default="{ row }">{{ truncate(row.content) }}</template>
@@ -54,8 +59,8 @@
           <TiStatusTag :value="row.status" :color="STATUS_COLOR[row.status]" :label="notificationStatusLabel(row.status)" />
         </template>
       </el-table-column>
-      <el-table-column prop="sentAt" label="发送时间" width="160">
-        <template #default="{ row }">{{ row.sentAt || '-' }}</template>
+      <el-table-column prop="sentAt" label="发送时间" width="170">
+        <template #default="{ row }">{{ formatDateTime(row.sentAt) }}</template>
       </el-table-column>
       <!-- @vue-generic {NotificationVO} -->
       <el-table-column label="操作" width="90" fixed="right">
@@ -68,14 +73,15 @@
     <!-- 发送新通知对话框 -->
     <el-dialog v-model="dialogVisible" title="发送新通知" width="560px">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="90px">
-        <el-form-item label="发送渠道" prop="channel">
-          <TiDictSelect v-model="form.channel" dict-type="NOTIFICATION_CHANNEL" placeholder="请选择" style="width: 100%" />
+        <!-- D-501-63：表单字段名对齐下游 SendNotificationRequest（notificationType/recipient/subject），此前 3/4 字段落空 -->
+        <el-form-item label="发送渠道" prop="notificationType">
+          <TiDictSelect v-model="form.notificationType" dict-type="NOTIFICATION_CHANNEL" placeholder="请选择" style="width: 100%" />
         </el-form-item>
-        <el-form-item label="客户ID" prop="customerId">
-          <el-input v-model="form.customerId" />
+        <el-form-item label="接收方" prop="recipient">
+          <el-input v-model="form.recipient" placeholder="手机号 / 邮箱 / openId" />
         </el-form-item>
-        <el-form-item label="标题">
-          <el-input v-model="form.title" />
+        <el-form-item label="标题" prop="subject">
+          <el-input v-model="form.subject" />
         </el-form-item>
         <el-form-item label="通知内容" prop="content">
           <el-input v-model="form.content" type="textarea" :rows="4" maxlength="500" show-word-limit />
@@ -103,23 +109,23 @@ import TiSearchForm from '@/components/TiSearchForm/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
 import { useDict } from '@/composables/useDict'
+import { formatDateTime } from '@/utils/date'
 
 /** 渠道图标映射 */
 const CHANNEL_ICON: Record<string, Component> = {
   SMS: ChatDotRound,
   EMAIL: Message,
-  IN_APP: Bell,
+  INTERNAL: Bell,
 }
 
 const { getLabel: notificationChannelLabel } = useDict('NOTIFICATION_CHANNEL')
 const { getLabel: notificationStatusLabel } = useDict('NOTIFICATION_STATUS')
 
-/** 状态标签颜色映射 */
+/** 状态标签颜色映射：后端状态机只有 PENDING/SENT/FAILED（无 READ，见 D-501-67） */
 const STATUS_COLOR: Record<string, string> = {
   PENDING: 'warning',
   SENT: 'success',
   FAILED: 'danger',
-  READ: 'info',
 }
 
 const queryParams = reactive({
@@ -136,7 +142,8 @@ fetchData()
 // 表格选中项
 const selectedIds = ref<string[]>([])
 const onSelectionChange = (rows: NotificationVO[]) => {
-  selectedIds.value = rows.map((r) => r.id)
+  // D-501-67：id 必须取 notificationId，此前取 row.id（undefined）⇒ 请求体 ids=[null,null] 实质无效
+  selectedIds.value = rows.map((r) => r.notificationId)
 }
 
 /** 内容截断（60字） */
@@ -150,23 +157,23 @@ const saving = ref(false)
 const formRef = ref<FormInstance>()
 
 const form = reactive({
-  channel: undefined as NotificationVO['channel'] | undefined,
-  customerId: '',
-  title: '',
+  notificationType: undefined as NotificationVO['notificationType'] | undefined,
+  recipient: '',
+  subject: '',
   content: '',
 })
 
 const rules: FormRules = {
-  channel: [{ required: true, message: '请选择发送渠道', trigger: 'change' }],
-  customerId: [{ required: true, message: '请输入客户ID', trigger: 'blur' }],
+  notificationType: [{ required: true, message: '请选择发送渠道', trigger: 'change' }],
+  recipient: [{ required: true, message: '请输入接收方', trigger: 'blur' }],
   content: [{ required: true, message: '请输入通知内容', trigger: 'blur' }],
 }
 
 /** 打开发送对话框 */
 const openDialog = () => {
-  form.channel = undefined
-  form.customerId = ''
-  form.title = ''
+  form.notificationType = undefined
+  form.recipient = ''
+  form.subject = ''
   form.content = ''
   dialogVisible.value = true
 }
@@ -177,8 +184,14 @@ const handleSave = async () => {
   if (!valid) return
   saving.value = true
   try {
-    await sendNotification(form)
-    ElMessage.success('发送成功')
+    const notificationId = await sendNotification({
+      notificationType: form.notificationType!,
+      recipient: form.recipient,
+      subject: form.subject || undefined,
+      content: form.content,
+    })
+    // D-501-63：不得无条件宣告成功 —— 下游返回的 id 是该通知确实创建的凭据
+    ElMessage.success(notificationId ? `已提交发送，通知ID：${notificationId}` : '已提交发送')
     dialogVisible.value = false
     fetchData()
   } finally {
@@ -188,17 +201,35 @@ const handleSave = async () => {
 
 /** 查看详情 */
 const handleView = async (row: NotificationVO) => {
-  const detail = await getNotificationDetail(row.id)
-  ElMessageBox.alert(detail.content, detail.title || '通知详情')
+  // D-501-63：此前取 row.id（undefined）⇒ 请求 /notifications/undefined 恒 404 静默失败
+  const detail = await getNotificationDetail(row.notificationId)
+  ElMessageBox.alert(detail.content, detail.subject || '通知详情')
 }
 
-/** 批量标记已读 */
+/**
+ * 批量确认送达（下游 PUT /batch-read）。
+ * 🔴 D-501-67：`data` 是**实际标记条数**，必须消费 —— 此前无条件提示「操作成功」，
+ * 而后端如实返回 0（未标记任何通知）时界面仍在谎报成功。
+ */
 const handleBatchRead = async () => {
-  await ElMessageBox.confirm(`确认将选中的 ${selectedIds.value.length} 条通知标记为已读？`, '提示', { type: 'warning' })
-  await batchMarkRead(selectedIds.value)
-  ElMessage.success('操作成功')
+  const selected = [...selectedIds.value]
+  await ElMessageBox.confirm(
+    `确认将选中的 ${selected.length} 条通知标记为已送达？`,
+    '提示',
+    { type: 'warning' },
+  )
+  const marked = await batchMarkRead(selected)
   selectedIds.value = []
-  fetchData()
+  await fetchData()
+  const total = Number(marked) || 0
+  if (total === 0) {
+    ElMessage.warning('未标记任何通知：所选通知均已是终态（已发送/失败）')
+  } else if (total < selected.length) {
+    // 后端按条独立处理，非法/非 PENDING 的 id 会被跳过并如实反映在计数差上
+    ElMessage.warning(`已标记 ${total} 条，另有 ${selected.length - total} 条因非待发送状态被跳过`)
+  } else {
+    ElMessage.success(`已标记 ${total} 条通知为已送达`)
+  }
 }
 </script>
 

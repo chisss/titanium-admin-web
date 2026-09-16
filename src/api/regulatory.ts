@@ -15,6 +15,16 @@ export interface RegulatoryReportVO {
   startDate: string
   endDate: string
   totalAmount?: number
+  currency?: string
+  // 流转信息（D-501-62 出参层补齐后可见）
+  submittedBy?: string
+  submittedAt?: string
+  approvedBy?: string
+  approvedAt?: string
+  rejectedBy?: string
+  rejectedAt?: string
+  rejectReason?: string
+  comments?: string
   createdBy?: string
   updatedBy?: string
   createdAt: string

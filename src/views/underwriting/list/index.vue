@@ -42,8 +42,9 @@
       <el-table-column prop="riskLevel" label="风险等级" width="110">
         <template #default="{ row }">{{ riskLevelLabel(row.riskLevel) }}</template>
       </el-table-column>
-      <el-table-column prop="createdAt" label="申请时间" width="160">
-        <template #default="{ row }">{{ row.createdAt || '-' }}</template>
+      <el-table-column prop="createdAt" label="申请时间" width="170">
+        <!-- D-501-42：此前直出后端 ISO 串（2026-08-29T12:01:21），统一走全局日期工具 -->
+        <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
       </el-table-column>
       <el-table-column prop="status" label="核保状态" width="120">
         <template #default="{ row }">
@@ -85,6 +86,7 @@ import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import TiCopyText from '@/components/TiCopyText/index.vue'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
 import { useDict } from '@/composables/useDict'
+import { formatDateTime } from '@/utils/date'
 import type { PageResult } from '@/types/api.d'
 
 const router = useRouter()

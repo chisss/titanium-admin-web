@@ -46,7 +46,7 @@
       <article v-for="row in tableData" :key="row.caseId" class="case-card">
         <div class="case-card__heading">
           <strong>{{ row.policyNumber || '-' }}</strong>
-          <TiStatusTag :value="row.status" />
+          <TiStatusTag :value="row.status" :label="maintenanceStatusLabel(row.status)" />
         </div>
         <div class="case-card__items">{{ row.itemCodes?.join('、') || '-' }}</div>
         <div class="case-card__meta">

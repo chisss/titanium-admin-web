@@ -98,14 +98,10 @@ import TiSearchForm from '@/components/TiSearchForm/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
 import { useDict } from '@/composables/useDict'
+import { formatDate } from '@/utils/date'
 import type { PolicyVO } from '@/types/business.d'
 
 const { getLabel: policyStatusLabel } = useDict('POLICY_STATUS')
-
-const formatDate = (dateStr: string | undefined) => {
-  if (!dateStr) return '-'
-  return dateStr.split('T')[0] // YYYY-MM-DD
-}
 
 const router = useRouter()
 

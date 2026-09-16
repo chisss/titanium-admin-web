@@ -5,7 +5,7 @@
       <div class="detail-header">
         <el-button :icon="ArrowLeft" text @click="$router.back()">返回</el-button>
         <h3>条款详情</h3>
-        <TiStatusTag v-if="clause" :value="clause.status" />
+        <TiStatusTag v-if="clause" :value="clause.status" :label="clauseStatusLabel(clause.status)" />
         <div class="header-actions">
           <el-button type="primary" :icon="Edit" v-permission="'clause:edit'" @click="goEdit">编辑</el-button>
         </div>
@@ -76,6 +76,8 @@ const { getLabel: getCategoryLabel } = useDict('INSURANCE_CATEGORY')
 const { getLabel: clauseTypeDictLabel } = useDict('CLAUSE_TYPE')
 const { getLabel: coverageTypeDictLabel } = useDict('COVERAGE_TYPE')
 const { getLabel: payoutTypeDictLabel } = useDict('PAYOUT_TYPE')
+/** 条款状态取后端字典（D-501-42：此前徽章不传 label，裸显 DRAFT/ACTIVE 等英文码） */
+const { getLabel: clauseStatusLabel } = useDict('CLAUSE_STATUS')
 
 // —— 标签/格式化工具（后端枚举码 → 中文，空值统一占位 '-'，与条款编辑页同口径） ——
 const clauseTypeLabel = (v?: string) => v ? clauseTypeDictLabel(v) : '-'

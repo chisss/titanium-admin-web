@@ -5,7 +5,8 @@
       <div class="detail-header">
         <el-button :icon="ArrowLeft" text @click="$router.back()">返回</el-button>
         <h3 class="detail-title">保单详情 - {{ policy?.policyNo }}</h3>
-        <TiStatusTag v-if="policy" :value="policy.status" />
+        <!-- 🔴 状态徽章须传 label：TiStatusTag 只有颜色映射、没有域内文案（D-501-42，此前裸显 TERMINATED） -->
+        <TiStatusTag v-if="policy" :value="policy.status" :label="policyStatusLabel(policy.status)" />
         <div class="detail-actions" v-if="policy">
           <!-- 状态相关操作按钮 -->
           <el-dropdown trigger="click" @command="handleAction">
@@ -64,9 +65,9 @@
             <el-descriptions-item label="被保人">{{ policy.insuredName }}</el-descriptions-item>
             <el-descriptions-item label="年缴保费">¥{{ policy.premium?.toLocaleString() }}</el-descriptions-item>
             <el-descriptions-item label="基本保额">¥{{ policy.sumInsured?.toLocaleString() }}</el-descriptions-item>
-            <el-descriptions-item label="生效日期">{{ policy.effectiveDate }}</el-descriptions-item>
-            <el-descriptions-item label="到期日期">{{ policy.expiryDate }}</el-descriptions-item>
-            <el-descriptions-item label="创建时间">{{ policy.createTime || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="生效日期">{{ formatDate(policy.effectiveDate) }}</el-descriptions-item>
+            <el-descriptions-item label="到期日期">{{ formatDate(policy.expiryDate) }}</el-descriptions-item>
+            <el-descriptions-item label="创建时间">{{ formatDateTime(policy.createTime) }}</el-descriptions-item>
           </el-descriptions>
 
           <section v-if="subjects.length" class="subject-section">
@@ -108,8 +109,8 @@
           <el-table v-loading="maintenanceLoading" :data="maintenanceRecords" border stripe>
             <el-table-column label="保全项" min-width="190"><template #default="{ row }">{{ row.itemCodes?.join('、') || '-' }}</template></el-table-column>
             <el-table-column prop="source" label="来源" width="110"><template #default="{ row }">{{ row.source === 'MANUAL' ? '后台人工' : 'API 自动' }}</template></el-table-column>
-            <el-table-column prop="status" label="案件状态" width="120"><template #default="{ row }"><TiStatusTag :value="row.status" /></template></el-table-column>
-            <el-table-column prop="effectStatus" label="生效状态" width="120"><template #default="{ row }"><TiStatusTag :value="row.effectStatus || 'NOT_STARTED'" /></template></el-table-column>
+            <el-table-column prop="status" label="案件状态" width="120"><template #default="{ row }"><TiStatusTag :value="row.status" :label="maintenanceStatusLabel(row.status)" /></template></el-table-column>
+            <el-table-column prop="effectStatus" label="生效状态" width="120"><template #default="{ row }"><TiStatusTag :value="row.effectStatus || 'NOT_STARTED'" :label="effectStatusLabel(row.effectStatus || 'NOT_STARTED')" /></template></el-table-column>
             <el-table-column prop="createdAt" label="创建时间" width="175" />
             <el-table-column label="查看" width="100"><template #default="{ row }"><el-button link type="primary" @click="$router.push(`/maintenance/workbench/${row.caseId}`)">工作台</el-button></template></el-table-column>
             <template #empty><el-empty description="暂无保全记录" :image-size="80" /></template>
@@ -211,6 +212,13 @@ import TiDictSelect from '@/components/TiDictSelect/index.vue'
 import type { PolicyVO } from '@/types/business.d'
 import type { PolicySubjectVO } from '@/api/policy'
 import { getMaintenanceCaseList, type MaintenanceCaseSummary } from '@/api/maintenance'
+import { useDict } from '@/composables/useDict'
+import { formatDate, formatDateTime } from '@/utils/date'
+
+/** 状态文案取自后端字典（域内语义最准，D-501-42） */
+const { getLabel: policyStatusLabel } = useDict('POLICY_STATUS')
+const { getLabel: maintenanceStatusLabel } = useDict('MAINTENANCE_CASE_STATUS')
+const { getLabel: effectStatusLabel } = useDict('MAINTENANCE_EFFECT_STATUS')
 
 const route = useRoute()
 const loading = ref(false)
@@ -365,6 +373,49 @@ const subjectFieldLabels: Record<string, string> = {
   propertyUsage: '财产用途', propertyValue: '财产价值', industry: '行业', employeeCount: '员工数',
   payroll: '工资总额', payrollAmount: '工资总额', workplaceAddress: '工作场所地址', age: '年龄', gender: '性别',
   occupation: '职业类别', smokingStatus: '吸烟状况',
+  // D-501-41 补齐：此前未登记，详情页直出英文键名 relationToHolder
+  relationToHolder: '与投保人关系', preExistingCondition: '既往症', socialSecurity: '社保', medicalRegion: '就医地区',
+}
+
+/**
+ * 枚举型标的属性值中文化（D-501-41）。
+ * 码源为后端枚举（不是前端自造）：gender ← metadata `CustomerGender`，relationToHolder ← policy `FamilyRelation`。
+ * 🔴 无后端枚举可依据的码（usageType/buildingStructure/occupancyType/propertyUsage/industry 等）**不得在此臆造文案**，
+ * 由下方 warnUnmappedSubjectValue 告警暴露，待后端下发货值字典后再补（见台账 D-501-41 结构性建议 3）。
+ */
+const subjectEnumValueLabels: Record<string, Record<string, string>> = {
+  gender: { MALE: '男', FEMALE: '女', UNKNOWN: '未知' },
+  relationToHolder: { SELF: '本人', SPOUSE: '配偶', CHILD: '子女', PARENT: '父母' },
+}
+
+/** 布尔型属性键：直出 true/false 可读性差，统一渲染「是/否」 */
+const subjectBooleanKeys = new Set(['preExistingCondition', 'socialSecurity'])
+
+/** 疑似枚举码（全大写下划线风格），用于识别"该翻却没翻"的值并告警 */
+const looksLikeEnumCode = (text: string) => /^[A-Z][A-Z0-9_]{1,}$/.test(text)
+
+/**
+ * 标的属性值 → 展示文案：枚举码走映射表，布尔走是/否，其余原样。
+ * 未覆盖的枚举码**回退原文并告警**（不静默），避免"英文码直出"再次成为缺陷温床。
+ */
+const subjectFieldValue = (key: string, value: unknown): string => {
+  if (value == null || value === '') return '-'
+  if (subjectBooleanKeys.has(key)) return value === true || value === 'true' ? '是' : '否'
+  const text = String(value)
+  const mapped = subjectEnumValueLabels[key]?.[text]
+  if (mapped) return mapped
+  if (looksLikeEnumCode(text)) {
+    console.warn(`[policy/detail] 标的属性 "${key}" 的值码 "${text}" 无中文映射，请补后端货值字典`)
+  }
+  return text
+}
+
+/** 属性键 → 中文标签：未登记键回退业务化描述 + 告警（对齐 subjectTypeLabel 的「中文兜底」风格，观察项 O-1） */
+const subjectFieldLabel = (key: string): string => {
+  const label = subjectFieldLabels[key]
+  if (label) return label
+  console.warn(`[policy/detail] 标的属性键 "${key}" 未登记中文标签，建议迁至后端货值字典`)
+  return `其他属性（${key}）`
 }
 
 const subjectFields = (subject: PolicySubjectVO) => {
@@ -379,8 +430,8 @@ const subjectFields = (subject: PolicySubjectVO) => {
   }
   return Object.entries(attributes).map(([key, value]) => ({
     key,
-    label: subjectFieldLabels[key] || key,
-    value: value == null || value === '' ? '-' : String(value),
+    label: subjectFieldLabel(key),
+    value: subjectFieldValue(key, value),
   }))
 }
 

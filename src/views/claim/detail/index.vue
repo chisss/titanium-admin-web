@@ -177,6 +177,7 @@ import {
   quickPayClaim,
 } from '@/api/claim'
 import type { ClaimCaseVO } from '@/api/claim'
+import { showErrorIfUnhandled } from '@/api/http'
 import { useDict } from '@/composables/useDict'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
 
@@ -320,7 +321,7 @@ const confirmSimpleAction = async (action: ClaimAction) => {
     await loadDetail()
   } catch (e: unknown) {
     if (e !== 'cancel' && e !== 'close') {
-      ElMessage.error(e instanceof Error ? e.message : '操作失败')
+      showErrorIfUnhandled(e, '操作失败')
     }
   } finally {
     actionLoading.value = false
@@ -346,7 +347,7 @@ const onAction = async (action: ClaimAction) => {
         ElMessage.success('快赔支付发起成功')
         await loadDetail()
       } catch (e: unknown) {
-        ElMessage.error(e instanceof Error ? e.message : '操作失败')
+        showErrorIfUnhandled(e, '操作失败')
       } finally {
         actionLoading.value = false
       }
@@ -376,7 +377,7 @@ const onAction = async (action: ClaimAction) => {
         ElMessage.success('结案归档成功')
         await loadDetail()
       } catch (e: unknown) {
-        ElMessage.error(e instanceof Error ? e.message : '操作失败')
+        showErrorIfUnhandled(e, '操作失败')
       } finally {
         actionLoading.value = false
       }
@@ -394,7 +395,7 @@ const submitSurveyForm = async () => {
     surveyDialog.value = false
     await loadDetail()
   } catch (e: unknown) {
-    ElMessage.error(e instanceof Error ? e.message : '操作失败')
+    showErrorIfUnhandled(e, '操作失败')
   } finally {
     actionLoading.value = false
   }
@@ -410,7 +411,7 @@ const submitAssessmentForm = async () => {
     assessmentDialog.value = false
     await loadDetail()
   } catch (e: unknown) {
-    ElMessage.error(e instanceof Error ? e.message : '操作失败')
+    showErrorIfUnhandled(e, '操作失败')
   } finally {
     actionLoading.value = false
   }
@@ -426,7 +427,7 @@ const submitSettle = async () => {
     settleDialog.value = false
     await loadDetail()
   } catch (e: unknown) {
-    ElMessage.error(e instanceof Error ? e.message : '操作失败')
+    showErrorIfUnhandled(e, '操作失败')
   } finally {
     actionLoading.value = false
   }
@@ -442,7 +443,7 @@ const submitReject = async () => {
     rejectDialog.value = false
     await loadDetail()
   } catch (e: unknown) {
-    ElMessage.error(e instanceof Error ? e.message : '操作失败')
+    showErrorIfUnhandled(e, '操作失败')
   } finally {
     actionLoading.value = false
   }

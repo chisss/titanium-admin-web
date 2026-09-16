@@ -21,9 +21,10 @@
         <el-descriptions-item label="结论类型">{{ conclusionTypeLabel(detail.conclusionType) }}</el-descriptions-item>
         <el-descriptions-item label="审核类型">{{ auditTypeLabel(detail.auditType) }}</el-descriptions-item>
         <el-descriptions-item label="核保员">{{ detail.underwriterName || detail.underwriterId || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="申请时间">{{ detail.createdAt || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="核保开始时间">{{ detail.underwritingStartTime || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="核保完成时间">{{ detail.underwritingCompletedTime || '-' }}</el-descriptions-item>
+        <!-- D-501-42：三处时间此前直出后端 ISO 串，统一走全局日期工具 -->
+        <el-descriptions-item label="申请时间">{{ formatDateTime(detail.createdAt) }}</el-descriptions-item>
+        <el-descriptions-item label="核保开始时间">{{ formatDateTime(detail.underwritingStartTime) }}</el-descriptions-item>
+        <el-descriptions-item label="核保完成时间">{{ formatDateTime(detail.underwritingCompletedTime) }}</el-descriptions-item>
         <el-descriptions-item label="处理耗时">
           {{ detail.processingHours != null ? `${detail.processingHours} 小时` : '-' }}
         </el-descriptions-item>
@@ -90,6 +91,7 @@ import type { UnderwritingCaseVO, DecisionRequest } from '@/api/underwriting'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import TiCopyText from '@/components/TiCopyText/index.vue'
 import { useDict } from '@/composables/useDict'
+import { formatDateTime } from '@/utils/date'
 
 const { getLabel: underwritingStatusLabel } = useDict('UNDERWRITING_STATUS')
 const { getLabel: underwritingTypeLabel } = useDict('UNDERWRITING_TYPE')

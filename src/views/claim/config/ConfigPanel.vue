@@ -115,6 +115,7 @@
 import { computed, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
+import { showErrorIfUnhandled } from '@/api/http'
 import TiTable from '@/components/TiTable/index.vue'
 
 /** 表单项类型 */
@@ -272,7 +273,7 @@ const submit = async () => {
     dialogVisible.value = false
     await loadList()
   } catch (e: unknown) {
-    ElMessage.error(e instanceof Error ? e.message : '保存失败')
+    showErrorIfUnhandled(e, '保存失败')
   } finally {
     saving.value = false
   }
@@ -281,17 +282,20 @@ const submit = async () => {
 /** 删除（中文确认框） */
 const confirmDelete = async (row: Record<string, unknown>) => {
   const id = String(row[props.idKey])
-  await ElMessageBox.confirm(`确认删除「${row[props.idKey]}」？删除后不可恢复。`, '删除确认', {
+  // 🔴 D-501-54：`.catch(() => null)` 会把「取消」的 reject 吞成 null，必须显式守卫，
+  // 否则点「取消」后仍无条件执行删除（不可恢复）。此处与下方 runExtraAction 对齐。
+  const confirmed = await ElMessageBox.confirm(`确认删除「${row[props.idKey]}」？删除后不可恢复。`, '删除确认', {
     type: 'warning',
     confirmButtonText: '确认删除',
     cancelButtonText: '取消',
   }).catch(() => null)
+  if (!confirmed) return
   try {
     await props.deleteFn(id)
     ElMessage.success('删除成功')
     await loadList()
   } catch (e: unknown) {
-    ElMessage.error(e instanceof Error ? e.message : '删除失败')
+    showErrorIfUnhandled(e, '删除失败')
   }
 }
 
@@ -311,7 +315,7 @@ const runExtraAction = async (action: ExtraAction, row: Record<string, unknown>)
     ElMessage.success(`${action.label}成功`)
     await loadList()
   } catch (e: unknown) {
-    ElMessage.error(e instanceof Error ? e.message : `${action.label}失败`)
+    showErrorIfUnhandled(e, `${action.label}失败`)
   }
 }
 </script>

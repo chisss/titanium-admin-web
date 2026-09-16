@@ -20,21 +20,19 @@
         </template>
       </el-alert>
 
-      <!-- 基本信息 -->
+      <!-- 基本信息：枚举与日期统一走 customerLabel / formatDateTime（D-501-56，此前直出 INDIVIDUAL/CHINA_ID_CARD/ACTIVE 与 ISO 串） -->
       <el-descriptions v-if="customer" :column="3" border style="margin-bottom: 24px">
         <el-descriptions-item label="客户姓名">{{ customer.fullName }}</el-descriptions-item>
-        <el-descriptions-item label="客户类型">{{ customer.customerType || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="性别">
-          {{ customer.gender === 'MALE' ? '男' : customer.gender === 'FEMALE' ? '女' : '-' }}
-        </el-descriptions-item>
-        <el-descriptions-item label="证件类型">{{ customer.idType }}</el-descriptions-item>
+        <el-descriptions-item label="客户类型">{{ customerLabel('customerType', customer.customerType) }}</el-descriptions-item>
+        <el-descriptions-item label="性别">{{ customerLabel('gender', customer.gender) }}</el-descriptions-item>
+        <el-descriptions-item label="证件类型">{{ customerLabel('idType', customer.idType) }}</el-descriptions-item>
         <el-descriptions-item label="证件号码">{{ customer.idNo }}</el-descriptions-item>
         <el-descriptions-item label="手机号">{{ customer.phoneNumber }}</el-descriptions-item>
         <el-descriptions-item label="邮箱" :span="2">{{ customer.email || '-' }}</el-descriptions-item>
         <el-descriptions-item label="地址" :span="3">{{ customer.address || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="状态">{{ customer.status || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="注册时间">{{ customer.createTime || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="更新时间">{{ customer.updateTime || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="状态">{{ customerLabel('status', customer.status) }}</el-descriptions-item>
+        <el-descriptions-item label="注册时间">{{ formatDateTime(customer.createTime) }}</el-descriptions-item>
+        <el-descriptions-item label="更新时间">{{ formatDateTime(customer.updateTime) }}</el-descriptions-item>
       </el-descriptions>
 
       <template v-if="customer">
@@ -147,6 +145,8 @@ import { getCustomerDetail } from '@/api/customer'
 import { getPoliciesByCustomer, getPolicyBeneficiaries } from '@/api/policy'
 import type { CustomerPolicyVO, PolicyBeneficiaryVO } from '@/api/policy'
 import type { CustomerVO } from '@/types/business.d'
+import { customerLabel } from '@/constants/customer'
+import { formatDateTime } from '@/utils/date'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
 
 const route = useRoute()

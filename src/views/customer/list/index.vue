@@ -26,19 +26,19 @@
       <el-table-column prop="customerNo" label="客户号" width="180" />
       <el-table-column prop="idType" label="证件类型" width="130">
         <template #default="{ row }">
-          {{ row.idType === 'CHINA_ID_CARD' ? '居民身份证' : row.idType }}
+          {{ customerLabel('idType', row.idType) }}
         </template>
       </el-table-column>
       <el-table-column prop="idNo" label="证件号码" width="200" />
       <el-table-column prop="phoneNumber" label="手机号" width="150" />
       <el-table-column prop="gender" label="性别" width="80">
         <template #default="{ row }">
-          {{ row.gender === 'MALE' ? '男' : row.gender === 'FEMALE' ? '女' : '-' }}
+          {{ customerLabel('gender', row.gender) }}
         </template>
       </el-table-column>
       <el-table-column prop="createTime" label="注册时间" width="180">
         <template #default="{ row }">
-          {{ row.createTime ? new Date(row.createTime).toLocaleString('zh-CN') : '-' }}
+          {{ formatDateTime(row.createTime) }}
         </template>
       </el-table-column>
       <el-table-column label="操作" width="120" fixed="right">
@@ -59,6 +59,8 @@ import { useTable } from '@/composables/useTable'
 import TiTable from '@/components/TiTable/index.vue'
 import TiSearchForm from '@/components/TiSearchForm/index.vue'
 import type { CustomerVO } from '@/types/business.d'
+import { customerLabel } from '@/constants/customer'
+import { formatDateTime } from '@/utils/date'
 import type { PageResult } from '@/types/api.d'
 
 const queryParams = reactive({

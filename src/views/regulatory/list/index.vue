@@ -59,8 +59,8 @@
           <TiStatusTag :value="row.status" :color="STATUS_COLOR[row.status]" :label="regulatoryStatusLabel(row.status)" />
         </template>
       </el-table-column>
-      <el-table-column prop="updatedAt" label="更新时间" width="170">
-        <template #default="{ row }">{{ row.updatedAt || '-' }}</template>
+      <el-table-column prop="updatedAt" label="提交时间" width="170">
+        <template #default="{ row }">{{ row.submittedAt || '-' }}</template>
       </el-table-column>
       <!-- @vue-generic {RegulatoryReportVO} -->
       <el-table-column label="操作" min-width="220" fixed="right" class-name="ti-action-column">
@@ -233,12 +233,18 @@ const handleSave = async () => {
 const handleView = async (row: RegulatoryReportVO) => {
   try {
     const detail = await getRegulatoryReportDetail(row.reportId)
-    ElMessageBox.alert(
-      `报告编号：${detail.reportId}<br/>报送主体：${detail.companyId || '-'}` +
-        `<br/>报告期间：${periodText(detail)}<br/>状态：${regulatoryStatusLabel(detail.status)}`,
-      '报告详情',
-      { dangerouslyUseHTMLString: true },
-    )
+    const lines = [
+      `报告编号：${detail.reportId}`,
+      `报送主体：${detail.companyId || '-'}`,
+      `报告期间：${periodText(detail)}`,
+      `状态：${regulatoryStatusLabel(detail.status)}`,
+    ]
+    if (detail.submittedAt) lines.push(`提交：${detail.submittedBy || '-'} @ ${detail.submittedAt}`)
+    if (detail.approvedAt) lines.push(`审批：${detail.approvedBy || '-'} @ ${detail.approvedAt}`)
+    if (detail.rejectedAt) lines.push(`驳回：${detail.rejectedBy || '-'} @ ${detail.rejectedAt}`)
+    if (detail.rejectReason) lines.push(`驳回原因：${detail.rejectReason}`)
+    if (detail.comments) lines.push(`审批意见：${detail.comments}`)
+    ElMessageBox.alert(lines.join('<br/>'), '报告详情', { dangerouslyUseHTMLString: true })
   } catch {
     ElMessage.error('获取报告详情失败')
   }
