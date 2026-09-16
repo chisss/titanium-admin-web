@@ -93,6 +93,29 @@ export interface PricingTestCase {
   tolerance?: number
 }
 
+/**
+ * 单条试算用例的门禁结果。
+ * <p>🔴 D-501-37：后端 `PricingTestCaseResultVO` 一直完整返回 6 个字段，此前前端接口标注为
+ * `Record<string, unknown>` 且只取两个计数 ⇒ 明细整包丢弃，用户面对「0/2 通过」无处可查。</p>
+ */
+export interface PricingTestCaseResult {
+  caseCode: string
+  passed: boolean
+  expectedPremium: number | null
+  actualPremium: number | null
+  difference: number | null
+  /** 失败原因：稳定错误码（如 `60000104`）或可读文案；通过时为 null */
+  failureReason: string | null
+}
+
+/** 定价包发布门禁结果（`test-cases:run` 出参，对应后端 `PricingPlanValidationVO`） */
+export interface PricingPlanValidation {
+  planContentHash: string
+  totalCases: number
+  passedCases: number
+  caseResults: PricingTestCaseResult[]
+}
+
 export const listRateTables = (productId: string, status?: string) =>
   http.get<unknown, RateTable[]>(`/web/v1/proxy/products/${productId}/rate-tables`, { params: { status } })
 
@@ -130,7 +153,7 @@ export const approvePricingPlan = (productId: string, planId: string) =>
   http.post<unknown, string>(`/web/v1/proxy/products/${productId}/pricing-plans/${planId}/approve`)
 
 export const runPricingTests = (productId: string, planId: string) =>
-  http.post<unknown, Record<string, unknown>>(`/web/v1/proxy/products/${productId}/pricing-plans/${planId}/test-cases:run`)
+  http.post<unknown, PricingPlanValidation>(`/web/v1/proxy/products/${productId}/pricing-plans/${planId}/test-cases:run`)
 
 export const publishPricingPlan = (productId: string, planId: string) =>
   http.post<unknown, Record<string, unknown>>(`/web/v1/proxy/products/${productId}/pricing-plans/${planId}/publish`)

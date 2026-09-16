@@ -33,7 +33,7 @@
         <template #default="{ row }">
           <el-button v-if="row.status === 'DRAFT'" link v-permission="'product:pricing:edit'" @click="openTestCases(row)">维护用例</el-button>
           <el-button v-if="row.status === 'DRAFT'" link @click="approve(row)">审批</el-button>
-          <el-button v-if="row.status === 'APPROVED'" link @click="runTests(row)">运行测试</el-button>
+          <el-button v-if="row.status === 'APPROVED'" link :loading="testRunning" @click="runTests(row)">运行测试</el-button>
           <el-button v-if="row.status === 'APPROVED'" link type="success" v-permission="'product:pricing:publish'" @click="publish(row)">发布</el-button>
           <el-button v-if="row.status === 'PUBLISHED'" link type="danger" @click="retire(row)">退役</el-button>
           <el-button link @click="showDetail(row)">查看</el-button>
@@ -108,7 +108,7 @@
         <el-table-column label="业务时间" width="190"><template #default="{ row }"><el-date-picker v-model="row.businessTime" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" /></template></el-table-column>
         <el-table-column label="保额" width="140"><template #default="{ row }"><el-input-number v-model="row.sumInsured" :min="0" :precision="2" controls-position="right" /></template></el-table-column>
         <el-table-column label="年龄" width="100"><template #default="{ row }"><el-input-number v-model="row.age" :min="0" :max="150" controls-position="right" /></template></el-table-column>
-        <el-table-column label="性别" width="100"><template #default="{ row }"><TiDictSelect v-model="row.gender" dict-type="GENDER" :clearable="false" /></template></el-table-column>
+        <el-table-column label="性别" width="100"><template #default="{ row }"><TiDictSelect v-model="row.gender" dict-type="GENDER" :clearable="false" :exclude-values="TEST_CASE_GENDER_EXCLUDED" /></template></el-table-column>
         <el-table-column label="缴费期" width="105"><template #default="{ row }"><el-input-number v-model="row.paymentTermYears" :min="1" controls-position="right" /></template></el-table-column>
         <el-table-column label="保障期" width="105"><template #default="{ row }"><el-input-number v-model="row.coverageTermYears" :min="1" controls-position="right" /></template></el-table-column>
         <el-table-column label="缴费次数" width="105"><template #default="{ row }"><el-input-number v-model="row.paymentPeriods" :min="1" controls-position="right" /></template></el-table-column>
@@ -120,6 +120,25 @@
       </el-table>
       <el-button class="add-row" @click="editingTestCases.push(newTestCase())">新增用例</el-button>
       <template #footer><el-button @click="testCaseVisible = false">取消</el-button><el-button type="primary" @click="saveTestCases">保存测试用例</el-button></template>
+    </el-dialog>
+
+    <!-- 🔴 D-501-37：运行测试逐条明细。发布闸口是「全部用例通过」，明细必须可见，否则用户无法自查 -->
+    <el-dialog v-model="testResultVisible" title="测试用例执行结果" width="min(1000px, calc(100vw - 24px))">
+      <el-alert
+        :title="`共 ${testResult?.totalCases ?? 0} 条用例，通过 ${testResult?.passedCases ?? 0} 条`"
+        :type="(testResult?.passedCases ?? 0) === (testResult?.totalCases ?? 0) && (testResult?.totalCases ?? 0) > 0 ? 'success' : 'error'"
+        :closable="false"
+        class="test-alert"
+      />
+      <el-table :data="testResult?.caseResults || []" border max-height="420">
+        <el-table-column prop="caseCode" label="用例编码" min-width="140" />
+        <el-table-column label="结果" width="90"><template #default="{ row }"><el-tag :type="row.passed ? 'success' : 'danger'" effect="light">{{ row.passed ? '通过' : '失败' }}</el-tag></template></el-table-column>
+        <el-table-column label="预期保费" width="130"><template #default="{ row }">{{ row.expectedPremium ?? '-' }}</template></el-table-column>
+        <el-table-column label="实际保费" width="130"><template #default="{ row }">{{ row.actualPremium ?? '-' }}</template></el-table-column>
+        <el-table-column label="差额" width="120"><template #default="{ row }">{{ row.difference ?? '-' }}</template></el-table-column>
+        <el-table-column label="失败原因" min-width="220" show-overflow-tooltip><template #default="{ row }">{{ row.failureReason || '-' }}</template></el-table-column>
+      </el-table>
+      <template #footer><el-button type="primary" @click="testResultVisible = false">关闭</el-button></template>
     </el-dialog>
 
     <el-drawer v-model="detailVisible" title="定价包详情" size="min(920px, 100vw)">
@@ -181,12 +200,14 @@ import { getProductList } from '@/api/product'
 import { getRuleSet, listRuleSets, type RuleSet } from '@/api/rule-engine'
 import { listCalculationModels, listDynamicFactors, listTaxPolicies, type CalculationModel, type DynamicFactor, type TaxPolicy } from '@/api/actuarial'
 import { getChannelList, getCommissionSchemeList, type ChannelVO, type CommissionScheme } from '@/api/channel'
-import { approvePricingPlan, createPricingPlan, getPricingPlan, listPricingPlans, listRateTables, publishPricingPlan, replacePricingTestCases, retirePricingPlan, runPricingTests, type CommissionSchemeRef, type DynamicFactorRef, type PricingPlan, type PricingTestCase, type RateTable } from '@/api/pricing'
+import { approvePricingPlan, createPricingPlan, getPricingPlan, listPricingPlans, listRateTables, publishPricingPlan, replacePricingTestCases, retirePricingPlan, runPricingTests, type CommissionSchemeRef, type DynamicFactorRef, type PricingPlan, type PricingPlanValidation, type PricingTestCase, type RateTable } from '@/api/pricing'
 import type { ProductVO } from '@/types/business.d'
 
 type EditablePricingTestCase = PricingTestCase & { channelId?: string; policyYear: number }
 const productId = ref(''); const products = ref<ProductVO[]>([]); const status = ref(''); const plans = ref<PricingPlan[]>([]); const rateTables = ref<RateTable[]>([]); const ruleSets = ref<RuleSet[]>([]); const calculationModels = ref<CalculationModel[]>([]); const taxPolicies = ref<TaxPolicy[]>([]); const dynamicFactors = ref<DynamicFactor[]>([]); const channels = ref<ChannelVO[]>([]); const commissionSchemes = ref<CommissionScheme[]>([]); const loading = ref(false)
 const createVisible = ref(false); const testCaseVisible = ref(false); const detailVisible = ref(false); const detail = ref<PricingPlan | null>(null); const currentPlan = ref<PricingPlan | null>(null); const editingTestCases = ref<EditablePricingTestCase[]>([])
+/** 🔴 D-501-37：运行测试的逐条明细（此前只弹计数提示、整包丢弃） */
+const testResultVisible = ref(false); const testResult = ref<PricingPlanValidation | null>(null); const testRunning = ref(false)
 const selectedRateTableId = ref(''); const selectedRuleSetId = ref(''); const selectedCalculationModelId = ref(''); const selectedTaxPolicyIds = ref<string[]>([]); const selectedCommissionSchemeIds = ref<string[]>([]); const selectedDynamicFactorIds = ref<string[]>([])
 const isNarrowScreen = useMediaQuery('(max-width: 767px)')
 const form = reactive({ productVersion: 'V1.0', planVersion: 'V1.0', pricingMode: 'RATE_TABLE', currency: 'CNY', effectiveFrom: '', rateTableCode: '', rateTableVersion: '', rateDimensionKeys: [] as string[], artifactCode: '', artifactVersion: '', inputSchemaVersion: '', artifactHash: '', calculationModelCode: '', calculationModelVersion: '', calculationModelHash: '', featureContractText: '', roundingScale: 2, roundingMode: 'HALF_UP', taxPolicyRefs: [] as Array<{ policyCode: string; policyVersion: string; contentHash: string }>, commissionSchemeRefs: [] as CommissionSchemeRef[], dynamicFactorRefs: [] as DynamicFactorRef[] })
@@ -218,11 +239,38 @@ function selectCommissionSchemes(schemeIds: string[]) { form.commissionSchemeRef
 function selectDynamicFactors(factorIds: string[]) { const selected = factorIds.map((id) => dynamicFactors.value.find((factor) => factor.factorId === id)).filter((factor): factor is DynamicFactor => Boolean(factor)); form.dynamicFactorRefs = selected.map((factor) => ({ factorCode: factor.factorCode, factorVersion: factor.factorVersion, contentHash: factor.contentHash || '' })); const requirements = selected.map((factor) => ({ featureCode: factor.featureCode, dataType: 'DECIMAL', required: factor.missingPolicy === 'REJECT', definitionVersion: factor.featureDefinitionVersion, missingPolicy: factor.missingPolicy, sensitivity: 'INTERNAL' })); form.featureContractText = requirements.length ? JSON.stringify({ contractId: `pricing-${productId.value}`, contractVersion: form.planVersion, requirements }, null, 2) : '' }
 function parseJson(text: string, label: string) { try { return text.trim() ? JSON.parse(text) : undefined } catch { ElMessage.warning(`${label}必须是合法 JSON`); return null } }
 async function submitCreate() { if (!form.effectiveFrom) return ElMessage.warning('请选择生效时间'); if (form.pricingMode === 'RATE_TABLE' && !selectedRateTableId.value) return ElMessage.warning('请选择已发布费率表'); if (form.pricingMode === 'ACTUARIAL_FORMULA' && !selectedRuleSetId.value) return ElMessage.warning('请选择已激活定价规则'); if (form.dynamicFactorRefs.length && !selectedRuleSetId.value) return ElMessage.warning('动态因子需要绑定定价规则后才能参与计算'); const duplicateChannels = form.commissionSchemeRefs.map((item) => item.channelId).filter((id, index, all) => all.indexOf(id) !== index); if (duplicateChannels.length) return ElMessage.warning('同一定价包每个渠道只能引用一个佣金方案版本'); const featureContract = parseJson(form.featureContractText, '特征契约'); if (featureContract === null) return; const payload: Record<string, unknown> = { productVersion: form.productVersion, planVersion: form.planVersion, pricingMode: form.pricingMode, currency: form.currency, effectiveFrom: form.effectiveFrom, roundingScale: form.roundingScale, roundingMode: form.roundingMode, featureContract, taxPolicyRefs: form.taxPolicyRefs, commissionSchemeRefs: form.commissionSchemeRefs, dynamicFactorRefs: form.dynamicFactorRefs }; if (form.pricingMode === 'RATE_TABLE') Object.assign(payload, { rateTableCode: form.rateTableCode, rateTableVersion: form.rateTableVersion, rateDimensionKeys: form.rateDimensionKeys }); if (selectedRuleSetId.value) payload.artifactRef = { artifactCode: form.artifactCode, artifactVersion: form.artifactVersion, inputSchemaVersion: form.inputSchemaVersion, artifactHash: form.artifactHash }; if (selectedCalculationModelId.value) Object.assign(payload, { calculationModelCode: form.calculationModelCode, calculationModelVersion: form.calculationModelVersion, calculationModelHash: form.calculationModelHash }); await createPricingPlan(productId.value, payload); createVisible.value = false; ElMessage.success('定价包草稿已创建'); await loadPlans() }
-function newTestCase(): EditablePricingTestCase { return { caseCode: `CASE-${editingTestCases.value.length + 1}`, businessTime: new Date().toISOString().slice(0, 19), sumInsured: 100000, age: 30, gender: 'ALL', paymentTermYears: 1, coverageTermYears: 1, paymentPeriods: 1, requestSnapshot: {}, channelId: currentPlan.value?.commissionSchemeRefs?.[0]?.channelId, policyYear: 1, expectedPremium: 0, tolerance: 0.01 } }
+/**
+ * 试算用例性别中**不可选**的字典值。
+ * <p>🔴 D-501-35：`GENDER` 字典有 4 项（`M`/`F`/`UNKNOWN`/`ALL`），而试算入口
+ * （`RateTableCriteria` 的 `normalizeGender`）**只放行 `M`/`F`**，其余直接抛
+ * `PRICING_INPUT_INVALID`。费率行的 `gender` 允许 `ALL` 作通配，试算入参不允许 ——
+ * 同一业务概念两端值域不一致。</p>
+ * <p>判据：**用例表达的是一次真实试算，被保人必有确定性别**，语义上不该有通配；
+ * 故从选项剔除而非在计算入口放宽（放宽会让「性别不限」静默按某个性别计算，是更危险的静默错误）。</p>
+ */
+const TEST_CASE_GENDER_EXCLUDED = ['UNKNOWN', 'ALL']
+
+/** 新增用例的默认值：性别取 `M`（详见 {@link TEST_CASE_GENDER_EXCLUDED}，取 `ALL` 会让该用例必然失败） */
+function newTestCase(): EditablePricingTestCase { return { caseCode: `CASE-${editingTestCases.value.length + 1}`, businessTime: new Date().toISOString().slice(0, 19), sumInsured: 100000, age: 30, gender: 'M', paymentTermYears: 1, coverageTermYears: 1, paymentPeriods: 1, requestSnapshot: {}, channelId: currentPlan.value?.commissionSchemeRefs?.[0]?.channelId, policyYear: 1, expectedPremium: 0, tolerance: 0.01 } }
 async function openTestCases(row: unknown) { const plan = row as PricingPlan; currentPlan.value = await getPricingPlan(productId.value, plan.planId); editingTestCases.value = (currentPlan.value.testCases || []).map((item) => ({ ...item, channelId: typeof item.requestSnapshot?.channelId === 'string' ? item.requestSnapshot.channelId : undefined, policyYear: typeof item.requestSnapshot?.policyYear === 'number' ? item.requestSnapshot.policyYear : 1 })); testCaseVisible.value = true }
 async function saveTestCases() { if (!currentPlan.value) return; if (!editingTestCases.value.length) return ElMessage.warning('至少维护一条测试用例'); if (editingTestCases.value.some((item) => !item.caseCode || !item.businessTime)) return ElMessage.warning('请补齐测试用例编码和业务时间'); const testCases = editingTestCases.value.map(({ channelId, policyYear, ...item }) => ({ ...item, requestSnapshot: { ...(item.requestSnapshot || {}), ...(channelId ? { channelId } : {}), policyYear } })); await replacePricingTestCases(productId.value, currentPlan.value.planId, testCases); testCaseVisible.value = false; ElMessage.success('测试用例已保存'); await loadPlans() }
 async function approve(row: unknown) { const plan = row as PricingPlan; await approvePricingPlan(productId.value, plan.planId); ElMessage.success('定价包已审批'); await loadPlans() }
-async function runTests(row: unknown) { const plan = row as PricingPlan; const result = await runPricingTests(productId.value, plan.planId); ElMessage.success(`测试完成：${result.passedCases ?? 0}/${result.totalCases ?? 0} 通过`) }
+/**
+ * 运行发布门禁测试。
+ * <p>🔴 D-501-37：本方法是 `publish` 的唯一放行闸口（`allPassed()`），此前只弹一条 3 秒消失的
+ * 「测试完成：N/M 通过」，逐条明细（后端已完整经网络返回）被整包丢弃 ⇒ 用户面对「0/2 通过」
+ * 无处可查、只能反复试错。现改为**计数作标题 + 明细进对话框**。</p>
+ */
+async function runTests(row: unknown) {
+  const plan = row as PricingPlan
+  testRunning.value = true
+  try {
+    testResult.value = await runPricingTests(productId.value, plan.planId)
+    testResultVisible.value = true
+  } finally {
+    testRunning.value = false
+  }
+}
 async function publish(row: unknown) { const plan = row as PricingPlan; await ElMessageBox.confirm('发布后将作为出单保费计算的定价包版本，确认发布？', '发布定价包', { type: 'warning' }); await publishPricingPlan(productId.value, plan.planId); ElMessage.success('定价包已发布'); await loadPlans() }
 async function retire(row: unknown) { const plan = row as PricingPlan; await ElMessageBox.confirm('退役后不再用于新保单计算，确认继续？', '退役定价包', { type: 'warning' }); await retirePricingPlan(productId.value, plan.planId); ElMessage.success('定价包已退役'); await loadPlans() }
 async function showDetail(row: unknown) { const plan = row as PricingPlan; detail.value = await getPricingPlan(productId.value, plan.planId); detailVisible.value = true }
