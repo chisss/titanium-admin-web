@@ -9,21 +9,34 @@
 
       <!-- 核心指标卡片 -->
       <div class="data-panel__cards">
-        <div v-for="card in metricCards" :key="card.label" class="metric-card">
-          <div class="metric-card__label">{{ card.label }}</div>
-          <div class="metric-card__value" :class="`metric-card__value--${card.color}`">
-            {{ card.value }}
+        <el-skeleton v-if="loading" :rows="2" animated class="data-panel__skeleton" />
+        <template v-else>
+          <div v-for="card in metricCards" :key="card.label" class="metric-card">
+            <div class="metric-card__label">{{ card.label }}</div>
+            <div class="metric-card__value" :class="`metric-card__value--${card.color}`">
+              {{ card.value }}
+            </div>
           </div>
-          <div class="metric-card__trend" :class="card.trend > 0 ? 'up' : 'down'">
-            {{ card.trend > 0 ? '▲' : '▼' }} {{ Math.abs(card.trend) }}%
-          </div>
-        </div>
+        </template>
       </div>
+
+      <!-- 指标加载失败：显式提示 + 重试，不得以 0 或占位数字冒充真实数据 -->
+      <el-alert
+        v-if="errorMessage"
+        class="data-panel__error"
+        type="warning"
+        :closable="false"
+        show-icon
+        :title="errorMessage"
+      >
+        <el-button text type="primary" size="small" @click="loadMetrics">重试</el-button>
+      </el-alert>
 
       <!-- ECharts 趋势图 -->
       <div class="data-panel__chart">
         <div class="data-panel__chart-title">近7日保费趋势</div>
-        <div ref="chartRef" class="data-panel__chart-container" />
+        <div v-if="!trendPoints.length && !loading" class="data-panel__empty">暂无保费数据</div>
+        <div v-show="trendPoints.length" ref="chartRef" class="data-panel__chart-container" />
       </div>
     </div>
   </transition>
@@ -35,9 +48,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { Close, DataLine } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
+import { getDashboardStats, getPremiumTrend, type DashboardStatsVO, type TrendPoint } from '@/api/dashboard'
 
 interface Props {
   collapsed: boolean
@@ -50,21 +64,57 @@ const chartRef = ref<HTMLElement>()
 let chartInstance: echarts.ECharts | null = null
 const resizeChart = () => chartInstance?.resize()
 
-// 模拟指标数据
-const metricCards = [
-  { label: '今日保费', value: '¥1,234,567', trend: 12.5, color: 'primary' },
-  { label: '本月保单', value: '8,901 份', trend: 8.3, color: 'success' },
-  { label: '处理中理赔', value: '23 件', trend: -5.2, color: 'warning' },
-  { label: '活跃客户', value: '45,678', trend: 3.1, color: 'info' },
-]
+const loading = ref(false)
+const errorMessage = ref('')
+const stats = ref<DashboardStatsVO | null>(null)
+const trendPoints = ref<TrendPoint[]>([])
 
-// 初始化 ECharts 趋势图
+/** 金额千分位展示；后端未返回时显示占位符而非 0，避免把「无数据」画成「零保费」 */
+const formatAmount = (value: number | null | undefined) =>
+  value === null || value === undefined ? '—' : `¥${value.toLocaleString('zh-CN')}`
+
+const formatCount = (value: number | null | undefined, unit: string) =>
+  value === null || value === undefined ? '—' : `${value.toLocaleString('zh-CN')} ${unit}`
+
+/** 指标卡取自真实聚合接口，标签与后端字段语义一一对应（不夸大统计口径） */
+const metricCards = computed(() => [
+  { label: '今日保费', value: formatAmount(stats.value?.todayPremium), color: 'primary' },
+  { label: '今日保单', value: formatCount(stats.value?.todayPolicyCount, '份'), color: 'success' },
+  { label: '待处理理赔', value: formatCount(stats.value?.pendingClaimCount, '件'), color: 'warning' },
+  { label: '待核保', value: formatCount(stats.value?.pendingUnderwritingCount, '件'), color: 'info' },
+])
+
+/** 拉取核心指标；失败时显式提示并可重试，不回落为任何编造数值 */
+const loadMetrics = async () => {
+  loading.value = true
+  errorMessage.value = ''
+  try {
+    stats.value = await getDashboardStats()
+  } catch {
+    stats.value = null
+    errorMessage.value = '指标数据加载失败'
+  } finally {
+    loading.value = false
+  }
+}
+
+/** 拉取近 7 日保费趋势并渲染；无数据时展示空态而不是虚构曲线 */
+const loadTrend = async () => {
+  try {
+    const points = await getPremiumTrend()
+    trendPoints.value = (points || []).slice(-7)
+    await nextTick()
+    if (trendPoints.value.length) initChart()
+  } catch {
+    trendPoints.value = []
+  }
+}
+
+// 初始化 ECharts 趋势图（数据全部来自计费域 statistics，无内置常量）
 const initChart = () => {
   if (!chartRef.value) return
+  chartInstance?.dispose()
   chartInstance = echarts.init(chartRef.value)
-
-  const days = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
-  const data = [820000, 932000, 901000, 1254000, 1190000, 1330000, 1234567]
 
   chartInstance.setOption({
     tooltip: { trigger: 'axis', formatter: (params: unknown[]) => {
@@ -74,7 +124,7 @@ const initChart = () => {
     grid: { top: 8, right: 8, bottom: 20, left: 50 },
     xAxis: {
       type: 'category',
-      data: days,
+      data: trendPoints.value.map((point) => point.date),
       axisLabel: { fontSize: 10, color: '#909399' },
       axisLine: { lineStyle: { color: '#ebeef5' } },
     },
@@ -89,7 +139,7 @@ const initChart = () => {
     },
     series: [{
       type: 'line',
-      data,
+      data: trendPoints.value.map((point) => point.value),
       smooth: true,
       lineStyle: { color: '#1a3a6b', width: 2 },
       itemStyle: { color: '#1a3a6b' },
@@ -104,7 +154,8 @@ const initChart = () => {
 }
 
 onMounted(() => {
-  initChart()
+  loadMetrics()
+  loadTrend()
   window.addEventListener('resize', resizeChart)
 })
 
@@ -145,6 +196,24 @@ onUnmounted(() => {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 8px;
+  }
+
+  &__skeleton {
+    grid-column: 1 / -1;
+  }
+
+  &__error {
+    margin: 0 12px 8px;
+  }
+
+  &__empty {
+    flex: 1;
+    min-height: 140px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    color: #909399;
   }
 
   &__chart {
@@ -189,13 +258,6 @@ onUnmounted(() => {
     &--success { color: $success-color; }
     &--warning { color: $warning-color; }
     &--info { color: #606266; }
-  }
-
-  &__trend {
-    font-size: 11px;
-
-    &.up { color: $success-color; }
-    &.down { color: $danger-color; }
   }
 }
 
