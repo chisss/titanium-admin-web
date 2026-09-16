@@ -22,7 +22,6 @@
           <TiStatusTag :value="row.status" />
         </template>
       </el-table-column>
-      <el-table-column prop="createdAt" label="创建时间" width="160" />
       <!-- @vue-generic {RoleVO} -->
       <el-table-column label="操作" min-width="160" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
@@ -74,7 +73,7 @@ import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus, Edit } from '@element-plus/icons-vue'
 import type { FormInstance, FormRules } from 'element-plus'
-import { getRoleList, createRole, updateRole, assignPermissions } from '@/api/role'
+import { getRoleList, createRole, updateRole, assignPermissions, getRolePermissions } from '@/api/role'
 import type { RoleVO } from '@/api/role'
 import { getPermissionTree, type PermissionTreeNode } from '@/api/permission'
 import { useTable } from '@/composables/useTable'
@@ -128,7 +127,8 @@ const permTree = ref<PermissionTreeNode[]>([])
 /** 打开权限分配对话框,加载真实权限树 */
 const openPermDialog = async (row: RoleVO) => {
   currentRoleId.value = row.id
-  currentPerms.value = row.permissions || []
+  // 列表 VO 不含权限，须单独拉取已授权限用于回显（否则恒为空 ⇒ 保存即清权）
+  currentPerms.value = await getRolePermissions(row.id)
   permDialogVisible.value = true
   // 首次打开或树为空时加载权限树
   if (!permTree.value.length) {
@@ -138,7 +138,8 @@ const openPermDialog = async (row: RoleVO) => {
 
 const handleAssignPerms = async () => {
   if (!currentRoleId.value) return
-  const checked = permTreeRef.value?.getCheckedKeys() as string[]
+  // 只取叶子节点：父级（目录/菜单）为聚合节点，提交后后端会因无对应权限点而落空
+  const checked = permTreeRef.value?.getCheckedKeys(true) as string[]
   saving.value = true
   try {
     await assignPermissions(currentRoleId.value, checked)

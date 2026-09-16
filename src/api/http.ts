@@ -35,9 +35,9 @@ http.interceptors.response.use(
   (response): any => {
     const res = response.data as ApiResponse
 
-    // 下载文件直接返回
+    // 下载文件：拦截器统一剥壳，返回 Blob 本体（调用方按 Promise<Blob> 消费）
     if (response.config.responseType === 'blob') {
-      return response
+      return response.data
     }
 
     // 成功判定：兼容旧数字信封 200 与 metadata ApiResponse 的 String 成功码 "00000000"
@@ -65,7 +65,7 @@ http.interceptors.response.use(
     ElMessage.error(res.message || '请求失败')
     return Promise.reject(new Error(res.message))
   },
-  (error) => {
+  async (error) => {
     if (error.response?.status === 401) {
       localStorage.removeItem('ti_token')
       localStorage.removeItem('ti_tenant_id')
@@ -77,10 +77,28 @@ http.interceptors.response.use(
     } else if (error.code === 'ECONNABORTED') {
       ElMessage.error('请求超时，请重试')
     } else {
-      ElMessage.error(error.response?.data?.message || '网络异常，请稍后重试')
+      ElMessage.error((await resolveErrorMessage(error.response?.data)) || '网络异常，请稍后重试')
     }
     return Promise.reject(error)
   },
 )
+
+/**
+ * 解析错误响应体中的业务消息。
+ * <p>`responseType: 'blob'` 的请求失败时，错误体仍是 JSON，但被 axios 包成 Blob，
+ * 直接读 `.message` 恒为 undefined ⇒ 真实语义（如「资源不存在」）被兜底文案「网络异常」覆盖，
+ * 排查方向被误导。此处先读文本再解析，还原后端原始 message。</p>
+ */
+async function resolveErrorMessage(data: unknown): Promise<string | undefined> {
+  if (data instanceof Blob) {
+    try {
+      const parsed = JSON.parse(await data.text()) as { message?: string }
+      return parsed.message
+    } catch {
+      return undefined
+    }
+  }
+  return (data as { message?: string } | undefined)?.message
+}
 
 export default http

@@ -149,8 +149,7 @@ const openDialog = async (row?: UserListItem) => {
     deptOptions.value = await getDeptSimpleList()
   }
   if (!roleOptions.value.length) {
-    const res = await getRoleList({ pageNum: 1, pageSize: 100 })
-    roleOptions.value = res.list
+    roleOptions.value = await getRoleList()
   }
 
   dialogVisible.value = true
@@ -164,13 +163,13 @@ const handleSave = async () => {
     if (editId.value) {
       await updateUser(editId.value, form)
       // 编辑时也分配角色
-      if (form.roleIds.length > 0) {
+      if ((form.roleIds ?? []).length > 0) {
         await assignRoles(editId.value, form.roleIds)
       }
     } else {
       const createdUser = await createUser(form)
       // 创建后立即分配角色
-      if (form.roleIds.length > 0 && createdUser.id) {
+      if ((form.roleIds ?? []).length > 0 && createdUser.id) {
         await assignRoles(createdUser.id, form.roleIds)
       }
     }
@@ -183,14 +182,13 @@ const handleSave = async () => {
 }
 
 const handleResetPwd = async (row: UserListItem) => {
-  await ElMessageBox.prompt(`请输入"${row.username}"的新密码`, '重置密码', {
-    inputType: 'password',
-    inputPattern: /.{6,}/,
-    inputErrorMessage: '密码不少于6位',
+  // 后端重置接口语义为「重置为系统默认密码」，不接受新密码入参，故此处只做确认而非输入
+  await ElMessageBox.confirm(`确认将用户「${row.username}」的密码重置为系统默认密码？`, '重置密码', {
+    type: 'warning',
     confirmButtonText: '确认重置',
-  }).then(async ({ value }) => {
-    await resetPassword(row.id, value)
-    ElMessage.success('密码已重置')
+  }).then(async () => {
+    await resetPassword(row.id)
+    ElMessage.success('密码已重置为系统默认密码')
   }).catch(() => {})
 }
 

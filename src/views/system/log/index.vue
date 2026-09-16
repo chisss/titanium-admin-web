@@ -47,8 +47,12 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="message" label="备注" min-width="180" show-overflow-tooltip />
-      <el-table-column prop="createdAt" label="操作时间" width="160" />
+      <el-table-column prop="requestUrl" label="请求地址" min-width="220" show-overflow-tooltip />
+      <el-table-column prop="createdAt" label="操作时间" width="170">
+        <template #default="{ row }">
+          {{ formatDateTime(row.createdAt) }}
+        </template>
+      </el-table-column>
       <!-- @vue-generic {OperationLog} -->
       <el-table-column label="操作" width="80" fixed="right">
         <template #default="{ row }">
@@ -70,9 +74,11 @@
             {{ operationResultLabel(selectedLog.status) }}
           </el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="操作时间" :span="2">{{ selectedLog.createdAt }}</el-descriptions-item>
-        <el-descriptions-item v-if="selectedLog.message" label="备注信息" :span="2">
-          {{ selectedLog.message }}
+        <el-descriptions-item label="操作时间" :span="2">
+          {{ formatDateTime(selectedLog.createdAt) }}
+        </el-descriptions-item>
+        <el-descriptions-item v-if="selectedLog.requestUrl" label="请求地址" :span="2">
+          {{ selectedLog.requestUrl }}
         </el-descriptions-item>
       </el-descriptions>
     </el-dialog>
@@ -88,6 +94,7 @@ import TiTable from '@/components/TiTable/index.vue'
 import TiSearchForm from '@/components/TiSearchForm/index.vue'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
 import { useDict } from '@/composables/useDict'
+import { formatDateTime } from '@/utils/date'
 import type { OperationLog } from '@/types/business.d'
 import type { PageResult } from '@/types/api.d'
 

@@ -263,12 +263,19 @@ const handleDeactivate = async (row: ProductVO) => {
 }
 
 const handleExport = async () => {
-  const blob = await exportProducts(queryParams)
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `产品列表_${new Date().toLocaleDateString()}.xlsx`
-  a.click()
-  URL.revokeObjectURL(url)
+  try {
+    // 服务端导出为 CSV（UTF-8 带 BOM，Excel 可直接打开），故扩展名须与响应格式一致
+    const blob = await exportProducts(queryParams)
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `产品列表_${new Date().toLocaleDateString()}.csv`
+    a.click()
+    // 延迟释放：立即 revoke 会使部分浏览器的下载中断
+    setTimeout(() => URL.revokeObjectURL(url), 0)
+  } catch {
+    // 失败原因已由响应拦截器统一提示（含下游业务码语义），此处仅避免未捕获 rejection 导致「点了没反应」
+    return
+  }
 }
 </script>

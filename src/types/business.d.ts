@@ -214,10 +214,10 @@ export interface OperationLog {
   username: string
   module: string
   action: string
-  targetId?: string
+  /** 请求地址（后端字段 requestUrl，用于溯源具体接口） */
+  requestUrl?: string
   requestIp: string
   status: 'SUCCESS' | 'FAIL'
-  message?: string
   duration: number
   createdAt: string
 }

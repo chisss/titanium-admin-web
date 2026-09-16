@@ -407,8 +407,14 @@ async function prefillLifeSpec(productId: string) {
 onMounted(async () => {
   const productId = route.params.id as string
   loading.value = true
+  // 险种默认定义仅用于渲染提示条，加载失败不得阻断产品配置主流程；
+  // 但必须显式告警——静默吞（原 .catch(() => [])）会让提示条消失与「功能正常」在界面上无从区分
   try {
-    definitions.value = await getInsuranceProductDefinitions().catch(() => [])
+    definitions.value = await getInsuranceProductDefinitions()
+  } catch {
+    ElMessage.warning('险种默认定义加载失败，本次不显示默认值提示')
+  }
+  try {
     product.value = await getProductDetail(productId)
     templateId.value = product.value?.templateId ?? ''
     if (templateId.value) await prefillFromTemplate(templateId.value)
