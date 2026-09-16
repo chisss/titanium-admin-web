@@ -1,5 +1,6 @@
 // 理赔相关接口（端点与 admin BFF ClaimProxyController 一一对应，字段与下游 ClaimResponseVO 对齐）
 import http from './http'
+import { toPageResult } from './pageResult'
 import type { PageParams, PageResult } from '@/types/api.d'
 
 /** 理赔案件 VO（字段与 claim 域 ClaimResponseVO 对齐） */
@@ -111,13 +112,7 @@ export async function getClaimList(
       size: pageSize ?? 20,
     },
   })
-  const list = Array.isArray(payload) ? payload : payload?.list
-  return {
-    list: Array.isArray(list) ? list : [],
-    total: Array.isArray(payload) ? payload.length : payload?.total ?? list?.length ?? 0,
-    pageNum: Number(pageNum ?? 1),
-    pageSize: Number(pageSize ?? 20),
-  }
+  return toPageResult(payload, Number(pageNum ?? 1), Number(pageSize ?? 20))
 }
 
 /** 理赔案件详情 */

@@ -1,5 +1,6 @@
 // 保单相关接口
 import http from './http'
+import { toPageResult } from './pageResult'
 import type { PolicyVO } from '@/types/business.d'
 import type { PageParams, PageResult } from '@/types/api.d'
 
@@ -62,13 +63,7 @@ export async function getPolicyList(params?: Partial<PageParams> & Record<string
       size: pageSize ?? 20,
     },
   })
-  const list = Array.isArray(payload) ? payload : payload?.list
-  return {
-    list: Array.isArray(list) ? list : [],
-    total: Array.isArray(payload) ? payload.length : payload?.total ?? list?.length ?? 0,
-    pageNum: Number(pageNum ?? 1),
-    pageSize: Number(pageSize ?? 20),
-  }
+  return toPageResult(payload, Number(pageNum ?? 1), Number(pageSize ?? 20))
 }
 
 /** 获取保单详情 */

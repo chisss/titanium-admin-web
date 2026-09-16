@@ -19,6 +19,10 @@ export default {
   loading: 'Loading...',
   noData: 'No Data',
   total: 'Total {total}',
+  /** 总数未知（🔴 D-501-57）：下游未提供总数时如实说明，不显示猜测值 */
+  totalUnknown: '{count} on this page, total unknown',
+  prevPage: 'Previous',
+  nextPage: 'Next',
   page: 'Page {page}',
   confirmDelete: 'Are you sure to delete this record?',
   deleteSuccess: 'Deleted successfully',

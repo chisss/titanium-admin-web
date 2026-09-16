@@ -22,8 +22,14 @@ export interface PageParams {
 export interface PageResult<T = unknown> {
   /** 数据列表 */
   list: T[]
-  /** 总条数 */
-  total: number
+  /**
+   * 总条数；`null` 表示**总数未知**（🔴 D-501-57）。
+   *
+   * 后管代理层在「下游只返回裸数组且本页已满」时无法推断全量条数，此时如实返回 `null`。
+   * 消费方必须区分 `null`（未知）与 `0`（确知没有数据）：把未知显示成数字、或显示成 0，
+   * 都是在向用户断言一个未经证实的事实。
+   */
+  total: number | null
   /** 当前页 */
   pageNum: number
   /** 每页条数 */

@@ -154,6 +154,8 @@ const calculationLabel = (value: unknown) => { const row = value as CommissionSc
 const emptyPage = (): PageResult<CommissionScheme> => ({ list: [], total: 0, pageNum: 1, pageSize: 20 })
 const { tableData, tableLoading, pagination, fetchData, handleSearch, onPageChange, onSizeChange } = useTable<CommissionScheme, typeof queryParams>(
   (params) => params.channelId && params.productId ? getCommissionSchemeList(params) : Promise.resolve(emptyPage()), queryParams,
+  // 本页首屏须先取渠道/产品下拉数据并回填查询条件（见 onMounted），故不由 useTable 自动加载
+  { immediate: false },
 )
 
 const createVisible = ref(false)

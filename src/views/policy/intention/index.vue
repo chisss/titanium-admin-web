@@ -28,7 +28,11 @@
     <!-- 工具栏 -->
     <div class="ti-toolbar">
       <div class="ti-toolbar-left">
-        <span class="toolbar-stat">共 <b>{{ pagination.total }}</b> 条意向单</span>
+        <span class="toolbar-stat">
+          <!-- 🔴 D-501-57：总数未知时不得显示猜测值，如实说明并给出本页条数 -->
+          <template v-if="pagination.total === null">本页 <b>{{ tableData.length }}</b> 条，总数未知</template>
+          <template v-else>共 <b>{{ pagination.total }}</b> 条意向单</template>
+        </span>
       </div>
       <div class="ti-toolbar-right">
         <el-button :icon="Download" @click="handleExport">导出</el-button>

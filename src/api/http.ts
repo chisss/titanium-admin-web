@@ -1,5 +1,5 @@
 // Axios HTTP 封装 - 统一请求/响应处理
-import axios, { type AxiosInstance, type AxiosRequestConfig } from 'axios'
+import axios, { type AxiosInstance, type AxiosRequestConfig, type InternalAxiosRequestConfig } from 'axios'
 import { ElMessage } from 'element-plus'
 import type { ApiResponse } from '@/types/api.d'
 
@@ -14,6 +14,15 @@ const http: AxiosInstance = axios.create({
 
 /** 拦截器已弹过提示的错误标记（D-501-51）。 */
 const HANDLED_FLAG = 'tiErrorHandled'
+
+/** AccessToken 本地存储键（请求拦截器注入 Authorization） */
+const ACCESS_TOKEN_KEY = 'ti_token'
+/** RefreshToken 本地存储键（🔴 D-501-29：登录时持久化，401 时用于续期） */
+const REFRESH_TOKEN_KEY = 'ti_refresh_token'
+/** 租户 ID 本地存储键 */
+const TENANT_ID_KEY = 'ti_tenant_id'
+/** 刷新端点：以服务端契约为准，刷新令牌经 Authorization 头承载，响应 data 即新 AccessToken */
+const REFRESH_URL = '/web/v1/auth/refresh'
 
 /** 构造「业务消息 + 已提示标记」的 Error：拦截器统一 reject 此形态，调用方据此避免重复弹窗。 */
 const handledError = (message: string): Error => {
@@ -35,10 +44,12 @@ export function showErrorIfUnhandled(error: unknown, fallback = '操作失败'):
 // 请求拦截器：注入 Token 和租户ID
 http.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('ti_token')
-    const tenantId = localStorage.getItem('ti_tenant_id')
+    const token = localStorage.getItem(ACCESS_TOKEN_KEY)
+    const tenantId = localStorage.getItem(TENANT_ID_KEY)
 
-    if (token) {
+    // 显式声明的 Authorization 优先：刷新请求以**刷新令牌**作为凭据放在同一个头上，
+    // 若无条件覆盖，刷新会拿着过期的 AccessToken 去换新令牌，永远换不到（🔴 D-501-29）
+    if (token && !config.headers['Authorization']) {
       config.headers['Authorization'] = `Bearer ${token}`
     }
     if (tenantId) {
@@ -48,6 +59,77 @@ http.interceptors.request.use(
   },
   (error) => Promise.reject(error),
 )
+
+/** 已重放过一次的请求标记：新令牌仍被拒时不得再次刷新，否则刷新↔401 互相触发形成死循环 */
+type RetriableConfig = InternalAxiosRequestConfig & { tiRetried?: boolean }
+
+/** 在途刷新：多个请求同时 401 时只发起一次刷新，其余等待同一结果（单飞，避免刷新风暴） */
+let refreshInFlight: Promise<string> | null = null
+
+/** 清空本地会话并跳转登录（刷新不可用或失败时的收尾，与 store 的 clearSession 同口径） */
+const forceLogout = () => {
+  localStorage.removeItem(ACCESS_TOKEN_KEY)
+  localStorage.removeItem(REFRESH_TOKEN_KEY)
+  localStorage.removeItem(TENANT_ID_KEY)
+  window.location.href = '/login'
+}
+
+/**
+ * 请求新 AccessToken。
+ * <p>刷新凭据走 Authorization 头（服务端契约），响应 {@code data} 即新令牌；
+ * 刷新成功后立即落盘，使后续并发请求的请求拦截器能取到新值。</p>
+ */
+const requestNewAccessToken = async (refreshToken: string): Promise<string> => {
+  const accessToken = await http.post<unknown, string>(REFRESH_URL, null, {
+    headers: { Authorization: `Bearer ${refreshToken}` },
+  })
+  localStorage.setItem(ACCESS_TOKEN_KEY, accessToken)
+  return accessToken
+}
+
+/** 单飞刷新：并发 401 共享同一次刷新请求 */
+const ensureRefreshedToken = (refreshToken: string): Promise<string> => {
+  if (!refreshInFlight) {
+    refreshInFlight = requestNewAccessToken(refreshToken).finally(() => {
+      refreshInFlight = null
+    })
+  }
+  return refreshInFlight
+}
+
+/**
+ * 401 统一处置（🔴 D-501-29）：**先刷新 → 重放原请求 → 刷新不可用或失败才登出**。
+ *
+ * <p>此前的行为是「收到 401 立即清 token + 硬跳登录」：AccessToken 一到期，用户就被强制登出，
+ * 即便本地持有仍然有效的刷新令牌也无从使用 —— 因为刷新链路两端都是死代码：前端
+ * {@code refreshToken()} 零调用点，且其请求体 {@code {refreshToken}} 与服务端要求的
+ * Authorization 头不符，即便被调用也换不到令牌。</p>
+ *
+ * <p>失败收尾仍为登出（刷新令牌也无效时用户确实需要重新登录），但这条路径现在只在
+ * **真的无法续期**时才走到。</p>
+ */
+const handleUnauthorized = async (config?: RetriableConfig): Promise<unknown> => {
+  const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY)
+  const isRefreshCall = !!config?.url?.includes(REFRESH_URL)
+
+  // 无原请求配置或无刷新令牌，或刷新请求自身 401（说明刷新令牌已失效）⇒ 直接登出，不再刷新；
+  // 已重放过一次的请求同样不再刷新（否则「刷新 ↔ 401」互相触发形成死循环）
+  if (!config || !refreshToken || isRefreshCall || config.tiRetried) {
+    forceLogout()
+    return Promise.reject(handledError('登录已过期'))
+  }
+
+  try {
+    await ensureRefreshedToken(refreshToken)
+  } catch {
+    forceLogout()
+    return Promise.reject(handledError('登录已过期'))
+  }
+
+  // 续期成功：重放原请求（请求拦截器会带上刚写入的新 AccessToken），用户无感
+  config.tiRetried = true
+  return http.request(config)
+}
 
 // 响应拦截器：统一处理业务状态码
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -70,11 +152,8 @@ http.interceptors.response.use(
     }
 
     if (res.code === 401) {
-      // Token 过期，清除本地状态并跳转登录
-      localStorage.removeItem('ti_token')
-      localStorage.removeItem('ti_tenant_id')
-      window.location.href = '/login'
-      return Promise.reject(handledError('登录已过期'))
+      // Token 过期 → 先尝试续期并重放，续期不可用才登出（🔴 D-501-29）
+      return handleUnauthorized(response.config as RetriableConfig)
     }
 
     if (res.code === 403) {
@@ -87,10 +166,8 @@ http.interceptors.response.use(
   },
   async (error) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('ti_token')
-      localStorage.removeItem('ti_tenant_id')
-      window.location.href = '/login'
-      return Promise.reject(handledError('登录已过期'))
+      // Token 过期 → 先尝试续期并重放，续期不可用才登出（🔴 D-501-29）
+      return handleUnauthorized(error.config as RetriableConfig)
     }
     // 🔴 D-501-51：本分支的 reject 必须与成功分支（上方 `handledError(res.message)`）约定一致，
     // 即「reject 携带业务消息且已提示标记的 Error」。此前直接 reject 原始 AxiosError，

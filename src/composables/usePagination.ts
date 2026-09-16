@@ -5,7 +5,8 @@ import { ref, reactive } from 'vue'
 export interface PaginationState {
   pageNum: number
   pageSize: number
-  total: number
+  /** 总条数；`null` 表示总数未知（🔴 D-501-57），消费方须与 0 区分对待 */
+  total: number | null
 }
 
 /**
@@ -37,8 +38,8 @@ export function usePagination(defaultPageSize = 20) {
     pagination.pageNum = 1
   }
 
-  /** 设置总数 */
-  const setTotal = (total: number) => {
+  /** 设置总数；`null` 表示总数未知（🔴 D-501-57），不得传 0 顶替 */
+  const setTotal = (total: number | null) => {
     pagination.total = total
   }
 

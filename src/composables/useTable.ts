@@ -1,5 +1,5 @@
 // useTable 组合式函数 - 表格通用逻辑封装
-import { ref, reactive, type Ref } from 'vue'
+import { onMounted, reactive, ref, type Ref } from 'vue'
 import { usePagination } from './usePagination'
 import type { PageResult } from '@/types/api.d'
 
@@ -16,10 +16,13 @@ export interface PageQuery {
 /**
  * 表格通用逻辑 Hook
  * @param fetchFn 数据获取函数，接收分页+查询参数，返回 PageResult
+ * @param externalQueryParams 外部搜索表单对象（复用同一份查询条件）
+ * @param options.immediate 是否在挂载时自动加载首屏数据，默认 `true`
  */
 export function useTable<T, P extends Record<string, unknown>>(
   fetchFn: (params: P & PageQuery) => Promise<PageResult<T> | T[]>,
   externalQueryParams?: P,
+  options?: { immediate?: boolean },
 ) {
   // 保持为真正的 Ref<T[]>：模板中 `:data="tableData"` 自动解包为数组，脚本中 `tableData.value` 读写；
   // 旧的 `as { value: T[] }` 断言会让模板侧丢失 ref 自动解包的类型推断，导致 vue-tsc 报错
@@ -31,8 +34,15 @@ export function useTable<T, P extends Record<string, unknown>>(
   // 若视图传入了外部搜索表单对象则复用它（搜索条件才能真正到达 API），否则退回内部空对象
   const queryParams = (externalQueryParams ?? reactive<Record<string, unknown>>({})) as Record<string, unknown>
 
+  /**
+   * 首屏加载标记：任何一次 `fetchData` 调用（含调用方在 setup 顶层或自身 onMounted 中的手写调用）
+   * 都会**同步**置位，使挂载时的自动加载不再重复发起请求 —— 保证存量页面**恰好一次**首屏请求。
+   */
+  let firstLoadStarted = false
+
   /** 加载表格数据 */
   const fetchData = async () => {
+    firstLoadStarted = true
     tableLoading.value = true
     try {
       const result = await fetchFn({
@@ -51,7 +61,9 @@ export function useTable<T, P extends Record<string, unknown>>(
         setTotal(result.length)
       } else {
         tableData.value = result?.list ?? []
-        setTotal(result?.total ?? 0)
+        // 🔴 D-501-57：total 为 null 表示**总数未知**（下游裸数组且本页已满，代理层无从推断），
+        // 原实现 `?? 0` 把「未知」压成「0 条」，分页区随之消失、后续页在 UI 永久不可达。
+        setTotal(result?.total ?? null)
       }
     } finally {
       tableLoading.value = false
@@ -77,6 +89,18 @@ export function useTable<T, P extends Record<string, unknown>>(
   /** 翻页处理 */
   const onPageChange = (page: number) => handleCurrentChange(page, fetchData)
   const onSizeChange = (size: number) => handleSizeChange(size, fetchData)
+
+  // 首屏自动加载（🔴 D-501-43）：此前「是否加载首屏」由**每个调用方手写**，20 个用本 Hook 的页面中
+  // 19 个各写一行、1 个（核保工单列表）漏写 ⇒ 该页恒显示「暂无数据」——向用户断言「系统里没有工单」，
+  // 而真相是「有 36 条，只是没查」，且无任何报错、无加载残留，用户无从察觉。
+  // 现将首屏加载改为**默认行为**（把「忘记调用」从可能的失误变为不会发生的设计）：
+  // 需要自行控制加载时机的页面（如先加载联动数据再查列表）显式传 `{ immediate: false }`。
+  // 存量 17 个在 setup 顶层调用、2 个在自身 onMounted 中调用的页面，均由 firstLoadStarted 保证不重复请求。
+  onMounted(() => {
+    if (options?.immediate !== false && !firstLoadStarted) {
+      fetchData()
+    }
+  })
 
   return {
     tableData,

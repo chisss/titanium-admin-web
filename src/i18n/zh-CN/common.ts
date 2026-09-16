@@ -19,6 +19,10 @@ export default {
   loading: '加载中...',
   noData: '暂无数据',
   total: '共 {total} 条',
+  /** 总数未知（🔴 D-501-57）：下游未提供总数时如实说明，不显示猜测值 */
+  totalUnknown: '当前页 {count} 条，总数未知',
+  prevPage: '上一页',
+  nextPage: '下一页',
   page: '第 {page} 页',
   confirmDelete: '确认删除该记录？',
   deleteSuccess: '删除成功',

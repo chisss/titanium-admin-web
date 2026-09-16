@@ -109,7 +109,8 @@ import MaintenanceConfigurationEditor from './MaintenanceConfigurationEditor.vue
 const userStore = useUserStore()
 const query = reactive({ itemCode: '', status: '' })
 const rows = ref<MaintenanceConfigurationSummary[]>([])
-const total = ref(0)
+/** 总条数；null 表示总数未知（🔴 D-501-57），不得以当前页条数或 0 顶替 */
+const total = ref<number | null>(0)
 const pageNum = ref(1)
 const pageSize = ref(20)
 const loading = ref(false)
@@ -168,7 +169,7 @@ const load = async () => {
       if (row.status !== 'PENDING_APPROVAL') return row
       try { return await getMaintenanceConfiguration(row.configurationId) } catch { return row }
     }))
-    total.value = result.total || 0
+    total.value = result.total ?? null
   } finally { loading.value = false }
 }
 const reset = () => { query.itemCode = ''; query.status = ''; pageNum.value = 1; load() }

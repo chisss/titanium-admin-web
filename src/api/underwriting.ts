@@ -1,5 +1,6 @@
 // 核保相关接口（端点与 admin BFF UnderwritingProxyController 一一对应，字段与下游 UnderwritingVO 对齐）
 import http from './http'
+import { toPageResult } from './pageResult'
 import type { PageParams, PageResult } from '@/types/api.d'
 
 /**
@@ -115,13 +116,7 @@ export async function getUnderwritingList(
       },
     },
   )
-  const list = Array.isArray(payload) ? payload : payload?.list
-  return {
-    list: Array.isArray(list) ? list : [],
-    total: Array.isArray(payload) ? payload.length : payload?.total ?? list?.length ?? 0,
-    pageNum: Number(pageNum ?? 1),
-    pageSize: Number(pageSize ?? 10),
-  }
+  return toPageResult(payload, Number(pageNum ?? 1), Number(pageSize ?? 10))
 }
 
 /** 核保案件详情 */

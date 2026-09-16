@@ -14,7 +14,8 @@
         <slot name="empty"><el-empty :description="t('common.noData')" :image-size="72" /></slot>
       </template>
     </el-table>
-    <div v-if="total > 0" class="ti-pagination">
+    <!-- 总数已知：常规分页器 -->
+    <div v-if="total !== null && total > 0" class="ti-pagination">
       <el-pagination
         v-model:current-page="currentPage"
         v-model:page-size="currentPageSize"
@@ -25,6 +26,19 @@
         @size-change="onSizeChange"
         @current-change="onCurrentChange"
       />
+    </div>
+    <!-- 总数未知（🔴 D-501-57）：不渲染页码与总数，只给「上一页/下一页」+ 本页条数。
+         下游只返回裸数组时代理层无从推断全量条数，此时把「未知」如实表达为未知——
+         原实现以当前页条数冒充总数，用户看到「共 20 条」（实际 34 条），第 2 页永远不可达。 -->
+    <div v-else-if="total === null && data.length > 0" class="ti-pagination">
+      <span class="ti-total-unknown">{{ t('common.totalUnknown', { count: data.length }) }}</span>
+      <el-button size="small" :disabled="pageNum <= 1" @click="onPrevPage">
+        {{ t('common.prevPage') }}
+      </el-button>
+      <!-- 「下一页」仅在**有证据表明后面还有**时可用：本页已满 ⇒ 可能还有；本页不满 ⇒ 必是末页 -->
+      <el-button size="small" :disabled="!hasNextPage" @click="onNextPage">
+        {{ t('common.nextPage') }}
+      </el-button>
     </div>
   </div>
 </template>
@@ -37,8 +51,8 @@ const { t } = useI18n()
 interface Props {
   /** 表格数据 */
   data: any[]
-  /** 总条数 */
-  total?: number
+  /** 总条数；`null` 表示总数未知（🔴 D-501-57），此时渲染无总数的翻页控件 */
+  total?: number | null
   /** 当前页 */
   pageNum?: number
   /** 每页条数 */
@@ -83,4 +97,16 @@ const onCurrentChange = (page: number) => {
 const onSizeChange = (size: number) => {
   emit('size-change', size)
 }
+
+/** 本页已满 ⇒ 后面可能还有数据；本页不满 ⇒ 必是末页（唯一可证伪「还有下一页」的证据） */
+const hasNextPage = computed(() => props.data.length >= props.pageSize)
+
+const emitPage = (page: number) => {
+  emit('update:pageNum', page)
+  onCurrentChange(page)
+}
+
+const onPrevPage = () => emitPage(props.pageNum - 1)
+
+const onNextPage = () => emitPage(props.pageNum + 1)
 </script>

@@ -1,5 +1,6 @@
 // 投保单与意向单相关接口
 import http from './http'
+import { toPageResult } from './pageResult'
 import type { PageParams, PageResult } from '@/types/api.d'
 
 // ==================== 投保单（Insurance Application）====================
@@ -51,13 +52,7 @@ export async function getInsuranceList(
       size: pageSize ?? 20,
     },
   })
-  const list = Array.isArray(payload) ? payload : payload?.list
-  return {
-    list: Array.isArray(list) ? list : [],
-    total: Array.isArray(payload) ? payload.length : payload?.total ?? list?.length ?? 0,
-    pageNum: Number(pageNum ?? 1),
-    pageSize: Number(pageSize ?? 20),
-  }
+  return toPageResult(payload, Number(pageNum ?? 1), Number(pageSize ?? 20))
 }
 
 /** 获取投保单详情 */
@@ -111,13 +106,7 @@ export async function getProposalList(
       size: pageSize ?? 20,
     },
   })
-  const list = Array.isArray(payload) ? payload : payload?.list
-  return {
-    list: Array.isArray(list) ? list : [],
-    total: Array.isArray(payload) ? payload.length : payload?.total ?? list?.length ?? 0,
-    pageNum: Number(pageNum ?? 1),
-    pageSize: Number(pageSize ?? 20),
-  }
+  return toPageResult(payload, Number(pageNum ?? 1), Number(pageSize ?? 20))
 }
 
 /** 获取意向单详情 */

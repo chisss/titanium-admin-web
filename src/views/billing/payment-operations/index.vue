@@ -157,9 +157,10 @@ const collectionTimeRange = ref<string[]>([])
 const callbacks = ref<PaymentCallbackAuditVO[]>([])
 const securityEvents = ref<PaymentCallbackSecurityEventVO[]>([])
 const collections = ref<PremiumCollectionOrderVO[]>([])
-const callbackPage = reactive({ total: 0, pageNum: 1, pageSize: 20 })
-const securityPage = reactive({ total: 0, pageNum: 1, pageSize: 20 })
-const collectionPage = reactive({ total: 0, pageNum: 1, pageSize: 20 })
+// total 为 null 表示总数未知（🔴 D-501-57），不得以当前页条数或 0 顶替
+const callbackPage = reactive<{ total: number | null; pageNum: number; pageSize: number }>({ total: 0, pageNum: 1, pageSize: 20 })
+const securityPage = reactive<{ total: number | null; pageNum: number; pageSize: number }>({ total: 0, pageNum: 1, pageSize: 20 })
+const collectionPage = reactive<{ total: number | null; pageNum: number; pageSize: number }>({ total: 0, pageNum: 1, pageSize: 20 })
 const callbackLoading = ref(false)
 const securityLoading = ref(false)
 const collectionLoading = ref(false)
@@ -183,21 +184,21 @@ async function fetchCallbacks() {
   callbackLoading.value = true; callbackError.value = ''
   try {
     const result = await getPaymentCallbackAudits({ ...callbackQuery, occurredAtStart: callbackTimeRange.value[0], occurredAtEnd: callbackTimeRange.value[1] })
-    callbacks.value = result.list || []; Object.assign(callbackPage, { total: result.total || 0, pageNum: callbackQuery.pageNum, pageSize: callbackQuery.pageSize })
+    callbacks.value = result.list || []; Object.assign(callbackPage, { total: result.total ?? null, pageNum: callbackQuery.pageNum, pageSize: callbackQuery.pageSize })
   } catch (error) { callbacks.value = []; callbackError.value = errorText(error) } finally { callbackLoading.value = false }
 }
 async function fetchCollections() {
   collectionLoading.value = true; collectionError.value = ''
   try {
     const result = await getPremiumCollectionOrders({ ...collectionQuery, updatedAtStart: collectionTimeRange.value[0], updatedAtEnd: collectionTimeRange.value[1] })
-    collections.value = result.list || []; Object.assign(collectionPage, { total: result.total || 0, pageNum: collectionQuery.pageNum, pageSize: collectionQuery.pageSize }); collectionsLoaded = true
+    collections.value = result.list || []; Object.assign(collectionPage, { total: result.total ?? null, pageNum: collectionQuery.pageNum, pageSize: collectionQuery.pageSize }); collectionsLoaded = true
   } catch (error) { collections.value = []; collectionError.value = errorText(error) } finally { collectionLoading.value = false }
 }
 async function fetchSecurityEvents() {
   securityLoading.value = true; securityError.value = ''
   try {
     const result = await getPaymentCallbackSecurityEvents({ ...securityQuery, createdAtStart: securityTimeRange.value[0], createdAtEnd: securityTimeRange.value[1] })
-    securityEvents.value = result.list || []; Object.assign(securityPage, { total: result.total || 0, pageNum: securityQuery.pageNum, pageSize: securityQuery.pageSize }); securityEventsLoaded = true
+    securityEvents.value = result.list || []; Object.assign(securityPage, { total: result.total ?? null, pageNum: securityQuery.pageNum, pageSize: securityQuery.pageSize }); securityEventsLoaded = true
   } catch (error) { securityEvents.value = []; securityError.value = errorText(error) } finally { securityLoading.value = false }
 }
 function searchCallbacks() { callbackQuery.pageNum = 1; void fetchCallbacks() }

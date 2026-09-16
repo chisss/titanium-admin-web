@@ -109,6 +109,8 @@ const canClawback = (value: unknown) => { const row = value as CommissionPayable
 
 const { tableData, tableLoading, pagination, fetchData, handleSearch, handleReset, onPageChange, onSizeChange } = useTable<CommissionPayableVO, typeof queryParams>(
   (params) => getCommissionPayableList({ ...params, channelId: params.channelId || undefined, beneficiaryId: params.beneficiaryId || undefined }), queryParams,
+  // 本页首屏须先取渠道下拉数据（见 onMounted），再带筛选条件查列表，故不由 useTable 自动加载
+  { immediate: false },
 )
 
 const detailVisible = ref(false)

@@ -32,6 +32,11 @@ export const useUserStore = defineStore('user', {
       const result = await loginApi(credentials)
       this.token = result.accessToken
       localStorage.setItem('ti_token', result.accessToken)
+      // 🔴 D-501-29：刷新令牌由服务端随登录一并签发，此前被**直接丢弃** ⇒ AccessToken 一到期
+      // 就只能强制登出（续期链路两端死代码）。持久化后由 http.ts 的 401 拦截链路在到期时续期。
+      if (result.refreshToken) {
+        localStorage.setItem('ti_refresh_token', result.refreshToken)
+      }
       if (credentials.rememberMe) {
         localStorage.setItem('ti_remember_me', '1')
       }
@@ -65,6 +70,7 @@ export const useUserStore = defineStore('user', {
       this.permissions = []
       this.loaded = false
       localStorage.removeItem('ti_token')
+      localStorage.removeItem('ti_refresh_token')
       localStorage.removeItem('ti_tenant_id')
       localStorage.removeItem('ti_remember_me')
     },
