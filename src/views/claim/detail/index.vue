@@ -44,6 +44,9 @@
             {{ paymentStatusLabel(claim.paymentStatus) }}
           </el-tag>
         </el-descriptions-item>
+        <el-descriptions-item v-if="claim.assessedPayableAmount != null" label="定损核定">
+          <span class="amount">¥{{ formatAmount(claim.assessedPayableAmount) }}</span>
+        </el-descriptions-item>
         <el-descriptions-item v-if="claim.settledAmount != null" label="核定赔付">
           <span class="amount">¥{{ formatAmount(claim.settledAmount) }}</span>
         </el-descriptions-item>
@@ -122,6 +125,9 @@
       <el-form ref="settleFormRef" :model="settleForm" :rules="settleRules" label-width="100px">
         <el-form-item label="赔付金额" prop="settledAmount">
           <el-input-number v-model="settleForm.settledAmount" :min="0.01" :precision="2" style="width: 200px" />
+          <div v-if="claim?.assessedPayableAmount != null" class="form-tip">
+            本案件已定损，核定赔付金额须等于定损核定额 ¥{{ formatAmount(claim.assessedPayableAmount) }}，不得人工调整
+          </div>
         </el-form-item>
         <el-form-item label="支付方式" prop="payoutMethod">
           <el-select v-model="settleForm.payoutMethod" placeholder="请选择支付方式" style="width: 200px">
@@ -359,7 +365,8 @@ const onAction = async (action: ClaimAction) => {
       assessmentDialog.value = true
       break
     case 'settle':
-      settleForm.settledAmount = claim.value?.claimAmount ?? 0
+      // 🔴 已定损案件以定损核定额为准（聚合会拒收与核定额不等的金额），未定损才回退申报金额
+      settleForm.settledAmount = claim.value?.assessedPayableAmount ?? claim.value?.claimAmount ?? 0
       settleDialog.value = true
       break
     case 'reject':
@@ -401,12 +408,24 @@ const submitSurveyForm = async () => {
   }
 }
 
+/**
+ * 责任比例量纲转换：页面按百分数录入（80 = 80%），契约口径是 0-1 小数（全责 1.0、同责 0.5）。
+ * 🔴 这是全前端**唯一**的量纲转换点，不得在别处重复除以 100。
+ * 空值返回 undefined（不参与计算），避免 null/100 = 0 造出「零责任」错值。
+ */
+const toLiabilityRatioDecimal = (percent: number | null | undefined): number | undefined =>
+  percent == null ? undefined : percent / 100
+
 const submitAssessmentForm = async () => {
   const valid = await assessmentFormRef.value?.validate().catch(() => false)
   if (!valid) return
   actionLoading.value = true
   try {
-    await submitLossAssessment(claimId, { ...assessmentForm })
+    await submitLossAssessment(claimId, {
+      assessedAmount: assessmentForm.assessedAmount,
+      liabilityRatio: toLiabilityRatioDecimal(assessmentForm.liabilityRatio),
+      assessorId: assessmentForm.assessorId,
+    })
     ElMessage.success('定损提交成功')
     assessmentDialog.value = false
     await loadDetail()
@@ -496,5 +515,12 @@ const submitReject = async () => {
 .unit {
   margin-left: 8px;
   color: #909399;
+}
+
+.form-tip {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #e6a23c;
 }
 </style>

@@ -17,6 +17,8 @@ export interface ClaimCaseVO {
   phase?: string
   /** 核定赔付金额（结算后填充） */
   settledAmount?: number
+  /** 定损核定额（=（定损金额−残值）×责任比例，定损在案时由后端计算，核赔结算的权威金额来源） */
+  assessedPayableAmount?: number
   /** 赔付状态码（PROCESSING/SUCCESS/FAILED/CLOSED/REJECTED_CLOSED） */
   paymentStatus?: string
   /** 赔付状态中文描述 */
@@ -52,6 +54,7 @@ export interface SurveyRequest {
 /** 定损入参（字段与 SubmitLossAssessmentDTO 对齐） */
 export interface LossAssessmentRequest {
   assessedAmount: number
+  /** 责任比例，**0-1 小数**（全责 1.0、同责 0.5）；页面百分数须在提交前除以 100 */
   liabilityRatio?: number
   assessorId: string
   items?: Array<{ itemName: string; amount: number }>
