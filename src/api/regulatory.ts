@@ -31,17 +31,18 @@ export function createRegulatoryReport(data: Partial<RegulatoryReportVO>): Promi
   return http.post('/web/v1/proxy/regulatory/reports', data) as Promise<void>
 }
 
+// 提交 / 审批 / 驳回均为 POST：与 BFF 端点一致（D-501-03/05；BFF 侧此前为 PUT、且驳回端点整体缺失）
 /** 提交监管报告 */
 export function submitRegulatoryReport(id: string): Promise<void> {
-  return http.put(`/web/v1/proxy/regulatory/reports/${id}/submit`) as Promise<void>
+  return http.post(`/web/v1/proxy/regulatory/reports/${id}/submit`) as Promise<void>
 }
 
 /** 审批通过监管报告 */
 export function approveRegulatoryReport(id: string, data?: { comment?: string }): Promise<void> {
-  return http.put(`/web/v1/proxy/regulatory/reports/${id}/approve`, data) as Promise<void>
+  return http.post(`/web/v1/proxy/regulatory/reports/${id}/approve`, data) as Promise<void>
 }
 
 /** 驳回监管报告 */
 export function rejectRegulatoryReport(id: string, data?: { comment?: string }): Promise<void> {
-  return http.put(`/web/v1/proxy/regulatory/reports/${id}/reject`, data) as Promise<void>
+  return http.post(`/web/v1/proxy/regulatory/reports/${id}/reject`, data) as Promise<void>
 }
