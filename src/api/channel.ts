@@ -90,9 +90,12 @@ export function deactivateChannel(id: string): Promise<void> {
   return http.put(`/web/v1/proxy/channels/${id}/deactivate`) as Promise<void>
 }
 
-/** 获取渠道关联产品 */
-export function getChannelProducts(id: string): Promise<unknown[]> {
-  return http.get(`/web/v1/proxy/channels/${id}/products`) as Promise<unknown[]>
+/**
+ * 添加渠道产品关联（🔴 D-501-07）
+ * 路径与下游真实契约对齐：`POST /{id}/products`，productId 与费率、生效期由请求体承载。
+ */
+export function addChannelProduct(id: string, data: Record<string, unknown>): Promise<void> {
+  return http.post(`/web/v1/proxy/channels/${id}/products`, data) as Promise<void>
 }
 
 /** 查询某渠道、产品下的佣金方案版本。 */

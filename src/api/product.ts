@@ -340,11 +340,6 @@ export function createProduct(form: CreateProductForm): Promise<string> {
   return http.post('/web/v1/proxy/products', toCreateProductPayload(form))
 }
 
-/** 更新产品 */
-export function updateProduct(id: string, data: Partial<ProductVO>): Promise<void> {
-  return http.put(`/web/v1/proxy/products/${id}`, data)
-}
-
 /**
  * 修订产品（后端 BFF POST /{id}/revise → 下游 POST /{id}/revise）。
  * 仅 EFFECTIVE 产品可修订：不改写当前生效版本，以新版本 DRAFT 独立聚合落地（版本号递增）。
