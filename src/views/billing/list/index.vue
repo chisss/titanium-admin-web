@@ -5,6 +5,11 @@
       <el-form-item label="账单号">
         <el-input v-model="queryParams.billNo" clearable style="width: 160px" />
       </el-form-item>
+      <!-- 下游「综合搜索账单」按 policyId 优先路由，该筛选能力须保留；
+           ID 列自 cc2c3a8 起不再展示（显示层收敛），但筛选参数仍须有 UI 出口，否则 queryParams.policyId 成死参数 -->
+      <el-form-item label="保单ID">
+        <el-input v-model="queryParams.policyId" clearable style="width: 160px" />
+      </el-form-item>
       <el-form-item label="账单状态">
         <TiDictSelect v-model="queryParams.status" dict-type="BILL_STATUS" placeholder="全部" style="width: 130px" />
       </el-form-item>
@@ -28,9 +33,10 @@
       @page-change="onPageChange"
       @size-change="onSizeChange"
     >
+      <!-- 🔴 账单无独立业务单号，主键 billId 即账单号（D-501-47：此前读遗留字段 billNo，20/20 恒 '-'） -->
       <el-table-column prop="billId" label="账单号" width="180" class-name="ti-code-column">
         <template #default="{ row }">
-          <TiCopyText :text="row.billNo || '-'" />
+          <TiCopyText :text="row.billId || '-'" />
         </template>
       </el-table-column>
 

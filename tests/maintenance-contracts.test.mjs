@@ -26,15 +26,17 @@ const maintenanceWorkbenchSource = await readFile(
 )
 
 test('保全列表和工作台使用 Maintenance 真实字段', () => {
-  for (const field of ['id', 'policyId', 'customerId', 'createdAt', 'premiumSettlementStatus']) {
+  // 保全列表已按下游真实字段对齐（`caseId` 为案件主键、`maintenanceNo` 为保全号、
+  // `policyNumber` 为保单号）；此前的 `id`/`policyId` 是下游不存在的臆造字段
+  for (const field of ['caseId', 'maintenanceNo', 'policyNumber', 'customerId', 'itemCodes', 'effectStatus', 'createdAt']) {
     assert.match(maintenanceApiSource, new RegExp(`\\b${field}[?:]`))
   }
   assert.doesNotMatch(maintenanceApiSource, /\bworkOrderNo:/)
   assert.doesNotMatch(maintenanceApiSource, /\bpolicyNo:/)
   assert.doesNotMatch(maintenanceListSource, /prop="workOrderNo"|prop="policyNo"|prop="holderName"/)
-  assert.match(maintenanceListSource, /prop="id"\s+label="保全ID"/)
-  assert.match(maintenanceListSource, /prop="policyId"\s+label="保单ID"/)
-  assert.match(maintenanceListSource, /prop="customerId"\s+label="客户ID"/)
+  assert.match(maintenanceListSource, /prop="maintenanceNo"\s+label="保全号"/)
+  assert.match(maintenanceListSource, /prop="policyNumber"\s+label="保单号"/)
+  assert.match(maintenanceListSource, /row\.itemCodes/)
 })
 
 test('保全列表将前端分页转换为 Maintenance search 参数', () => {

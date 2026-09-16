@@ -35,15 +35,16 @@ test('账单筛选使用下游支持的 policyId 参数', () => {
   assert.doesNotMatch(billingApiSource, /\bpolicyNo:\s*string/)
 })
 
-test('账单页面准确标注ID字段并移除无效投保人筛选', () => {
-  assert.match(billingListSource, /prop="policyId"\s+label="保单ID"/)
-  assert.match(billingListSource, /prop="customerId"\s+label="客户ID"/)
+test('账单页面以主键 billId 呈现账单号并移除无效投保人筛选', () => {
+  // cc2c3a8 收敛了 ID 列的展示（保单ID/客户ID 列不再渲染），但筛选能力保留：
+  // 账单号展示一律取主键 billId —— 遗留字段 billNo 在契约/响应/DB 三处皆无（D-501-47）
+  assert.match(billingListSource, /prop="billId"\s+label="账单号"/)
+  assert.doesNotMatch(billingListSource, /row\.billNo/)
   assert.doesNotMatch(billingListSource, /queryParams\.holderName/)
   assert.doesNotMatch(billingApiSource, /\bholderName:\s*string/)
 
-  assert.match(billingDetailSource, /label="保单ID">\{\{ bill\.policyId \}\}/)
-  assert.match(billingDetailSource, /label="客户ID">\{\{ bill\.customerId \|\| '-' \}\}/)
-  assert.match(billingDetailSource, /label="到期日">\{\{ bill\.dueDate \|\| '-' \}\}/)
+  assert.match(billingDetailSource, /label="账单号">\{\{ bill\.billId \|\| '-' \}\}/)
+  assert.match(billingDetailSource, /label="到期日">\{\{ formatDate\(bill\.dueDate\) \}\}/)
 })
 
 test('保单详情加载并展示险种专属标的信息', async () => {
