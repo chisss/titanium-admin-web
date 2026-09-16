@@ -114,20 +114,12 @@ export async function getProposalDetail(id: string): Promise<ProposalVO> {
   return http.get(`/web/v1/proxy/proposals/${id}`)
 }
 
-/** 创建意向单 */
-export interface CreateProposalForm {
-  customerId: string
-  productCode: string
-  sourceChannel?: string
-  expectedPremium?: number
-  remark?: string
-}
-
-export async function createProposal(data: CreateProposalForm): Promise<string> {
-  return http.post('/web/v1/proxy/proposals', data)
-}
-
-/** 提交意向单 */
-export async function submitProposal(id: string): Promise<void> {
-  return http.put(`/web/v1/proxy/proposals/${id}/submit`)
-}
+// 🔴 原「创建意向单」`createProposal` / 「提交意向单」`submitProposal` 两个封装已按 D-501-01 删除，勿再恢复：
+// ① 字段名与下游契约对不上（本封装 productCode/sourceChannel/expectedPremium/remark
+//    ↔ 下游 CreateProposalRequest expectedProductCode/channel/intendedPremium/无 remark），
+//    且 proposalId/proposalNo/policyForm/insurancePeriodStart/End 等必填项无处可填，调用必失败；
+// ② 更根本的是该链路**无法承载参与方与标的**（下游 CreateProposalRequest 仅 12 个标量字段、
+//    命令层兼容构造器把 insuredPartyList/proposalSubjects 置 null），而意向单提交要求
+//    「至少一名申请人 + 至少一个标的」，故经此入口创建的意向单**恒不可提交**。
+// 完整出单（含参与方/标的装配 + 自动提交）走统一出单入口 POST /api/v1/issuances（PolicyIssuanceApi）。
+// 后台「意向单查询」页为只读，不提供新增/提交入口，与本删除一致。
