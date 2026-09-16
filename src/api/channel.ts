@@ -70,9 +70,9 @@ export function getChannelDetail(id: string): Promise<ChannelVO> {
   return http.get(`/web/v1/proxy/channels/${id}`) as Promise<ChannelVO>
 }
 
-/** 新建渠道 */
-export function createChannel(data: Partial<ChannelVO>): Promise<void> {
-  return http.post('/web/v1/proxy/channels', data) as Promise<void>
+/** 新建渠道（BFF 在返回前确认读模型就绪，响应体即新建渠道对象，D-501-58） */
+export function createChannel(data: Partial<ChannelVO>): Promise<ChannelVO> {
+  return http.post('/web/v1/proxy/channels', data) as Promise<ChannelVO>
 }
 
 /** 更新渠道 */
