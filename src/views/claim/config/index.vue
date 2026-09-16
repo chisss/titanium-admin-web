@@ -12,6 +12,7 @@
             :save-fn="panel.saveFn"
             :delete-fn="panel.deleteFn"
             :id-key="panel.idKey"
+            :business-key-fields="panel.businessKeyFields"
             :extra-actions="panel.extraActions"
           />
         </el-tab-pane>
@@ -142,6 +143,8 @@ const panels: Array<{
   listFn: () => Promise<Record<string, unknown>[]>
   saveFn: (data: Record<string, unknown>) => Promise<string>
   deleteFn: (id: string) => Promise<void>
+  /** 业务键字段（新建时前端前置校验占用；后端 ClaimConfigBusinessKeyGuard 为最终裁决） */
+  businessKeyFields?: string[]
   extraActions?: ExtraAction[]
 }> = [
   // ==================== 1. 流程模板 ====================
@@ -165,6 +168,7 @@ const panels: Array<{
     listFn: asRecordList(listFlowTemplates),
     saveFn: asSave(saveFlowTemplate),
     deleteFn: deleteFlowTemplate,
+    businessKeyFields: ['insuranceLine', 'claimType'],
   },
   // ==================== 2. 赔付规则 ====================
   {
@@ -191,6 +195,7 @@ const panels: Array<{
     listFn: asRecordList(listPayoutRules),
     saveFn: asSave(savePayoutRule),
     deleteFn: deletePayoutRule,
+    businessKeyFields: ['insuranceLine', 'claimType'],
   },
   // ==================== 3. 快赔规则 ====================
   {
@@ -211,6 +216,7 @@ const panels: Array<{
     listFn: asRecordList(listQuickPayRules),
     saveFn: asSave(saveQuickPayRule),
     deleteFn: deleteQuickPayRule,
+    businessKeyFields: ['claimType'],
   },
   // ==================== 4. 单证模板 ====================
   {
@@ -232,6 +238,7 @@ const panels: Array<{
     listFn: asRecordList(listDocumentTemplates),
     saveFn: asSave(saveDocumentTemplate),
     deleteFn: deleteDocumentTemplate,
+    businessKeyFields: ['insuranceLine', 'claimType'],
   },
   // ==================== 5. 时限规则 ====================
   {
@@ -254,6 +261,7 @@ const panels: Array<{
     listFn: asRecordList(listTimeLimitRules),
     saveFn: asSave(saveTimeLimitRule),
     deleteFn: deleteTimeLimitRule,
+    businessKeyFields: ['insuranceLine', 'claimStage'],
   },
   // ==================== 6. 医院网络 ====================
   {

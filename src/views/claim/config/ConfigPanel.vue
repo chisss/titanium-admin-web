@@ -30,13 +30,14 @@
               {{ action.label }}
             </el-button>
           </template>
+          <el-button size="small" @click="openEdit(row)">编辑</el-button>
           <el-button size="small" type="danger" plain @click="confirmDelete(row)">删除</el-button>
         </template>
       </el-table-column>
     </TiTable>
 
-    <!-- 新建/编辑弹窗 -->
-    <el-dialog v-model="dialogVisible" :title="`新建${title}`" width="640px" destroy-on-close>
+    <!-- 新建/编辑弹窗（🔴 D-501-53：编辑入口与新建入口分离，新增不再隐式覆盖既有配置） -->
+    <el-dialog v-model="dialogVisible" :title="`${editingId ? '编辑' : '新建'}${title}`" width="640px" destroy-on-close>
       <el-form ref="formRef" :model="form" :rules="rules" label-width="110px">
         <el-form-item v-for="field in fields" :key="field.key" :label="field.label" :prop="field.key">
           <!-- 文本输入 -->
@@ -177,6 +178,8 @@ const props = defineProps<{
   deleteFn: (id: string) => Promise<void>
   /** 行主键字段名（删除/状态动作传参） */
   idKey: string
+  /** 业务键字段（新建时校验占用；命中即拒绝，避免静默覆盖既有配置） */
+  businessKeyFields?: string[]
   /** 行级状态动作（如医院暂停/恢复、黑名单撤销） */
   extraActions?: ExtraAction[]
 }>()
@@ -186,6 +189,8 @@ const loading = ref(false)
 const dialogVisible = ref(false)
 const saving = ref(false)
 const formRef = ref<FormInstance>()
+/** 编辑中的行主键；为空表示当前是「新建」（新增与编辑走同一表单，但语义与校验不同） */
+const editingId = ref<string | null>(null)
 /** 表单模型：字段由元数据动态渲染，值类型按字段类型动态变化，故放宽为 any（对外提交仍为 Record<string, unknown>） */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const form = reactive<Record<string, any>>({})
@@ -195,7 +200,8 @@ const tagsDraft = reactive<Record<string, any>>({})
 
 const operationWidth = computed(() => {
   const extraCount = (props.extraActions ?? []).length
-  return `${Math.max(140, 90 + extraCount * 90)}px`
+  // 固定列：编辑 + 删除（各 90px），行级状态动作按数量累加
+  return `${Math.max(230, 180 + extraCount * 90)}px`
 })
 
 const rules = computed<FormRules>(() => {
@@ -236,6 +242,7 @@ loadList()
 
 /** 打开新建弹窗并重置表单 */
 const openCreate = () => {
+  editingId.value = null
   for (const key of Object.keys(form)) delete form[key]
   for (const key of Object.keys(tagsDraft)) delete tagsDraft[key]
   for (const field of props.fields) {
@@ -244,6 +251,43 @@ const openCreate = () => {
     else form[field.key] = ''
   }
   dialogVisible.value = true
+}
+
+/**
+ * 打开编辑弹窗并回填该行（🔴 D-501-53）
+ * <p>
+ * 与「新建」分离：编辑携带行主键，后端按 ID 走全量更新分支；新建不带主键，
+ * 若业务键已被占用则由后端显式拒绝（不再是静默覆盖）。
+ * </p>
+ */
+const openEdit = (row: Record<string, unknown>) => {
+  openCreate()
+  editingId.value = String(row[props.idKey])
+  for (const field of props.fields) {
+    const value = row[field.key]
+    if (field.type === 'tags') {
+      tagsDraft[field.key] = Array.isArray(value) ? value.join(',') : ''
+    } else if (field.type === 'switch') {
+      form[field.key] = value ?? true
+    } else if (field.type === 'number') {
+      form[field.key] = typeof value === 'number' ? value : undefined
+    } else {
+      form[field.key] = value ?? ''
+    }
+  }
+}
+
+/**
+ * 业务键占用校验（新建路径）：命中既有行即拒绝并指向编辑入口。
+ * <p>
+ * 后端已有同判据的硬约束，此处前置只为把「新建失败」变成「当场说清原因」——
+ * 否则用户看到的是保存报错，仍需自行猜测是哪个业务键撞了。
+ * </p>
+ */
+const findBusinessKeyConflict = (): Record<string, unknown> | undefined => {
+  const keys = props.businessKeyFields
+  if (!keys?.length) return undefined
+  return list.value.find((row) => keys.every((key) => String(row[key] ?? '') === String(form[key] ?? '')))
 }
 
 /** 组装提交数据：tags 字段按逗号拆分；空值剔除 */
@@ -262,14 +306,23 @@ const buildPayload = (): Record<string, unknown> => {
   return payload
 }
 
-/** 保存 */
+/** 保存（新建或编辑） */
 const submit = async () => {
   const valid = await formRef.value?.validate().catch(() => false)
   if (!valid) return
+  if (!editingId.value) {
+    const conflict = findBusinessKeyConflict()
+    if (conflict) {
+      ElMessage.warning(`该业务键已被配置「${conflict[props.idKey]}」占用，请改用「编辑」修改既有配置`)
+      return
+    }
+  }
   saving.value = true
   try {
-    await props.saveFn(buildPayload())
-    ElMessage.success(`${props.title}保存成功`)
+    const payload = buildPayload()
+    if (editingId.value) payload[props.idKey] = editingId.value
+    await props.saveFn(payload)
+    ElMessage.success(`${props.title}${editingId.value ? '更新' : '保存'}成功`)
     dialogVisible.value = false
     await loadList()
   } catch (e: unknown) {
