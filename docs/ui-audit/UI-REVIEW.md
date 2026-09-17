@@ -428,21 +428,56 @@
 
 ### 3.7　真机渲染层实测（Playwright，1440×900 + 768×900）
 
+> 🔴 **本节可信度声明（2026-09-17 事后核实 + 已复测）**
+>
+> 本节初稿的走查是对**运行中的容器镜像**进行的，而该镜像由 `docker inspect` 证实构建于 **2026-09-09T08:41Z**，落后工作树 **16 个提交**。
+>
+> **已处置**：镜像已重建（`sha256:220c6cfe`）并重新部署，本节全部条目已在**新构建**上复测。复测结论见 §3.7.1。§3.1–3.6 的源码层结论（grep 取证）针对工作树，不受影响。
+
+#### 3.7.1　新构建复测结果（2026-09-17，镜像 sha256:220c6cfe）
+
+| # | 原发现 | 复测判定 | 实测数据 |
+|---|---|---|---|
+| 1 | EP 主题派生变量缺失 | ✅ **成立** | `light-5=#a0cfff`、`light-7=#c6e2ff`、`light-8=#d9ecff`、`light-9=#ecf5ff`、`dark-2=#337ecc`、`rgb=64,158,255` 全为 EP 出厂蓝；`--el-border-radius-base=4px` 未覆盖 |
+| 2 | 表格列宽溢出 + 固定列遮挡 | ✅ **成立**（数据修正） | `scrollW 1240 / clientW 882`，溢出 358px。**遮挡量更正**：固定操作列占 `1018–1118`，完整覆盖「保额」右 **28px** + 「状态」左 **72px** → 状态列仅剩 **38px 可见**；「起保日期」「到期日期」2 列在容器外，靠横向滚动可达 |
+| 3 | `/claim/config` 500 静默降级 | ⏳ 未复测 | 待 R-201 |
+| 4 | DataPanel 桩数据 ¥1,234,567 | ❌ **失效，已撤回** | 实测显示 **¥0**；源码 `DataPanel.vue:54,92,104` 已改接 `@/api/dashboard`（提交 `16a9839`） |
+| 5 | `/system/role` 三问题 | ⚠️ **部分成立** | 无搜索区 ✅ 成立（无 `.ti-search-area`、无「搜索/查询」文案）；「分配权限」为 `el-button--warning` ✅ 成立；**英文枚举「ACTIVE」❌ 已失效**（实测无 `ACTIVE/INACTIVE/ENABLED/DISABLED` 字样） |
+| 6 | `/system/tenant` 两问题 | ⚠️ **部分成立** | ISO 原文 ✅ 成立（实测 `2026-08-04T16:40:23`、`2026-08-17T09:46:50`，且全页无 `YYYY-MM-DD HH:mm:ss` 格式）；**联系人断行 ❌ 未复现**（当前数据下无换行单元格） |
+| 7 | 金额小数位混排 | ✅ **成立** | `/policy/list` 41 个金额值中 `¥575.7`、`¥121.2` 为 1 位小数，`¥265`、`¥500,000`、`¥6,000,000` 为 0 位 |
+| 8 | 修改密码点击无弹层 | ⏳ 未复测 | 源码含「修改密码」文案，handler 绑定待 R-201 点验 |
+| 9 | AI 助手 1240×80 白条 | ✅ **成立** | 实测 `1240×80`，`left=200, top=820` —— 横跨内容区全宽 |
+| 10 | 768 响应式不可用 | ✅ **成立**（措辞修正） | Sidebar 恒 **200px** 不收窄；DataPanel 恒 **280px**；内容区仅 **288px**；表格容器仅 **210px**（`scrollW 1240`）；整页 `canScrollX=false`；10 列中仅 **4 列**完全可见（原稿称「只剩 2 列」偏重）。**「完全不可达」过重** —— 表格自身横向滚动可用，但需悬停才浮现滚动条，可发现性极差 |
+
+**另有两项归属性澄清**（原稿表述为「不确定」，实测已可判定）：
+
+- **双滚动嵌套归属确定**：`.ti-page` `scrollHeight 1804 / clientHeight 760 / overflow-y:auto` → **它是唯一实际滚动容器**；`.app-layout__content` `scrollHeight = clientHeight = 760` **不滚动**。故非「归属不确定」，而是「外层容器冗余」。
+- **固定表头缺失机制已实测证实**：表体总高 **1457px**（20 行）；表格**内部不纵向滚动**（`innerScrollable=false`）；滚动 `.ti-page` **600px** 后，表头 `top` 由 **283 → −317**，**完全移出视野**。即：滚动容器是页面而非表体，因此**列名在滚到底后不可见** —— S-06 的机制根因在此。
+- **常驻 chrome 占比确认**：`200(Sidebar) + 280(DataPanel) = 480px = 33.3%` 视口，与初稿一致。
+
+---
+
+**以下为初稿原文（保留以存证，个别条目已由 §3.7.1 修正）：**
+
 **走查覆盖**：成功 38 页 / 异常 4 项，基线截图 **42 张**已落盘 `docs/ui-audit/baseline-20260917/`。
 
 **实测确认的渲染层问题**：
-1. `--el-color-primary` 运行时值实测：本体/light-3 已覆盖；**light-5/7/8/9、dark-2、rgb 仍为出厂蓝**（与 P0-1 构建产物取证一致）
-2. **表格列宽溢出**（见 P0-5）+ 表体高 1457px 无固定表头
-3. **`/claim/config` 两接口 500 → 界面显示"暂无数据"**（P0-2 的真实复现）
-4. **全局"实时数据"面板与看板 KPI 自相矛盾**：DataPanel 显示今日保费 **¥1,234,567**，数据看板 KPI 显示 **¥0**，同屏冲突 → **面板数据为伪造/桩数据**
-5. **`/system/role`**：无搜索区、状态列直接显示**英文枚举「ACTIVE」**（同页其余文案全中文）、「分配权限」用橙色
-6. **`/system/tenant`**：创建时间显示 **ISO 原文 `2026-08-04T16:40:23`**（而 `/system/log` 为 `2026-09-16 10:50:32`）；联系人「出单验收管理员」**断行成「出单验收管/理员」**
-7. **金额格式不统一**：保单列表 `¥575.7` 与 `¥500,000` **小数位混排**
-8. **顶栏「修改密码」点击无任何弹层**（功能未实现但入口存在）
-9. **AI 助手展开为 1240×80 全宽白条**，横跨覆盖页面内容
-10. **768×900 响应式不可用**：侧边栏保持 200px 不收窄（占 26% 视口），内容区仅剩约 288px；保单查询 10 列只剩 2 列；产品列表被 320px 固定操作列盖满；整页无横向滚动 → **被挤掉的列完全不可达**
-11. **右侧面板 11px 标签**（`DataPanel` metric-card label/trend 共 8 处），低于 12px 可读下限
-12. 空态：保全工单搜索不存在项 → EP 默认插画 + 「暂无数据」，**无清除筛选/新建引导**；下方留白约 300px
+
+**走查覆盖**：成功 38 页 / 异常 4 项，基线截图 **42 张**已落盘 `docs/ui-audit/baseline-20260917/`。
+
+**实测确认的渲染层问题**：
+1. **`--el-color-primary` 运行时值实测**：本体/light-3 已覆盖；**light-5/7/8/9、dark-2、rgb 仍为出厂蓝**（与 P0-1 构建产物取证一致）
+2. **[见 §3.7.1 复测]** **表格列宽溢出**（见 P0-5）+ 表体高 1457px 无固定表头
+3. **[见 §3.7.1 复测]** **`/claim/config` 两接口 500 → 界面显示"暂无数据"**（P0-2 的真实复现）
+4. **[已撤回]** ~~全局"实时数据"面板与看板 KPI 自相矛盾~~：DataPanel 显示今日保费 **¥1,234,567**，数据看板 KPI 显示 **¥0**，同屏冲突 → **面板数据为伪造/桩数据**
+5. **[见 §3.7.1 复测]** **`/system/role`**：无搜索区、状态列直接显示**英文枚举「ACTIVE」**（同页其余文案全中文）、「分配权限」用橙色
+6. **[见 §3.7.1 复测]** **`/system/tenant`**：创建时间显示 **ISO 原文 `2026-08-04T16:40:23`**（而 `/system/log` 为 `2026-09-16 10:50:32`）；联系人「出单验收管理员」**断行成「出单验收管/理员」**
+7. **[见 §3.7.1 复测]** **金额格式不统一**：保单列表 `¥575.7` 与 `¥500,000` **小数位混排**
+8. **[见 §3.7.1 复测]** **顶栏「修改密码」点击无任何弹层**（功能未实现但入口存在）
+9. **[见 §3.7.1 复测]** **AI 助手展开为 1240×80 全宽白条**，横跨覆盖页面内容
+10. **[见 §3.7.1 复测]** **768×900 响应式不可用**：侧边栏保持 200px 不收窄（占 26% 视口），内容区仅剩约 288px；保单查询 10 列只剩 2 列；产品列表被 320px 固定操作列盖满；整页无横向滚动 → **被挤掉的列完全不可达**
+11. **[见 §3.7.1 复测]** **右侧面板 11px 标签**（`DataPanel` metric-card label/trend 共 8 处），低于 12px 可读下限
+12. **[见 §3.7.1 复测]** 空态：保全工单搜索不存在项 → EP 默认插画 + 「暂无数据」，**无清除筛选/新建引导**；下方留白约 300px
 
 **控制台**：Vue 层 0 warning、0 未捕获异常；6 条 error（1×401 登录前探测正常、1×404 假 ID、**3×500 静默降级为"暂无数据"**）。
 
@@ -582,25 +617,54 @@ node scripts/ui-guard.mjs --json       # 机器可读
 
 **位置**：`docs/ui-audit/baseline-20260917/`（42 张 PNG，1440×900）
 
-| # | 页面 | # | 页面 | # | 页面 |
-|---|---|---|---|---|---|
-| 01 | login | 15 | product/list | 29 | billing/detail |
-| 02 | 数据看板 | 16 | product/detail | 30 | billing/commission-payables |
-| 03 | policy/list | 17 | product/create | 31 | billing/payment-operations |
-| 04 | policy/detail | 18 | product/revise | 32 | channel/list |
-| 05 | policy/intention | 19 | product/template-config | 33 | channel/commission-schemes |
-| 06 | policy/application | 20 | product/rate-tables | 34 | customer/list |
-| 07 | claim/list | 21 | product/pricing-plans | 35 | customer/detail |
-| 08 | claim/detail | 36 | product/actuarial-workbench |
-| 09 | claim/config | 22 | clause/list | — | （持续） |
-| 10 | underwriting/list | 23 | clause/edit | 37 | maintenance/list |
-| 11 | underwriting/detail | 24 | rule-engine/list | 38 | maintenance/create |
-| 12 | system/user | 25 | notification/list | 39 | maintenance/workbench |
-| 13 | system/role | 26 | regulatory/list | 40 | maintenance/configuration |
-| 14 | system/menu | 27 | billing/list | 41 | 404 |
-| | | 28 | billing/detail | 42 | 空态-保全搜索 |
+> ⚠️ **构建时点说明**：本节截图由**运行中的容器镜像**拍摄，该镜像构建于 **2026-09-09 16:41**，落后工作树 **16 个提交**。故截图反映的是**旧构建**，凡涉运行层结论（尤其 DataPanel 数据来源、契约对齐相关）**在重建镜像前不可作为当前事实**。§3.7 已标注需复核项。
 
-> 说明：编号 01–41 为页面走查截图，42 为专项空态验证。阶段 R-04 将按同一清单复拍，与基线**逐张比对**。
+| # | 文件 | 内容 |
+|---|---|---|
+| 01 | `01-login.png` | 登录页 |
+| 02 | `02-dashboard.png` | 数据看板 |
+| 03 | `03-product-list.png` | 产品列表 |
+| 04 | `04-product-detail.png` | 产品详情 |
+| 05 | `05-product-create.png` | 产品创建向导 |
+| 06 | `06-policy-list.png` | 保单列表 |
+| 07 | `07-policy-detail.png` | 保单详情 |
+| 08 | `08-policy-application.png` | 投保单 |
+| 09 | `09-policy-intention.png` | 意向单 |
+| 10 | `10-clause-list.png` | 条款列表 |
+| 11 | `11-clause-edit.png` | 条款编辑 |
+| 12 | `12-billing-list.png` | 账单列表 |
+| 13 | `13-billing-payment-operations.png` | 支付作业 |
+| 14 | `14-rule-engine-list.png` | 规则引擎 |
+| 15 | `15-maintenance-list.png` | 保全列表 |
+| 16 | `16-maintenance-workbench.png` | 保全工作台 |
+| 17 | `17-maintenance-configuration.png` | 保全配置 |
+| 18 | `18-claim-list.png` | 理赔列表 |
+| 19 | `19-claim-config.png` | 理赔配置中心 |
+| 20 | `20-claim-config-error-tab.png` | 理赔配置（错误 tab） |
+| 21 | `21-underwriting-list.png` | 核保列表 |
+| 22 | `22-customer-list.png` | 客户列表 |
+| 23 | `23-customer-detail.png` | 客户详情 |
+| 24 | `24-channel-list.png` | 渠道列表 |
+| 25 | `25-channel-commission-schemes.png` | 佣金方案 |
+| 26 | `26-regulatory-list.png` | 监管报告 |
+| 27 | `27-notification-list.png` | 通知列表 |
+| 28 | `28-document-list.png` | 文档列表 |
+| 29 | `29-system-tenant.png` | 租户管理 |
+| 30 | `30-system-user.png` | 用户管理 |
+| 31 | `31-system-role.png` | 角色管理 |
+| 32 | `32-system-menu.png` | 菜单管理 |
+| 33 | `33-system-dict.png` | 数据字典 |
+| 34 | `34-system-log.png` | 操作日志 |
+| 35 | `35-system-config.png` | 系统配置 |
+| 36 | `36-404.png` | 404 |
+| 37 | `37-dialog-create-user.png` | 弹窗：新建用户 |
+| 38 | `38-dialog-change-password.png` | 弹窗：修改密码 |
+| 39 | `39-ai-assistant.png` | AI 助手展开态 |
+| 40 | `40-responsive-768-product-list.png` | 768 宽：产品列表 |
+| 41 | `41-responsive-768-policy-list.png` | 768 宽：保单列表 |
+| 42 | `42-empty-state-maintenance-search.png` | 空态：保全搜索无结果 |
+
+> 阶段 R-201 将在**重建镜像**后按同一清单复拍，与基线逐张比对。**基线本身需先复测修正**（见上「构建时点说明」）。
 
 ---
 
