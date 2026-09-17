@@ -1,0 +1,52 @@
+{
+  "_comment": "ui-guard 页面清单。listPages = 资源列表页（应遵守四段式骨架）。修改此清单等于修改设计契约，需在 UI-REVIEW.md §五 同步登记。",
+  "_source": "docs/ui-audit/UI-REVIEW.md §3.4（29 个列表页，2026-09-17 基线）",
+  "listPages": [
+    "views/billing/commission-payables/index.vue",
+    "views/billing/list/index.vue",
+    "views/billing/payment-operations/index.vue",
+    "views/channel/commission-schemes/index.vue",
+    "views/channel/list/index.vue",
+    "views/claim/list/index.vue",
+    "views/clause/list/index.vue",
+    "views/customer/list/index.vue",
+    "views/document/list/index.vue",
+    "views/maintenance/configuration/index.vue",
+    "views/maintenance/list/index.vue",
+    "views/maintenance/workbench/index.vue",
+    "views/notification/list/index.vue",
+    "views/policy/application/index.vue",
+    "views/policy/intention/index.vue",
+    "views/policy/list/index.vue",
+    "views/product/actuarial-workbench/index.vue",
+    "views/product/list/index.vue",
+    "views/product/pricing-plans/index.vue",
+    "views/product/rate-tables/index.vue",
+    "views/regulatory/list/index.vue",
+    "views/rule-engine/list/index.vue",
+    "views/system/dict/index.vue",
+    "views/system/log/index.vue",
+    "views/system/menu/index.vue",
+    "views/system/role/index.vue",
+    "views/system/tenant/index.vue",
+    "views/system/user/index.vue",
+    "views/underwriting/list/index.vue"
+  ],
+  "detailPages": [
+    "views/billing/detail/index.vue",
+    "views/claim/detail/index.vue",
+    "views/clause/detail/index.vue",
+    "views/customer/detail/index.vue",
+    "views/policy/detail/index.vue",
+    "views/product/detail/index.vue",
+    "views/underwriting/detail/index.vue",
+    "views/maintenance/workbench/index.vue"
+  ],
+  "formPages": [
+    "views/clause/edit/index.vue",
+    "views/maintenance/create/index.vue",
+    "views/product/create/index.vue",
+    "views/product/revise/index.vue",
+    "views/product/template-config/index.vue"
+  ]
+}

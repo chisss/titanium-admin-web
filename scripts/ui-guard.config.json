@@ -1,0 +1,30 @@
+{
+  "_comment": "ui-guard 目标值。targets[id].value 是**目标态**，不是当前基线；当前基线见 docs/ui-audit/UI-REVIEW.md §3 与下方 _baseline。harness 任务完成时其对应规则由 FAIL 转 PASS，即为该任务的客观验收。",
+  "_baseline": "2026-09-17 首次实测",
+  "targets": {
+    "D-01": { "op": "eq", "value": 10 },
+    "D-02": { "op": "gte", "value": 55 },
+    "D-03": { "op": "lte", "value": 0 },
+    "D-04": { "op": "lte", "value": 0 },
+    "D-05": { "op": "lte", "value": 0 },
+    "D-06": { "op": "eq", "value": 8 },
+    "D-07": { "op": "eq", "value": 4 },
+    "D-08": { "op": "gte", "value": 1 },
+    "D-09": { "op": "gte", "value": 15 },
+    "D-11": { "op": "lte", "value": 2 },
+    "D-12": { "op": "lte", "value": 0 },
+    "S-01": { "op": "eq", "value": 29 },
+    "S-01b": { "op": "eq", "value": 29 },
+    "S-01c": { "op": "eq", "value": 46 },
+    "S-02": { "op": "lte", "value": 0 },
+    "S-03": { "op": "lte", "value": 5 },
+    "S-04": { "op": "gte", "value": 15 },
+    "S-06": { "op": "gte", "value": 20 },
+    "S-07": { "op": "lte", "value": 1 },
+    "S-08": { "op": "lte", "value": 3 },
+    "S-09": { "op": "lte", "value": 4 },
+    "S-12": { "op": "lte", "value": 0 },
+    "G-01": { "op": "lte", "value": 1 },
+    "G-02": { "op": "lte", "value": 0 }
+  }
+}
