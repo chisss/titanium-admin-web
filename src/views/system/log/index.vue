@@ -28,6 +28,7 @@
       :page-num="pagination.pageNum"
       :page-size="pagination.pageSize"
       :loading="tableLoading"
+      :max-height="'var(--ti-table-max-height-default)'"
       @page-change="onPageChange"
       @size-change="onSizeChange"
     >
@@ -54,7 +55,7 @@
         </template>
       </el-table-column>
       <!-- @vue-generic {OperationLog} -->
-      <el-table-column label="操作" width="80" fixed="right">
+      <el-table-column label="操作" min-width="100" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
           <el-button size="small" :icon="View" @click="viewDetail(row)">详情</el-button>
         </template>
@@ -63,7 +64,7 @@
 
     <!-- 日志详情对话框 -->
     <el-dialog v-model="detailVisible" title="日志详情" width="560px">
-      <el-descriptions v-if="selectedLog" :column="2" border>
+      <el-descriptions v-if="selectedLog" :column="detailColumns" border>
         <el-descriptions-item label="操作用户">{{ selectedLog.username }}</el-descriptions-item>
         <el-descriptions-item label="IP地址">{{ selectedLog.requestIp }}</el-descriptions-item>
         <el-descriptions-item label="功能模块">{{ selectedLog.module }}</el-descriptions-item>
@@ -93,6 +94,7 @@ import { useTable } from '@/composables/useTable'
 import TiTable from '@/components/TiTable/index.vue'
 import TiSearchForm from '@/components/TiSearchForm/index.vue'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
+import { useDetailColumns } from '@/composables/useDetailColumns'
 import { useDict } from '@/composables/useDict'
 import { formatDateTime } from '@/utils/date'
 import type { OperationLog } from '@/types/business.d'
@@ -114,6 +116,9 @@ const { tableData, tableLoading, pagination, fetchData, handleSearch, handleRese
   }, queryParams)
 
 fetchData()
+
+/** 描述区：字段中短，宽屏 2 档 */
+const detailColumns = useDetailColumns(2)
 
 const detailVisible = ref(false)
 const selectedLog = ref<OperationLog | null>(null)

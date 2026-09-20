@@ -2,19 +2,19 @@
   <!-- 条款详情页 -->
   <div class="ti-page">
     <div class="ti-card" v-loading="loading">
-      <div class="detail-header">
-        <el-button :icon="ArrowLeft" text @click="$router.back()">返回</el-button>
-        <h3>条款详情</h3>
-        <TiStatusTag v-if="clause" :value="clause.status" :label="clauseStatusLabel(clause.status)" />
-        <div class="header-actions">
+      <TiDetailHeader title="条款详情">
+        <template #meta>
+          <TiStatusTag v-if="clause" :value="clause.status" :label="clauseStatusLabel(clause.status)" />
+        </template>
+        <template #actions>
           <el-button type="primary" :icon="Edit" v-permission="'clause:edit'" @click="goEdit">编辑</el-button>
-        </div>
-      </div>
+        </template>
+      </TiDetailHeader>
 
       <template v-if="clause">
         <!-- 基本信息 -->
         <el-divider content-position="left">基本信息</el-divider>
-        <el-descriptions :column="3" border>
+        <el-descriptions :column="detailColumns" border>
           <el-descriptions-item label="条款编码">{{ clause.code }}</el-descriptions-item>
           <el-descriptions-item label="条款名称">{{ clause.name }}</el-descriptions-item>
           <el-descriptions-item label="险种分类">{{ getCategoryLabel(clause.category) || clause.category || '-' }}</el-descriptions-item>
@@ -46,7 +46,7 @@
           <el-table-column label="赔付方式" width="110">
             <template #default="{ row }">{{ payoutTypeLabel(row.payoutType) }}</template>
           </el-table-column>
-          <el-table-column label="保险金额" width="130">
+          <el-table-column label="保险金额" width="130" align="right">
             <template #default="{ row }">{{ coverageAmountText(row) }}</template>
           </el-table-column>
           <el-table-column label="赔付/给付细则" min-width="240" show-overflow-tooltip>
@@ -62,10 +62,16 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, Edit } from '@element-plus/icons-vue'
+import { Edit } from '@element-plus/icons-vue'
 import { getClauseDetail, getCoverages, type ClauseVO, type CoverageVO } from '@/api/clause'
 import { useDict } from '@/composables/useDict'
+import { useDetailColumns } from '@/composables/useDetailColumns'
+import { formatAmount } from '@/utils/format'
+import TiDetailHeader from '@/components/TiDetailHeader/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
+
+/** 条款基本信息等标签-值对面板：字段短，宽屏 3 档 */
+const detailColumns = useDetailColumns(3)
 
 const route = useRoute()
 const router = useRouter()
@@ -86,9 +92,9 @@ const payoutTypeLabel = (v?: string) => v ? payoutTypeDictLabel(v) : '-'
 
 /** 保险金额展示：优先最高保额，退化到赔付上限/日津贴 */
 const coverageAmountText = (row: CoverageVO): string => {
-  if (row.coverageAmount != null) return `¥${Number(row.coverageAmount).toLocaleString()}`
-  if (row.maxPayout != null) return `¥${Number(row.maxPayout).toLocaleString()}`
-  if (row.dailyAmount != null) return `¥${Number(row.dailyAmount).toLocaleString()}/天`
+  if (row.coverageAmount != null) return formatAmount(row.coverageAmount)
+  if (row.maxPayout != null) return formatAmount(row.maxPayout)
+  if (row.dailyAmount != null) return `${formatAmount(row.dailyAmount)}/天`
   return '-'
 }
 
@@ -99,18 +105,18 @@ const coverageSummary = (row: CoverageVO): string => {
   if (row.payoutType === 'REIMBURSEMENT') {
     if (row.reimbursementRatio != null) parts.push(`社保内${row.reimbursementRatio * 100}%`)
     if (row.outSocialRatio != null) parts.push(`社保外${row.outSocialRatio * 100}%`)
-    if (row.deductibleAmount != null) parts.push(`免赔${row.deductibleAmount}元`)
-    if (row.maxPayout != null) parts.push(`上限${Number(row.maxPayout).toLocaleString()}元`)
+    if (row.deductibleAmount != null) parts.push(`免赔${formatAmount(row.deductibleAmount)}`)
+    if (row.maxPayout != null) parts.push(`上限${formatAmount(row.maxPayout)}`)
   } else if (row.payoutType === 'PERIODIC') {
-    if (row.dailyAmount != null) parts.push(`日津贴${row.dailyAmount}元`)
+    if (row.dailyAmount != null) parts.push(`日津贴${formatAmount(row.dailyAmount)}`)
     if (row.deductibleDays != null) parts.push(`免赔${row.deductibleDays}天`)
     if (row.maxDaysPerClaim != null) parts.push(`每次${row.maxDaysPerClaim}天`)
     if (row.maxDaysTotal != null) parts.push(`累计${row.maxDaysTotal}天`)
   } else if (row.payoutType === 'PROPORTIONAL' && row.proportion != null) {
     parts.push(`比例${row.proportion * 100}%`)
   } else if (row.payoutType === 'ACTUAL_LOSS') {
-    if (row.deductibleAmount != null) parts.push(`免赔${row.deductibleAmount}元`)
-    if (row.maxPayout != null) parts.push(`上限${Number(row.maxPayout).toLocaleString()}元`)
+    if (row.deductibleAmount != null) parts.push(`免赔${formatAmount(row.deductibleAmount)}`)
+    if (row.maxPayout != null) parts.push(`上限${formatAmount(row.maxPayout)}`)
   }
   return parts.join('、') || '-'
 }
@@ -139,26 +145,10 @@ onMounted(async () => {
 </script>
 
 <style scoped lang="scss">
-.detail-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 20px;
-
-  h3 {
-    margin: 0;
-    font-size: 18px;
-  }
-
-  .header-actions {
-    margin-left: auto;
-  }
-}
-
 .clause-content {
   white-space: pre-wrap;
   line-height: 1.8;
-  color: #606266;
+  color: $text-regular;
   font-size: 14px;
   padding: 4px 2px;
 }

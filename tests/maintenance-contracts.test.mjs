@@ -150,7 +150,10 @@ test('保全配置提交人不能看到审批动作', () => {
 })
 
 test('保全配置移动端固定操作列不遮挡业务字段', () => {
-  assert.match(maintenanceConfigurationSource, /@media \(max-width: 600px\)/)
+  // 🔴 原断言字面量 600px。该值已并入移动端档 $breakpoint-mobile(767)：JS 侧
+  // useMediaQuery 一直按 767 判定，CSS 只在 ≤600 取消固定列，601–767 区间里
+  // 固定操作列仍然遮挡业务字段——收敛后该规则生效范围才与 JS 判定对齐（范围变大，非变小）。
+  assert.match(maintenanceConfigurationSource, /@media \(max-width: \$breakpoint-mobile\)/)
   assert.match(maintenanceConfigurationSource, /\.el-table-fixed-column--right/)
   assert.match(maintenanceConfigurationSource, /position: static !important/)
 })

@@ -5,26 +5,31 @@
       <p>维护渠道合同下的佣金算法、分润、分期与回拨条款，发布版本供定价包精确引用。</p>
     </div>
 
+    <!-- 搜索区：三个条件均保留 @change 即时检索（原有习惯），搜索键作为显式入口并存；重置由 useTable 提供 -->
+    <TiSearchForm :model="queryParams" @search="handleSearch" @reset="handleReset">
+      <el-form-item label="渠道">
+        <el-select v-model="queryParams.channelId" filterable placeholder="选择渠道" style="width: 260px" @change="handleSearch">
+          <el-option v-for="item in channels" :key="item.channelId" :label="`${item.channelName} (${item.channelCode})`" :value="item.channelId" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="产品">
+        <el-select v-model="queryParams.productId" filterable placeholder="选择产品" style="width: 280px" @change="handleSearch">
+          <el-option v-for="item in products" :key="item.id" :label="`${item.name} (${item.code})`" :value="item.id" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="状态">
+        <TiDictSelect v-model="queryParams.status" dict-type="CONFIG_LIFECYCLE_STATUS" placeholder="全部" style="width: 130px" @change="handleSearch" />
+      </el-form-item>
+    </TiSearchForm>
+    <!-- 主操作独居工具栏：全站同类页（system/user、system/role、system/menu、product/list）
+         的单个主操作一律放 ti-toolbar-left，此处沿用；原先它靠 space-between 的第二个子元素
+         被推到右侧，那是布局副作用而非约定 -->
     <div class="ti-toolbar">
-      <el-form inline>
-        <el-form-item label="渠道">
-          <el-select v-model="queryParams.channelId" filterable placeholder="选择渠道" style="width: 260px" @change="handleSearch">
-            <el-option v-for="item in channels" :key="item.channelId" :label="`${item.channelName} (${item.channelCode})`" :value="item.channelId" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="产品">
-          <el-select v-model="queryParams.productId" filterable placeholder="选择产品" style="width: 280px" @change="handleSearch">
-            <el-option v-for="item in products" :key="item.id" :label="`${item.name} (${item.code})`" :value="item.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="状态">
-          <TiDictSelect v-model="queryParams.status" dict-type="CONFIG_LIFECYCLE_STATUS" placeholder="全部" style="width: 130px" @change="handleSearch" />
-        </el-form-item>
-        <el-button type="primary" @click="handleSearch">查询</el-button>
-      </el-form>
-      <el-button type="primary" :icon="Plus" :disabled="!queryParams.channelId || !queryParams.productId" v-permission="'channel:commission:edit'" @click="openCreate">
-        新建方案
-      </el-button>
+      <div class="ti-toolbar-left">
+        <el-button type="primary" :icon="Plus" :disabled="!queryParams.channelId || !queryParams.productId" v-permission="'channel:commission:edit'" @click="openCreate">
+          新建方案
+        </el-button>
+      </div>
     </div>
 
     <el-alert v-if="!queryParams.channelId || !queryParams.productId" title="请选择渠道和产品，佣金方案属于具体渠道合同与产品的组合。" type="info" :closable="false" />
@@ -35,6 +40,7 @@
       :page-num="pagination.pageNum"
       :page-size="pagination.pageSize"
       :loading="tableLoading"
+      :max-height="'var(--ti-table-max-height-tabbed)'"
       @page-change="onPageChange"
       @size-change="onSizeChange"
     >
@@ -45,21 +51,25 @@
       <el-table-column label="佣金参数" min-width="150"><template #default="{ row }">{{ calculationLabel(row) }}</template></el-table-column>
       <el-table-column label="分润方" width="90"><template #default="{ row }">{{ row.splits.length }}</template></el-table-column>
       <el-table-column label="结算/回拨" min-width="150"><template #default="{ row }">{{ row.installmentCount }} 期 / {{ row.clawbackMonths }} 月</template></el-table-column>
-      <el-table-column prop="effectiveFrom" label="生效时间" width="170" />
+      <!-- 时间列统一走全局日期工具，避免直出后端 ISO 串（2026-09-18 全站实测） -->
+      <el-table-column prop="effectiveFrom" label="生效时间" width="170">
+        <template #default="{ row }">{{ formatDateTime(row.effectiveFrom) }}</template>
+      </el-table-column>
       <el-table-column label="状态" width="105"><template #default="{ row }"><TiStatusTag :value="row.status" :label="statusLabel(row.status)" /></template></el-table-column>
-      <el-table-column label="操作" :fixed="isNarrowScreen ? false : 'right'" width="260">
+      <el-table-column label="操作" :fixed="isNarrowScreen ? false : 'right'" min-width="160" class-name="ti-action-column">
         <template #default="{ row }">
-          <el-button link :icon="View" @click="showDetail(row)">查看</el-button>
-          <el-button v-if="row.status === 'DRAFT'" link v-permission="'channel:commission:edit'" @click="approve(row)">审批</el-button>
-          <el-button v-if="row.status === 'APPROVED'" link type="success" v-permission="'channel:commission:publish'" @click="publish(row)">发布</el-button>
-          <el-button v-if="row.status === 'PUBLISHED'" link type="danger" v-permission="'channel:commission:publish'" @click="retire(row)">退役</el-button>
+          <el-button size="small" :icon="View" @click="showDetail(row)">查看</el-button>
+          <!-- :loading 按行绑定 rowPending：转圈的只会是刚点的那一行 -->
+          <el-button v-if="row.status === 'DRAFT'" size="small" type="primary" :icon="CircleCheck" v-permission="'channel:commission:edit'" :loading="rowPending === row.schemeId" @click="approve(row)">审批</el-button>
+          <el-button v-if="row.status === 'APPROVED'" size="small" type="success" :icon="Select" v-permission="'channel:commission:publish'" :loading="rowPending === row.schemeId" @click="publish(row)">发布</el-button>
+          <el-button v-if="row.status === 'PUBLISHED'" size="small" type="danger" :icon="Remove" v-permission="'channel:commission:publish'" :loading="rowPending === row.schemeId" @click="retire(row)">退役</el-button>
         </template>
       </el-table-column>
       <template #empty><el-empty description="当前渠道与产品暂无佣金方案" :image-size="72" /></template>
     </TiTable>
 
     <el-dialog v-model="createVisible" title="新建佣金方案草稿" width="min(900px, calc(100vw - 24px))">
-      <el-form ref="formRef" :model="form" :rules="rules" :label-position="isNarrowScreen ? 'top' : 'right'" :label-width="isNarrowScreen ? 'auto' : '130px'">
+      <el-form ref="formRef" :model="form" :rules="rules" :label-position="isNarrowScreen ? 'top' : 'right'" :label-width="isNarrowScreen ? 'auto' : '120px'">
         <div class="form-grid">
           <el-form-item label="方案编码" prop="schemeCode"><el-input v-model="form.schemeCode" /></el-form-item>
           <el-form-item label="方案版本" prop="schemeVersion"><el-input v-model="form.schemeVersion" /></el-form-item>
@@ -87,7 +97,7 @@
             <el-table-column label="上限（不含）"><template #default="{ row }"><el-input-number v-model="row.upperExclusive" :min="0" :precision="2" placeholder="无上限" /></template></el-table-column>
             <el-table-column label="比例"><template #default="{ row }"><el-input-number v-model="row.rate" :min="0" :max="1" :precision="6" /></template></el-table-column>
             <el-table-column label="定额"><template #default="{ row }"><el-input-number v-model="row.fixedAmount" :min="0" :precision="2" /></template></el-table-column>
-            <el-table-column label="操作" width="74"><template #default="{ $index }"><el-button link type="danger" @click="form.tiers.splice($index, 1)">删除</el-button></template></el-table-column>
+            <el-table-column label="操作" width="100" class-name="ti-action-column"><template #default="{ $index }"><el-button size="small" type="danger" :icon="Delete" @click="form.tiers.splice($index, 1)">删除</el-button></template></el-table-column>
           </el-table>
           <el-button class="add-row" @click="form.tiers.push(newTier())">新增阶梯</el-button>
         </template>
@@ -98,7 +108,7 @@
           <el-table-column label="受益方ID" min-width="190"><template #default="{ row }"><el-input v-model="row.beneficiaryId" /></template></el-table-column>
           <el-table-column label="分润比例" min-width="150"><template #default="{ row }"><el-input-number v-model="row.splitRate" :min="0" :max="1" :precision="6" /></template></el-table-column>
           <el-table-column label="顺序" width="110"><template #default="{ row }"><el-input-number v-model="row.sortOrder" :min="1" /></template></el-table-column>
-          <el-table-column label="操作" width="74"><template #default="{ $index }"><el-button link type="danger" :disabled="form.splits.length === 1" @click="form.splits.splice($index, 1)">删除</el-button></template></el-table-column>
+          <el-table-column label="操作" width="100" class-name="ti-action-column"><template #default="{ $index }"><el-button size="small" type="danger" :icon="Delete" :disabled="form.splits.length === 1" @click="form.splits.splice($index, 1)">删除</el-button></template></el-table-column>
         </el-table>
         <div class="split-footer"><el-button @click="form.splits.push(newSplit())">新增分润方</el-button><span>当前合计 {{ rateText(splitTotal) }}</span></div>
       </el-form>
@@ -106,7 +116,7 @@
     </el-dialog>
 
     <el-drawer v-model="detailVisible" title="佣金方案详情" size="min(860px, 100vw)">
-      <el-descriptions v-if="detail" :column="isNarrowScreen ? 1 : 3" border>
+      <el-descriptions v-if="detail" :column="detailColumns" border>
         <el-descriptions-item label="方案">{{ detail.schemeCode }} / {{ detail.schemeVersion }}</el-descriptions-item>
         <el-descriptions-item label="状态">{{ statusLabel(detail.status) }}</el-descriptions-item>
         <el-descriptions-item label="币种">{{ detail.currency }}</el-descriptions-item>
@@ -124,8 +134,8 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
-import { Plus, View } from '@element-plus/icons-vue'
+import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
+import { CircleCheck, Delete, Plus, Remove, Select, View } from '@element-plus/icons-vue'
 import { useMediaQuery } from '@vueuse/core'
 import { getProductList } from '@/api/product'
 import {
@@ -136,29 +146,38 @@ import {
 import type { ProductVO } from '@/types/business.d'
 import type { PageResult } from '@/types/api.d'
 import { useTable } from '@/composables/useTable'
+import { useRowAction, confirmAction } from '@/composables/useRowAction'
 import TiTable from '@/components/TiTable/index.vue'
+import TiSearchForm from '@/components/TiSearchForm/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
+import { useDetailColumns } from '@/composables/useDetailColumns'
 import { useDict } from '@/composables/useDict'
+import { formatAmount } from '@/utils/format'
+import { formatDateTime } from '@/utils/date'
+import { MEDIA_MAX_MOBILE } from '@/constants/layout'
 
 const channels = ref<ChannelVO[]>([])
 const products = ref<ProductVO[]>([])
 const queryParams = reactive({ channelId: '', productId: '', status: undefined as CommissionSchemeStatus | undefined })
-const isNarrowScreen = useMediaQuery('(max-width: 767px)')
+const isNarrowScreen = useMediaQuery(MEDIA_MAX_MOBILE)
 const { dictOptions: methodOptions, getLabel: methodLabel } = useDict('COMMISSION_METHOD')
 const { getLabel: statusLabel } = useDict('CONFIG_LIFECYCLE_STATUS')
 const rateText = (value?: number) => value === undefined ? '-' : `${(value * 100).toFixed(4).replace(/0+$/, '').replace(/\.$/, '')}%`
-const amountText = (value?: number, currency = 'CNY') => value === undefined ? '-' : `${currency} ${value.toFixed(2)}`
+const amountText = (value?: number, currency?: string) => value === undefined || value === null ? '-' : formatAmount(value, currency)
 const calculationLabel = (value: unknown) => { const row = value as CommissionScheme; return row.calculationMethod === 'PERCENTAGE' ? rateText(row.rate) : row.calculationMethod === 'FIXED' ? amountText(row.fixedAmount, row.currency) : `${row.tiers.length} 个阶梯` }
 
 const emptyPage = (): PageResult<CommissionScheme> => ({ list: [], total: 0, pageNum: 1, pageSize: 20 })
-const { tableData, tableLoading, pagination, fetchData, handleSearch, onPageChange, onSizeChange } = useTable<CommissionScheme, typeof queryParams>(
+const { tableData, tableLoading, pagination, fetchData, handleSearch, handleReset, onPageChange, onSizeChange } = useTable<CommissionScheme, typeof queryParams>(
   (params) => params.channelId && params.productId ? getCommissionSchemeList(params) : Promise.resolve(emptyPage()), queryParams,
   // 本页首屏须先取渠道/产品下拉数据并回填查询条件（见 onMounted），故不由 useTable 自动加载
   { immediate: false },
 )
 
 const createVisible = ref(false)
+/** 详情抽屉的描述区：字段短，宽屏 3 档（窄屏列数由组合式函数统一降为 1） */
+const detailColumns = useDetailColumns(3)
+
 const detailVisible = ref(false)
 const detail = ref<CommissionScheme | null>(null)
 const saving = ref(false)
@@ -197,9 +216,39 @@ async function submitCreate() {
   } finally { saving.value = false }
 }
 async function showDetail(value: unknown) { const row = value as CommissionScheme; detail.value = await getCommissionScheme(row.schemeId); detailVisible.value = true }
-async function approve(value: unknown) { const row = value as CommissionScheme; await approveCommissionScheme(row.schemeId); ElMessage.success('佣金方案已审批'); await fetchData() }
-async function publish(value: unknown) { const row = value as CommissionScheme; await ElMessageBox.confirm('发布后可被定价包固定引用，确认发布？', '发布佣金方案', { type: 'warning' }); await publishCommissionScheme(row.schemeId); ElMessage.success('佣金方案已发布'); await fetchData() }
-async function retire(value: unknown) { const row = value as CommissionScheme; await ElMessageBox.confirm('退役后不可用于新的定价包，确认继续？', '退役佣金方案', { type: 'warning' }); await retireCommissionScheme(row.schemeId); ElMessage.success('佣金方案已退役'); await fetchData() }
+
+/** 行内动作（审批/发布/退役）的 pending 与错误兜底统一由 useRowAction 承担，见 §八 */
+const { rowPending, run } = useRowAction(fetchData)
+
+async function approve(value: unknown) {
+  const row = value as CommissionScheme
+  await run(row.schemeId, async () => {
+    await approveCommissionScheme(row.schemeId)
+    ElMessage.success('佣金方案已审批')
+  })
+}
+
+async function publish(value: unknown) {
+  const row = value as CommissionScheme
+  if (!(await confirmAction('发布后可被定价包固定引用，确认发布？', '发布佣金方案', { type: 'warning' }))) return
+  await run(row.schemeId, async () => {
+    await publishCommissionScheme(row.schemeId)
+    ElMessage.success('佣金方案已发布')
+  })
+}
+
+async function retire(value: unknown) {
+  const row = value as CommissionScheme
+  const ok = await confirmAction('退役后不可用于新的定价包，确认继续？', '退役佣金方案', {
+    type: 'warning',
+    confirmButtonClass: 'el-button--danger',
+  })
+  if (!ok) return
+  await run(row.schemeId, async () => {
+    await retireCommissionScheme(row.schemeId)
+    ElMessage.success('佣金方案已退役')
+  })
+}
 
 onMounted(async () => {
   const [channelPage, productPage] = await Promise.all([getChannelList({ pageNum: 1, pageSize: 100, status: 'ACTIVE' }), getProductList({ pageNum: 1, pageSize: 100 })])
@@ -211,16 +260,16 @@ onMounted(async () => {
 })
 </script>
 
-<style scoped>
+<style scoped lang="scss">
 .page-intro { margin-bottom: 18px; }
 h2 { margin: 0 0 8px; }
-p { color: var(--ti-text-secondary, #86909c); margin: 0; }
+p { color: $text-secondary; margin: 0; }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 20px; }
 .inline-range { display: flex; align-items: center; gap: 8px; }
 .add-row { margin-top: 10px; }
-.split-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; color: var(--ti-text-secondary, #86909c); }
+.split-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; color: $text-secondary; }
 .hash-text { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
-@media (max-width: 767px) {
+@media (max-width: $breakpoint-mobile) {
   .ti-toolbar { align-items: stretch; flex-direction: column; }
   .ti-toolbar :deep(.el-form) { display: flex; flex-direction: column; }
   .ti-toolbar :deep(.el-form-item) { margin-right: 0; }

@@ -30,6 +30,7 @@
       :page-num="pagination.pageNum"
       :page-size="pagination.pageSize"
       :loading="tableLoading"
+      :max-height="'var(--ti-table-max-height-default)'"
       @page-change="onPageChange"
       @size-change="onSizeChange"
     >
@@ -53,7 +54,10 @@
           <TiStatusTag :value="row.status" :label="commonStatusLabel(row.status)" />
         </template>
       </el-table-column>
-      <el-table-column prop="createdAt" label="创建时间" width="160" />
+      <!-- 时间列统一走全局日期工具，避免直出后端 ISO 串（2026-09-18 全站实测） -->
+      <el-table-column prop="createdAt" label="创建时间" width="160">
+        <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
+      </el-table-column>
       <!-- @vue-generic {ChannelVO} -->
       <el-table-column label="操作" min-width="200" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
@@ -61,10 +65,15 @@
           <el-button size="small" :icon="Edit" v-permission="'channel:edit'" @click="openDialog(row)">
             编辑
           </el-button>
+          <!-- 🔴 权限码修正：原写 channel:activate / channel:deactivate，两个码在 admin 的
+               t_permission/t_menu 种子里 **0 命中** ⇒ 对非超管永久隐藏。
+               真源是 ChannelProxyController：`PUT /channels/{id}/activate` 与 `/deactivate`
+               共用 CHANNEL_TOGGLE（=channel:toggle），故两处同码。 -->
           <el-button
             v-if="row.status === 'INACTIVE'"
             size="small" type="success"
-            v-permission="'channel:activate'"
+            v-permission="'channel:toggle'"
+            :loading="rowPending === row.channelId"
             @click="handleActivate(row)"
           >
             激活
@@ -72,7 +81,8 @@
           <el-button
             v-if="row.status === 'ACTIVE'"
             size="small" type="danger"
-            v-permission="'channel:deactivate'"
+            v-permission="'channel:toggle'"
+            :loading="rowPending === row.channelId"
             @click="handleDeactivate(row)"
           >
             停用
@@ -113,7 +123,7 @@
 
 <script setup lang="ts">
 import { ref, reactive } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Plus, Edit, View } from '@element-plus/icons-vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import {
@@ -121,12 +131,14 @@ import {
 } from '@/api/channel'
 import type { ChannelVO } from '@/api/channel'
 import { useTable } from '@/composables/useTable'
+import { useRowAction, confirmAction } from '@/composables/useRowAction'
 import TiTable from '@/components/TiTable/index.vue'
 import TiSearchForm from '@/components/TiSearchForm/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
 import TiCopyText from '@/components/TiCopyText/index.vue'
 import { useDict } from '@/composables/useDict'
+import { formatDateTime } from '@/utils/date'
 
 const { getLabel: commonStatusLabel } = useDict('COMMON_STATUS')
 
@@ -141,6 +153,9 @@ const { tableData, tableLoading, pagination, fetchData, handleSearch, handleRese
   useTable<ChannelVO, typeof queryParams>((params) => getChannelList(params), queryParams)
 
 fetchData()
+
+/** 行内状态推进（激活/停用）的 pending 与错误兜底统一由 useRowAction 承担 */
+const { rowPending, run } = useRowAction(fetchData)
 
 const dialogVisible = ref(false)
 const editId = ref<string | null>(null)
@@ -198,17 +213,23 @@ const handleView = (row: ChannelVO) => {
 
 /** 激活渠道 */
 const handleActivate = async (row: ChannelVO) => {
-  await ElMessageBox.confirm(`确认激活渠道"${row.channelName}"？`, '提示', { type: 'warning' })
-  await activateChannel(row.channelId)
-  ElMessage.success('激活成功')
-  fetchData()
+  if (!(await confirmAction(`确认激活渠道"${row.channelName}"？`, '提示', { type: 'warning' }))) return
+  await run(row.channelId, async () => {
+    await activateChannel(row.channelId)
+    ElMessage.success('激活成功')
+  })
 }
 
 /** 停用渠道 */
 const handleDeactivate = async (row: ChannelVO) => {
-  await ElMessageBox.confirm(`确认停用渠道"${row.channelName}"？`, '警告', { type: 'warning' })
-  await deactivateChannel(row.channelId)
-  ElMessage.success('停用成功')
-  fetchData()
+  const ok = await confirmAction(`确认停用渠道"${row.channelName}"？`, '警告', {
+    type: 'warning',
+    confirmButtonClass: 'el-button--danger',
+  })
+  if (!ok) return
+  await run(row.channelId, async () => {
+    await deactivateChannel(row.channelId)
+    ElMessage.success('停用成功')
+  })
 }
 </script>

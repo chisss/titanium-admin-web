@@ -49,6 +49,8 @@
 
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
+import { cssVar } from '@/utils/cssVar'
+import { formatAmount as formatCurrencyAmount } from '@/utils/format'
 import { Close, DataLine } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
 import { getDashboardStats, getPremiumTrend, type DashboardStatsVO, type TrendPoint } from '@/api/dashboard'
@@ -69,9 +71,9 @@ const errorMessage = ref('')
 const stats = ref<DashboardStatsVO | null>(null)
 const trendPoints = ref<TrendPoint[]>([])
 
-/** 金额千分位展示；后端未返回时显示占位符而非 0，避免把「无数据」画成「零保费」 */
+/** 金额展示；后端未返回时显示占位符而非 0，避免把「无数据」画成「零保费」 */
 const formatAmount = (value: number | null | undefined) =>
-  value === null || value === undefined ? '—' : `¥${value.toLocaleString('zh-CN')}`
+  value === null || value === undefined ? '—' : formatCurrencyAmount(value)
 
 const formatCount = (value: number | null | undefined, unit: string) =>
   value === null || value === undefined ? '—' : `${value.toLocaleString('zh-CN')} ${unit}`
@@ -119,34 +121,36 @@ const initChart = () => {
   chartInstance.setOption({
     tooltip: { trigger: 'axis', formatter: (params: unknown[]) => {
       const p = params as { name: string; value: number }[]
-      return `${p[0].name}<br/>保费: ¥${p[0].value.toLocaleString()}`
+      return `${p[0].name}<br/>保费: ${formatCurrencyAmount(p[0].value)}`
     }},
     grid: { top: 8, right: 8, bottom: 20, left: 50 },
     xAxis: {
       type: 'category',
       data: trendPoints.value.map((point) => point.date),
-      axisLabel: { fontSize: 10, color: '#909399' },
-      axisLine: { lineStyle: { color: '#ebeef5' } },
+      axisLabel: { fontSize: 10, color: cssVar('--el-text-color-secondary') },
+      axisLine: { lineStyle: { color: cssVar('--el-border-color-lighter') } },
     },
     yAxis: {
       type: 'value',
       axisLabel: {
         fontSize: 10,
-        color: '#909399',
+        color: cssVar('--el-text-color-secondary'),
         formatter: (v: number) => `${(v / 10000).toFixed(0)}万`,
       },
-      splitLine: { lineStyle: { color: '#ebeef5', type: 'dashed' } },
+      splitLine: { lineStyle: { color: cssVar('--el-border-color-lighter'), type: 'dashed' } },
     },
     series: [{
       type: 'line',
       data: trendPoints.value.map((point) => point.value),
       smooth: true,
-      lineStyle: { color: '#1a3a6b', width: 2 },
-      itemStyle: { color: '#1a3a6b' },
+      // 品牌色由 CSS 变量取字面值（canvas 不解析 var()），使图表与全站同源；
+      // 此前这里写死 #1a3a6b，等于把 $primary-color 又存了一份（换主色时图表纹丝不动）
+      lineStyle: { color: cssVar('--ti-primary'), width: 2 },
+      itemStyle: { color: cssVar('--ti-primary') },
       areaStyle: {
         color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-          { offset: 0, color: 'rgba(26,58,107,0.3)' },
-          { offset: 1, color: 'rgba(26,58,107,0.02)' },
+          { offset: 0, color: `rgba(${cssVar('--el-color-primary-rgb')}, 0.3)` },
+          { offset: 1, color: `rgba(${cssVar('--el-color-primary-rgb')}, 0.02)` },
         ]),
       },
     }],
@@ -186,9 +190,9 @@ onUnmounted(() => {
   }
 
   &__title {
-    font-size: 15px;
+    font-size: $font-size-lg;
     font-weight: 600;
-    color: #303133;
+    color: $text-primary;
   }
 
   &__cards {
@@ -213,7 +217,7 @@ onUnmounted(() => {
     align-items: center;
     justify-content: center;
     font-size: 12px;
-    color: #909399;
+    color: $text-secondary;
   }
 
   &__chart {
@@ -226,7 +230,7 @@ onUnmounted(() => {
 
   &__chart-title {
     font-size: 13px;
-    color: #606266;
+    color: $text-regular;
     margin-bottom: 8px;
     font-weight: 500;
   }
@@ -239,25 +243,27 @@ onUnmounted(() => {
 
 .metric-card {
   background: #f8faff;
-  border-radius: 8px;
+  border-radius: $radius-lg;
   padding: 10px 12px;
   border: 1px solid #e8eef8;
 
   &__label {
     font-size: 11px;
-    color: #909399;
+    color: $text-secondary;
     margin-bottom: 4px;
   }
 
   &__value {
-    font-size: 15px;
+    font-size: $font-size-lg;
     font-weight: 700;
     margin-bottom: 2px;
 
     &--primary { color: $primary-color; }
-    &--success { color: $success-color; }
-    &--warning { color: $warning-color; }
-    &--info { color: #606266; }
+    // 用语义色「文字」变体而非本体：指标数值是要读的数据，
+    // 原色压 #f8faff 底仅 2.15:1（success）/ 2.10:1（warning），远低于 AA（2026-09-18 实测）
+    &--success { color: $success-text; }
+    &--warning { color: $warning-text; }
+    &--info { color: $text-regular; }
   }
 }
 
@@ -271,7 +277,7 @@ onUnmounted(() => {
   justify-content: center;
   cursor: pointer;
   flex-shrink: 0;
-  color: #909399;
+  color: $text-secondary;
   transition: background 0.2s;
 
   &:hover {

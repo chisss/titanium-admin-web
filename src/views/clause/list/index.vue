@@ -30,6 +30,7 @@
       :page-num="pagination.pageNum"
       :page-size="pagination.pageSize"
       :loading="tableLoading"
+      :max-height="'var(--ti-table-max-height-default)'"
       @page-change="onPageChange"
       @size-change="onSizeChange"
     >
@@ -57,8 +58,9 @@
       <el-table-column prop="effectiveDate" label="生效日期" width="110" />
       <el-table-column prop="createdAt" label="创建时间" width="160" />
       <!-- @vue-generic {ClauseVO} -->
-      <el-table-column label="操作" min-width="300" fixed="right" class-name="ti-action-column">
+      <el-table-column label="操作" min-width="200" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
+          <!-- 平铺动作收敛为 2 个：草稿期的编辑与提交审批；审批决策对（通过/驳回）整体进「更多」，不拆散 -->
           <el-button
             v-if="row.status === 'DRAFT'"
             size="small"
@@ -73,44 +75,53 @@
             size="small"
             type="primary"
             v-permission="'clause:approve'"
+            :loading="rowPending === actionKey(row.id, 'submit')"
             @click="handleSubmitApproval(row)"
           >
             提交审批
           </el-button>
-          <el-button
-            v-if="row.status === 'PENDING_APPROVAL'"
-            size="small"
-            type="success"
-            v-permission="'clause:approve'"
-            @click="openApprovalDialog('approve', row)"
+          <el-dropdown
+            v-if="['PENDING_APPROVAL', 'INACTIVE', 'ACTIVE'].includes(row.status)"
+            trigger="click"
+            @command="(command: string) => runRowCommand(row, command)"
           >
-            通过
-          </el-button>
-          <el-button
-            v-if="row.status === 'PENDING_APPROVAL'"
-            size="small"
-            type="danger"
-            v-permission="'clause:approve'"
-            @click="openApprovalDialog('reject', row)"
-          >
-            驳回
-          </el-button>
-          <el-button
-            v-if="row.status === 'INACTIVE'"
-            size="small" type="success"
-            v-permission="'clause:approve'"
-            @click="handleActivate(row)"
-          >
-            启用
-          </el-button>
-          <el-button
-            v-if="row.status === 'ACTIVE'"
-            size="small" type="danger"
-            v-permission="'clause:approve'"
-            @click="handleDeactivate(row)"
-          >
-            停用
-          </el-button>
+            <!-- 下拉内含通过/驳回/启用/停用四个命令，无法把 loading 绑到具体下拉项；
+                 绑在本行触发器上表示「这一行有动作在途」，pending 归属仍然正确。
+                 与「提交审批」并排，故 key 必须带动作名，否则两点共亮 -->
+            <el-button size="small" :icon="MoreFilled" :loading="rowPending === actionKey(row.id, 'more')">更多</el-button>
+            <template #dropdown>
+              <!-- 下拉项用 hasPermission 而非 v-permission：el-dropdown-item 渲染根是 Fragment，
+                   指令拿到的只是片段锚点文本节点，removeChild 摘不掉真正的 <li>（会静默失效） -->
+              <el-dropdown-menu>
+                <el-dropdown-item
+                  v-if="row.status === 'PENDING_APPROVAL' && hasPermission('clause:approve')"
+                  command="approve"
+                >
+                  通过
+                </el-dropdown-item>
+                <el-dropdown-item
+                  v-if="row.status === 'PENDING_APPROVAL' && hasPermission('clause:approve')"
+                  command="reject"
+                  class="ti-dropdown-item--danger"
+                >
+                  驳回
+                </el-dropdown-item>
+                <el-dropdown-item
+                  v-if="row.status === 'INACTIVE' && hasPermission('clause:approve')"
+                  command="activate"
+                >
+                  启用
+                </el-dropdown-item>
+                <el-dropdown-item
+                  v-if="row.status === 'ACTIVE' && hasPermission('clause:approve')"
+                  command="deactivate"
+                  class="ti-dropdown-item--danger"
+                >
+                  停用
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </template>
       </el-table-column>
     </TiTable>
@@ -121,7 +132,7 @@
       width="480px"
       :close-on-click-modal="false"
     >
-      <el-form ref="approvalFormRef" :model="approvalForm" :rules="approvalRules" label-width="90px">
+      <el-form ref="approvalFormRef" :model="approvalForm" :rules="approvalRules" label-width="100px">
         <el-form-item label="条款名称">
           <el-text>{{ approvalRow?.name }}</el-text>
         </el-form-item>
@@ -154,8 +165,8 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Edit } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import { Plus, Edit, MoreFilled } from '@element-plus/icons-vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import {
   activateClause,
@@ -167,16 +178,21 @@ import {
 } from '@/api/clause'
 import type { ClauseApprovalType, ClauseVO } from '@/api/clause'
 import { useTable } from '@/composables/useTable'
+import { useRowAction, confirmAction, actionKey } from '@/composables/useRowAction'
 import TiTable from '@/components/TiTable/index.vue'
 import TiSearchForm from '@/components/TiSearchForm/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
 import TiCopyText from '@/components/TiCopyText/index.vue'
 import { useDict } from '@/composables/useDict'
+import { usePermission } from '@/composables/usePermission'
 import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
 const userStore = useUserStore()
+
+/** 下拉权限判定：el-dropdown-item 为多根组件，v-permission 指令在此失效，须显式判断 */
+const { hasPermission } = usePermission()
 
 // 险种分类编码 → 中文标签（与产品详情页同口径，避免列表直显原始码）
 const { getLabel: getCategoryLabel } = useDict('INSURANCE_CATEGORY')
@@ -194,6 +210,9 @@ const { tableData, tableLoading, pagination, fetchData, handleSearch, handleRese
 
 fetchData()
 
+/** 行内状态推进（提交审批/启用/停用）的 pending 与错误兜底统一由 useRowAction 承担 */
+const { rowPending, run } = useRowAction(fetchData)
+
 const goEdit = (id?: string) => router.push(id ? `/clause/edit/${id}` : '/clause/edit')
 const goDetail = (id: string) => router.push(`/clause/detail/${id}`)
 
@@ -209,12 +228,12 @@ const currentOperator = () => {
 const handleSubmitApproval = async (row: ClauseVO) => {
   const operator = currentOperator()
   if (!operator) return
-  await ElMessageBox.confirm(`确认提交条款"${row.name}"审批？提交后将不可编辑。`, '提示', {
-    type: 'warning',
+  const ok = await confirmAction(`确认提交条款"${row.name}"审批？提交后将不可编辑。`, '提示', { type: 'warning' })
+  if (!ok) return
+  await run(actionKey(row.id, 'submit'), async () => {
+    await submitApproval(row.id, operator.id)
+    ElMessage.success('已提交审批')
   })
-  await submitApproval(row.id, operator.id)
-  ElMessage.success('已提交审批')
-  await fetchData()
 }
 
 type ApprovalAction = 'approve' | 'reject'
@@ -273,18 +292,35 @@ const handleApproval = async () => {
 const handleActivate = async (row: ClauseVO) => {
   const operator = currentOperator()
   if (!operator) return
-  await ElMessageBox.confirm(`确认重新启用条款"${row.name}"？`, '提示', { type: 'warning' })
-  await activateClause(row.id, operator.id)
-  ElMessage.success('启用成功')
-  await fetchData()
+  if (!(await confirmAction(`确认重新启用条款"${row.name}"？`, '提示', { type: 'warning' }))) return
+  await run(actionKey(row.id, 'more'), async () => {
+    await activateClause(row.id, operator.id)
+    ElMessage.success('启用成功')
+  })
 }
 
 const handleDeactivate = async (row: ClauseVO) => {
   const operator = currentOperator()
   if (!operator) return
-  await ElMessageBox.confirm(`确认停用条款"${row.name}"？`, '警告', { type: 'warning' })
-  await deactivateClause(row.id, operator.id)
-  ElMessage.success('停用成功')
-  await fetchData()
+  const ok = await confirmAction(`确认停用条款"${row.name}"？`, '警告', {
+    type: 'warning',
+    confirmButtonClass: 'el-button--danger',
+  })
+  if (!ok) return
+  await run(actionKey(row.id, 'more'), async () => {
+    await deactivateClause(row.id, operator.id)
+    ElMessage.success('停用成功')
+  })
+}
+
+/** 操作列「更多」下拉派发：命令值即动作语义，与下拉项 command 一一对应 */
+const runRowCommand = (row: ClauseVO, command: string) => {
+  const handlers: Record<string, () => void> = {
+    approve: () => openApprovalDialog('approve', row),
+    reject: () => openApprovalDialog('reject', row),
+    activate: () => handleActivate(row),
+    deactivate: () => handleDeactivate(row),
+  }
+  handlers[command]?.()
 }
 </script>

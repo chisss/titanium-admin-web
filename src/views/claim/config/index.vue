@@ -155,7 +155,7 @@ const panels: Array<{
     fields: [
       { key: 'insuranceLine', label: '险种线', type: 'select', required: true, options: INSURANCE_LINE_OPTIONS },
       { key: 'claimType', label: '案件类型', type: 'select', required: true, options: CLAIM_TYPE_OPTIONS },
-      { key: 'stageSequence', label: '环节序列', type: 'tags', required: true, placeholder: '按顺序填写环节 code，英文逗号分隔，如 REPORT,SURVEY,ASSESSMENT' },
+      { key: 'stageSequence', label: '环节序列', type: 'multi-select', required: true, options: CLAIM_STAGE_OPTIONS, placeholder: '按理赔流程的先后顺序依次选择环节' },
       { key: 'responsibleRole', label: '责任角色', type: 'input' },
     ],
     columns: [
@@ -294,6 +294,7 @@ const panels: Array<{
         label: '暂停',
         type: 'warning',
         visible: (row) => row.agreementStatus === 'ACTIVE',
+        destructive: true,
         confirmText: '确认暂停该医院协议？暂停后不再按定点比例赔付。',
         run: suspendHospital,
       },
@@ -309,6 +310,7 @@ const panels: Array<{
         label: '终止',
         type: 'danger',
         visible: (row) => row.agreementStatus === 'ACTIVE' || row.agreementStatus === 'SUSPENDED',
+        destructive: true,
         confirmText: '确认终止该医院协议？终止后不再参与资格校验。',
         run: terminateHospital,
       },
@@ -323,7 +325,7 @@ const panels: Array<{
       { key: 'subjectType', label: '标的类型', type: 'select', required: true, options: SUBJECT_TYPE_OPTIONS },
       { key: 'subjectId', label: '标的ID', type: 'input', required: true, placeholder: '人员ID/车牌/医院ID/修理厂ID' },
       { key: 'subjectName', label: '标的名称', type: 'input' },
-      { key: 'reasonCode', label: '拉黑原因 code', type: 'input', required: true, placeholder: '如 FRAUD_SUSPECTED' },
+      { key: 'reasonCode', label: '拉黑原因', type: 'dict', dictType: 'CLAIM_REJECT_REASON', required: true },
       { key: 'effectiveTime', label: '生效时间', type: 'datetime' },
     ],
     columns: [
@@ -342,6 +344,9 @@ const panels: Array<{
         label: '撤销',
         type: 'success',
         visible: (row) => row.status === 'ACTIVE',
+        // 撤销黑名单 = 解除风险控制，该主体（人/车/医院）恢复可用于理赔流程。
+        // 界面上是「解禁」故按钮色取 success，但误点的代价是风控敞口，确认按钮仍需红色。
+        destructive: true,
         confirmText: '确认撤销该黑名单记录？',
         run: revokeBlacklist,
       },

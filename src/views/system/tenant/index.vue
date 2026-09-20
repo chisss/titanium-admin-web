@@ -27,6 +27,7 @@
       :page-num="pagination.pageNum"
       :page-size="pagination.pageSize"
       :loading="tableLoading"
+      :max-height="'var(--ti-table-max-height-default)'"
       @page-change="onPageChange"
       @size-change="onSizeChange"
     >
@@ -49,14 +50,21 @@
         </template>
       </el-table-column>
       <el-table-column prop="expireAt" label="到期时间" width="110" />
-      <el-table-column prop="createdAt" label="创建时间" width="160" />
+      <el-table-column prop="createdAt" label="创建时间" width="160">
+        <!-- 时间列统一走全局日期工具，避免直出后端 ISO 串（2026-09-18 全站实测 7 页 8 列） -->
+        <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
+      </el-table-column>
       <!-- @vue-generic {TenantVO} -->
       <el-table-column label="操作" min-width="160" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
-          <el-button size="small" :icon="Edit" @click="openDialog(row)">编辑</el-button>
+          <!-- 权限码取自 admin 自身种子与 TenantController：编辑用 system:tenant:edit，
+               启用/停用共用 system:tenant:toggle（停用是破坏性动作但不是独立码）。 -->
+          <el-button size="small" :icon="Edit" v-permission="'system:tenant:edit'" @click="openDialog(row)">编辑</el-button>
           <el-button
             size="small"
             :type="row.status === 'ACTIVE' ? 'danger' : 'success'"
+            v-permission="'system:tenant:toggle'"
+            :loading="rowPending === row.id"
             @click="handleToggleStatus(row)"
           >
             {{ row.status === 'ACTIVE' ? '禁用' : '启用' }}
@@ -114,16 +122,18 @@
 
 <script setup lang="ts">
 import { ref, reactive } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Plus, Edit } from '@element-plus/icons-vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import { getTenantList, createTenant, updateTenant, toggleTenantStatus } from '@/api/tenant'
 import { useTable } from '@/composables/useTable'
+import { useRowAction, confirmAction } from '@/composables/useRowAction'
 import TiTable from '@/components/TiTable/index.vue'
 import TiSearchForm from '@/components/TiSearchForm/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import TiCopyText from '@/components/TiCopyText/index.vue'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
+import { formatDateTime } from '@/utils/date'
 import { useDict } from '@/composables/useDict'
 import type { TenantVO } from '@/types/business.d'
 import {
@@ -142,6 +152,9 @@ const { tableData, tableLoading, pagination, fetchData, handleSearch, handleRese
   useTable<TenantVO, typeof queryParams>((params) => getTenantList(params), queryParams)
 
 fetchData()
+
+/** 行内状态推进（启用/禁用）的 pending 与错误兜底统一由 useRowAction 承担 */
+const { rowPending, run } = useRowAction(fetchData)
 
 const dialogVisible = ref(false)
 const editId = ref<string | null>(null)
@@ -199,9 +212,18 @@ const handleSave = async () => {
 
 const handleToggleStatus = async (row: TenantVO) => {
   const nextStatus = row.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE'
-  await ElMessageBox.confirm(`确认${nextStatus === 'ACTIVE' ? '启用' : '禁用'}租户"${row.name}"？`, '提示', { type: 'warning' })
-  await toggleTenantStatus(row.id, nextStatus)
-  ElMessage.success('操作成功')
-  fetchData()
+  // 仅「禁用」是破坏性动作（租户停用后其下用户无法登录、在办业务中断），确认按钮标红；
+  // 「启用」是恢复性操作，标红会训练用户对红色脱敏，故不给 danger 类。
+  const isDestructive = nextStatus === 'INACTIVE'
+  const ok = await confirmAction(
+    `确认${isDestructive ? '禁用' : '启用'}租户"${row.name}"？`,
+    '提示',
+    { type: 'warning', confirmButtonClass: isDestructive ? 'el-button--danger' : '' },
+  )
+  if (!ok) return
+  await run(row.id, async () => {
+    await toggleTenantStatus(row.id, nextStatus)
+    ElMessage.success('操作成功')
+  })
 }
 </script>

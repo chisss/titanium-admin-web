@@ -139,7 +139,7 @@ const sendMessage = async () => {
 
   &__hint {
     font-size: 13px;
-    color: #909399;
+    color: $text-secondary;
     white-space: nowrap;
   }
 
@@ -178,7 +178,7 @@ const sendMessage = async () => {
 
       .ai-chat__bubble {
         background: #f4f6f8;
-        color: #303133;
+        color: $text-primary;
       }
     }
   }
@@ -186,7 +186,7 @@ const sendMessage = async () => {
   &__bubble {
     max-width: 70%;
     padding: 8px 12px;
-    border-radius: 8px;
+    border-radius: $radius-lg;
     font-size: 13px;
     line-height: 1.5;
 
@@ -200,7 +200,9 @@ const sendMessage = async () => {
         width: 6px;
         height: 6px;
         border-radius: 50%;
-        background: #909399;
+        // 用小元素而非文本色阶：这里是 6px 圆点，不是文字。
+        // $text-secondary 为达标 AA 已加深到 #6b6e75，套在圆点上会不必要地变重（2026-09-18）
+        background: $text-tertiary;
         animation: dot-bounce 1.2s infinite;
 
         &:nth-child(2) { animation-delay: 0.2s; }
@@ -211,7 +213,7 @@ const sendMessage = async () => {
 
   &__time {
     font-size: 11px;
-    color: #c0c4cc;
+    color: $text-disabled;
     margin-top: 2px;
     padding: 0 4px;
   }
@@ -222,7 +224,7 @@ const sendMessage = async () => {
   40% { transform: scale(1.1); opacity: 1; }
 }
 
-@media (max-width: 767px) {
+@media (max-width: $breakpoint-mobile) {
   .ai-chat {
     &__bar {
       gap: 4px;

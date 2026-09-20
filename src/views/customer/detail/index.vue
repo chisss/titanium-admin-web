@@ -2,10 +2,7 @@
   <!-- 客户详情 -->
   <div class="ti-page">
     <div class="ti-card" v-loading="customerLoading">
-      <div class="detail-header">
-        <el-button :icon="ArrowLeft" text @click="$router.back()">返回</el-button>
-        <h3>客户详情 - {{ customer?.fullName || '-' }}</h3>
-      </div>
+      <TiDetailHeader :title="`客户详情 - ${customer?.fullName || '-'}`" />
 
       <el-alert
         v-if="customerError"
@@ -21,7 +18,7 @@
       </el-alert>
 
       <!-- 基本信息：枚举与日期统一走 customerLabel / formatDateTime（D-501-56，此前直出 INDIVIDUAL/CHINA_ID_CARD/ACTIVE 与 ISO 串） -->
-      <el-descriptions v-if="customer" :column="3" border style="margin-bottom: 24px">
+      <el-descriptions v-if="customer" :column="detailColumns" border style="margin-bottom: 24px">
         <el-descriptions-item label="客户姓名">{{ customer.fullName }}</el-descriptions-item>
         <el-descriptions-item label="客户类型">{{ customerLabel('customerType', customer.customerType) }}</el-descriptions-item>
         <el-descriptions-item label="性别">{{ customerLabel('gender', customer.gender) }}</el-descriptions-item>
@@ -69,7 +66,7 @@
               </el-table-column>
               <el-table-column prop="policyHolderName" label="投保人" width="110" />
               <el-table-column prop="insuredName" label="被保人" width="110" />
-              <el-table-column prop="premium" label="保费" width="110">
+              <el-table-column prop="premium" label="保费" width="110" align="right">
                 <template #default="{ row }">{{ formatAmount(row.premium, row.currency) }}</template>
               </el-table-column>
               <el-table-column prop="status" label="状态" width="110">
@@ -84,7 +81,7 @@
                   <el-icon v-else class="is-loading"><Loading /></el-icon>
                 </template>
               </el-table-column>
-              <el-table-column label="操作" width="90" fixed="right">
+              <el-table-column label="操作" min-width="100" fixed="right" class-name="ti-action-column">
                 <template #default="{ row }">
                   <el-button size="small" :icon="View" @click="goPolicyDetail(row.policyId)">详情</el-button>
                 </template>
@@ -140,14 +137,20 @@
 import { computed, ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, Loading, Refresh, View } from '@element-plus/icons-vue'
+import { Loading, Refresh, View } from '@element-plus/icons-vue'
 import { getCustomerDetail } from '@/api/customer'
 import { getPoliciesByCustomer, getPolicyBeneficiaries } from '@/api/policy'
 import type { CustomerPolicyVO, PolicyBeneficiaryVO } from '@/api/policy'
 import type { CustomerVO } from '@/types/business.d'
 import { customerLabel } from '@/constants/customer'
 import { formatDateTime } from '@/utils/date'
+import { useDetailColumns } from '@/composables/useDetailColumns'
+import { formatAmount } from '@/utils/format'
+import TiDetailHeader from '@/components/TiDetailHeader/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
+
+/** 客户概览：字段短，宽屏 3 档 */
+const detailColumns = useDetailColumns(3)
 
 const route = useRoute()
 const router = useRouter()
@@ -197,12 +200,6 @@ const beneficiaryTypeLabel = (type?: string) => ({
   DEATH: '身故受益人',
   SURVIVAL: '生存受益人',
 }[type || ''] || type || '-')
-
-const formatAmount = (amount?: number, currency?: string) => {
-  if (amount == null) return '-'
-  const prefix = currency === 'CNY' || !currency ? '¥' : `${currency} `
-  return `${prefix}${amount.toLocaleString()}`
-}
 
 const formatRatio = (ratio?: number) => ratio == null ? '-' : `${ratio}%`
 
@@ -272,19 +269,6 @@ onMounted(loadCustomer)
 </script>
 
 <style scoped lang="scss">
-.detail-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 20px;
-
-  h3 {
-    margin: 0;
-    font-size: 18px;
-    flex: 1;
-  }
-}
-
 .state-alert {
   margin-bottom: 16px;
 }
@@ -301,13 +285,13 @@ onMounted(loadCustomer)
 }
 
 .section-title {
-  font-size: 15px;
+  font-size: $font-size-lg;
   font-weight: 600;
-  color: #303133;
+  color: $text-primary;
 }
 
 .section-hint {
-  color: #e6a23c;
+  color: $warning-color;
   font-size: 13px;
 }
 
@@ -317,7 +301,7 @@ onMounted(loadCustomer)
   justify-content: center;
   gap: 8px;
   min-height: 120px;
-  color: #909399;
+  color: $text-secondary;
 }
 
 </style>

@@ -14,15 +14,21 @@
     </div>
 
     <div class="context-bar">
-      <el-form inline>
-        <el-form-item label="产品">
-          <el-select v-model="productId" filterable placeholder="选择产品" class="product-select" @change="loadAssets">
-            <el-option v-for="product in products" :key="product.id" :label="`${product.name} (${product.code})`" :value="product.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="状态"><TiDictSelect v-model="status" dict-type="CONFIG_LIFECYCLE_STATUS" class="status-select" @change="loadAssets" /></el-form-item>
+      <div class="context-filters">
+        <!-- 搜索区：产品/状态均保留 @change 即时重载（原有习惯），搜索键作为显式入口并存。
+             重置后 productId 为空，loadAssets 的空产品分支会清空四个列表，正好落到下方 el-alert 空态 -->
+        <TiSearchForm :model="queryParams" @search="loadAssets" @reset="loadAssets">
+          <el-form-item label="产品">
+            <el-select v-model="productId" filterable placeholder="选择产品" class="product-select" @change="loadAssets">
+              <el-option v-for="product in products" :key="product.id" :label="`${product.name} (${product.code})`" :value="product.id" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="状态"><TiDictSelect v-model="status" dict-type="CONFIG_LIFECYCLE_STATUS" class="status-select" @change="loadAssets" /></el-form-item>
+        </TiSearchForm>
+        <!-- 🔴 「刷新」不是检索动词，而是「重新拉取当前产品的精算配置」，故留在搜索区之外，
+             不与「搜索」并列成一个语义重复的按钮 -->
         <el-button :icon="Refresh" :loading="loading" aria-label="刷新精算配置" @click="loadAssets" />
-      </el-form>
+      </div>
       <div v-if="currentProduct" class="context-meta">
         <span>{{ currentProduct.code }}</span><span>版本 {{ currentProduct.version || '-' }}</span>
       </div>
@@ -36,7 +42,11 @@
           <span>每个费用项固定分类、方向、承担方和账务归属。</span>
           <el-button type="primary" v-permission="'product:actuarial:edit'" @click="openComponentCreate">新建费用项</el-button>
         </div>
-        <el-table v-loading="loading" :data="components" border>
+        <TiTable
+          :data="components"
+          :loading="loading"
+          :max-height="'var(--ti-table-max-height-tabbed)'"
+        >
           <el-table-column prop="componentCode" label="费用项编码" min-width="150" />
           <el-table-column prop="componentVersion" label="版本" width="90" />
           <el-table-column prop="componentName" label="名称" min-width="150" />
@@ -46,16 +56,16 @@
           <el-table-column label="承担方" width="100"><template #default="{ row }">{{ labelOf(payerOptions, row.payerType) }}</template></el-table-column>
           <el-table-column prop="accountingClass" label="账务分类" min-width="140" />
           <el-table-column label="状态" width="100"><template #default="{ row }"><TiStatusTag :value="row.status" :label="statusLabel(row.status)" /></template></el-table-column>
-          <el-table-column label="操作" fixed="right" width="220">
+          <el-table-column label="操作" fixed="right" min-width="160" class-name="ti-action-column">
             <template #default="{ row }">
-              <el-button link @click="showComponent(row)">查看</el-button>
-              <el-button v-if="row.status === 'DRAFT'" link v-permission="'product:actuarial:edit'" @click="transitionComponent(row, 'approve')">审批</el-button>
-              <el-button v-if="row.status === 'APPROVED'" link type="success" v-permission="'product:actuarial:edit'" @click="transitionComponent(row, 'publish')">发布</el-button>
-              <el-button v-if="row.status === 'PUBLISHED'" link type="danger" v-permission="'product:actuarial:edit'" @click="transitionComponent(row, 'retire')">退役</el-button>
+              <el-button size="small" :icon="View" @click="showComponent(row)">查看</el-button>
+              <el-button v-if="row.status === 'DRAFT'" size="small" type="primary" :icon="CircleCheck" v-permission="'product:actuarial:edit'" @click="transitionComponent(row, 'approve')">审批</el-button>
+              <el-button v-if="row.status === 'APPROVED'" size="small" type="success" :icon="Select" v-permission="'product:actuarial:edit'" @click="transitionComponent(row, 'publish')">发布</el-button>
+              <el-button v-if="row.status === 'PUBLISHED'" size="small" type="danger" :icon="Remove" v-permission="'product:actuarial:edit'" @click="transitionComponent(row, 'retire')">退役</el-button>
             </template>
           </el-table-column>
           <template #empty><el-empty description="当前产品暂无费用项"><el-button type="primary" v-permission="'product:actuarial:edit'" @click="openComponentCreate">新建费用项</el-button></el-empty></template>
-        </el-table>
+        </TiTable>
       </el-tab-pane>
 
       <el-tab-pane name="models">
@@ -64,24 +74,31 @@
           <span>节点按依赖顺序计算；内部成本节点不进入客户应付输出。</span>
           <el-button type="primary" v-permission="'product:actuarial:edit'" @click="openModelCreate">新建计算模型</el-button>
         </div>
-        <el-table v-loading="loading" :data="models" border>
+        <TiTable
+          :data="models"
+          :loading="loading"
+          :max-height="'var(--ti-table-max-height-tabbed)'"
+        >
           <el-table-column prop="modelCode" label="模型编码" min-width="160" />
           <el-table-column prop="modelVersion" label="版本" width="90" />
           <el-table-column prop="modelName" label="名称" min-width="180" />
           <el-table-column prop="currency" label="币种" width="80" />
           <el-table-column label="规模" width="130"><template #default="{ row }">{{ row.nodes.length }} 节点 / {{ row.edges.length }} 依赖</template></el-table-column>
-          <el-table-column prop="effectiveFrom" label="生效时间" min-width="170" />
+          <!-- 时间列统一走全局日期工具，避免直出后端 ISO 串（2026-09-18 全站实测） -->
+          <el-table-column prop="effectiveFrom" label="生效时间" min-width="170">
+            <template #default="{ row }">{{ formatDateTime(row.effectiveFrom) }}</template>
+          </el-table-column>
           <el-table-column label="状态" width="100"><template #default="{ row }"><TiStatusTag :value="row.status" :label="statusLabel(row.status)" /></template></el-table-column>
-          <el-table-column label="操作" fixed="right" width="220">
+          <el-table-column label="操作" fixed="right" min-width="160" class-name="ti-action-column">
             <template #default="{ row }">
-              <el-button link @click="showModel(row)">查看</el-button>
-              <el-button v-if="row.status === 'DRAFT'" link v-permission="'product:actuarial:edit'" @click="transitionModel(row, 'approve')">审批</el-button>
-              <el-button v-if="row.status === 'APPROVED'" link type="success" v-permission="'product:actuarial:edit'" @click="transitionModel(row, 'publish')">发布</el-button>
-              <el-button v-if="row.status === 'PUBLISHED'" link type="danger" v-permission="'product:actuarial:edit'" @click="transitionModel(row, 'retire')">退役</el-button>
+              <el-button size="small" :icon="View" @click="showModel(row)">查看</el-button>
+              <el-button v-if="row.status === 'DRAFT'" size="small" type="primary" :icon="CircleCheck" v-permission="'product:actuarial:edit'" @click="transitionModel(row, 'approve')">审批</el-button>
+              <el-button v-if="row.status === 'APPROVED'" size="small" type="success" :icon="Select" v-permission="'product:actuarial:edit'" @click="transitionModel(row, 'publish')">发布</el-button>
+              <el-button v-if="row.status === 'PUBLISHED'" size="small" type="danger" :icon="Remove" v-permission="'product:actuarial:edit'" @click="transitionModel(row, 'retire')">退役</el-button>
             </template>
           </el-table-column>
           <template #empty><el-empty description="当前产品暂无计算模型"><el-button type="primary" v-permission="'product:actuarial:edit'" @click="openModelCreate">新建计算模型</el-button></el-empty></template>
-        </el-table>
+        </TiTable>
       </el-tab-pane>
 
       <el-tab-pane name="taxes">
@@ -90,7 +107,11 @@
           <span>税费以独立版本维护，定价包只引用已发布版本；法规依据和价内外模式随计算事实留痕。</span>
           <el-button type="primary" v-permission="'product:actuarial:edit'" @click="openTaxPolicyCreate">新建税费策略</el-button>
         </div>
-        <el-table v-loading="loading" :data="taxPolicies" border>
+        <TiTable
+          :data="taxPolicies"
+          :loading="loading"
+          :max-height="'var(--ti-table-max-height-tabbed)'"
+        >
           <el-table-column prop="policyCode" label="策略编码" min-width="150" />
           <el-table-column prop="policyVersion" label="版本" width="90" />
           <el-table-column prop="policyName" label="名称" min-width="170" />
@@ -99,16 +120,16 @@
           <el-table-column label="模式" width="100"><template #default="{ row }">{{ taxPriceModeLabel(row.priceMode) }}</template></el-table-column>
           <el-table-column prop="regulatoryReferenceId" label="法规依据" min-width="150" />
           <el-table-column label="状态" width="100"><template #default="{ row }"><TiStatusTag :value="row.status" :label="statusLabel(row.status)" /></template></el-table-column>
-          <el-table-column label="操作" fixed="right" width="230">
+          <el-table-column label="操作" fixed="right" min-width="160" class-name="ti-action-column">
             <template #default="{ row }">
-              <el-button link @click="showTaxPolicy(row)">查看</el-button>
-              <el-button v-if="row.status === 'DRAFT'" link v-permission="'product:actuarial:edit'" @click="transitionTaxPolicy(row, 'approve')">审批</el-button>
-              <el-button v-if="row.status === 'APPROVED'" link type="success" v-permission="'product:actuarial:edit'" @click="transitionTaxPolicy(row, 'publish')">发布</el-button>
-              <el-button v-if="row.status === 'PUBLISHED'" link type="danger" v-permission="'product:actuarial:edit'" @click="transitionTaxPolicy(row, 'retire')">退役</el-button>
+              <el-button size="small" :icon="View" @click="showTaxPolicy(row)">查看</el-button>
+              <el-button v-if="row.status === 'DRAFT'" size="small" type="primary" :icon="CircleCheck" v-permission="'product:actuarial:edit'" @click="transitionTaxPolicy(row, 'approve')">审批</el-button>
+              <el-button v-if="row.status === 'APPROVED'" size="small" type="success" :icon="Select" v-permission="'product:actuarial:edit'" @click="transitionTaxPolicy(row, 'publish')">发布</el-button>
+              <el-button v-if="row.status === 'PUBLISHED'" size="small" type="danger" :icon="Remove" v-permission="'product:actuarial:edit'" @click="transitionTaxPolicy(row, 'retire')">退役</el-button>
             </template>
           </el-table-column>
           <template #empty><el-empty description="当前产品暂无税费策略"><el-button type="primary" v-permission="'product:actuarial:edit'" @click="openTaxPolicyCreate">新建税费策略</el-button></el-empty></template>
-        </el-table>
+        </TiTable>
       </el-tab-pane>
 
       <el-tab-pane name="factors">
@@ -117,7 +138,11 @@
           <span>将 Feature Center 固化特征变换为规则引擎可用的数值因子。</span>
           <el-button type="primary" v-permission="'product:actuarial:edit'" @click="openDynamicFactorCreate">新建动态因子</el-button>
         </div>
-        <el-table v-loading="loading" :data="dynamicFactors" border>
+        <TiTable
+          :data="dynamicFactors"
+          :loading="loading"
+          :max-height="'var(--ti-table-max-height-tabbed)'"
+        >
           <el-table-column prop="factorCode" label="因子编码" min-width="150" />
           <el-table-column prop="factorVersion" label="版本" width="90" />
           <el-table-column prop="factorName" label="名称" min-width="160" />
@@ -126,25 +151,26 @@
           <el-table-column label="变换" min-width="150"><template #default="{ row }">{{ factorTransformLabel(row) }}</template></el-table-column>
           <el-table-column label="重放" width="80"><template #default="{ row }"><el-tag :type="row.replayable ? 'success' : 'danger'" effect="plain">{{ row.replayable ? '支持' : '禁止' }}</el-tag></template></el-table-column>
           <el-table-column label="状态" width="100"><template #default="{ row }"><TiStatusTag :value="row.status" :label="statusLabel(row.status)" /></template></el-table-column>
-          <el-table-column label="操作" fixed="right" width="230">
+          <el-table-column label="操作" fixed="right" min-width="160" class-name="ti-action-column">
             <template #default="{ row }">
-              <el-button link @click="showDynamicFactor(row)">查看</el-button>
-              <el-button v-if="row.status === 'DRAFT'" link v-permission="'product:actuarial:edit'" @click="transitionDynamicFactor(row, 'approve')">审批</el-button>
-              <el-button v-if="row.status === 'APPROVED'" link type="success" v-permission="'product:actuarial:edit'" @click="transitionDynamicFactor(row, 'publish')">发布</el-button>
-              <el-button v-if="row.status === 'PUBLISHED'" link type="danger" v-permission="'product:actuarial:edit'" @click="transitionDynamicFactor(row, 'retire')">退役</el-button>
+              <el-button size="small" :icon="View" @click="showDynamicFactor(row)">查看</el-button>
+              <el-button v-if="row.status === 'DRAFT'" size="small" type="primary" :icon="CircleCheck" v-permission="'product:actuarial:edit'" @click="transitionDynamicFactor(row, 'approve')">审批</el-button>
+              <el-button v-if="row.status === 'APPROVED'" size="small" type="success" :icon="Select" v-permission="'product:actuarial:edit'" @click="transitionDynamicFactor(row, 'publish')">发布</el-button>
+              <el-button v-if="row.status === 'PUBLISHED'" size="small" type="danger" :icon="Remove" v-permission="'product:actuarial:edit'" @click="transitionDynamicFactor(row, 'retire')">退役</el-button>
             </template>
           </el-table-column>
           <template #empty><el-empty description="当前产品暂无动态因子"><el-button type="primary" v-permission="'product:actuarial:edit'" @click="openDynamicFactorCreate">新建动态因子</el-button></el-empty></template>
-        </el-table>
+        </TiTable>
       </el-tab-pane>
 
       <el-tab-pane label="计算明细" name="calculations">
         <div class="calculation-query">
           <el-input v-model="calculationId" clearable placeholder="确认计算 ID" @keyup.enter="loadCalculation" />
-          <el-button type="primary" :loading="calculationLoading" @click="loadCalculation">查询</el-button>
+          <!-- 按 ID 定位单条计算：动词沿用全站统一的「搜索」，不为此单独造一个词 -->
+          <el-button type="primary" :loading="calculationLoading" @click="loadCalculation">搜索</el-button>
         </div>
         <template v-if="calculation">
-          <el-descriptions :column="4" border class="calculation-summary">
+          <el-descriptions :column="summaryColumns" border class="calculation-summary">
             <el-descriptions-item label="业务单号">{{ calculation.bizNo }}</el-descriptions-item>
             <el-descriptions-item label="币种">{{ calculation.currency }}</el-descriptions-item>
             <el-descriptions-item label="客户应付">{{ amountText(calculation.calculationTotals.customerPayable) }}</el-descriptions-item>
@@ -154,23 +180,23 @@
             <el-descriptions-item label="状态">{{ calculation.status }}</el-descriptions-item>
             <el-descriptions-item label="计算 ID"><span class="hash">{{ calculation.calculationId }}</span></el-descriptions-item>
           </el-descriptions>
-          <el-table :data="calculation.calculationLines" border>
+          <el-table :data="calculation.calculationLines" stripe>
             <el-table-column prop="componentCode" label="费用项" min-width="160" />
             <el-table-column label="通道" width="110"><template #default="{ row }"><el-tag :type="row.amountChannel === 'INTERNAL_COST' ? 'warning' : 'primary'" effect="plain">{{ labelOf(channelOptions, row.amountChannel) }}</el-tag></template></el-table-column>
             <el-table-column label="分类" width="130"><template #default="{ row }">{{ labelOf(categoryOptions, row.category) }}</template></el-table-column>
             <el-table-column prop="accountingClass" label="账务分类" min-width="130" />
-            <el-table-column label="计费基数" width="120"><template #default="{ row }">{{ amountText(row.baseAmount, isMaskedAmount(row)) }}</template></el-table-column>
-            <el-table-column label="费率" width="110"><template #default="{ row }">{{ amountText(row.rate, isMaskedAmount(row)) }}</template></el-table-column>
-            <el-table-column label="金额" width="120"><template #default="{ row }">{{ amountText(row.calculatedAmount, isMaskedAmount(row)) }}</template></el-table-column>
+            <el-table-column label="计费基数" width="120" align="right"><template #default="{ row }">{{ amountText(row.baseAmount, isMaskedAmount(row)) }}</template></el-table-column>
+            <el-table-column label="费率" width="110"><template #default="{ row }">{{ ratePlainText(row.rate, isMaskedAmount(row)) }}</template></el-table-column>
+            <el-table-column label="金额" width="120" align="right"><template #default="{ row }">{{ amountText(row.calculatedAmount, isMaskedAmount(row)) }}</template></el-table-column>
             <el-table-column prop="nodeCode" label="计算节点" min-width="120" />
           </el-table>
         </template>
-        <el-empty v-else description="输入确认计算 ID 查询费用明细" />
+        <el-empty v-else description="输入确认计算 ID，搜索该次计算的费用明细" />
       </el-tab-pane>
     </el-tabs>
 
     <el-dialog v-model="policyVisible" title="租户精算显示策略" width="min(480px, calc(100vw - 24px))">
-      <el-form label-position="left" label-width="180px">
+      <el-form label-position="left" label-width="140px">
         <el-form-item label="脱敏内部成本金额"><el-switch v-model="maskingPolicy.maskInternalAmount" /></el-form-item>
         <el-form-item label="脱敏内部费用字段"><el-switch v-model="maskingPolicy.maskInternalFields" /></el-form-item>
       </el-form>
@@ -252,7 +278,7 @@
           <el-form-item label="生效时间" prop="effectiveFrom"><el-date-picker v-model="modelForm.effectiveFrom" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" /></el-form-item>
         </div>
         <div class="editor-heading"><div><h3>计算节点</h3><span>非输出节点必须绑定一个已发布费用项。</span></div><el-button @click="addComputeNode">新增节点</el-button></div>
-        <el-table :data="modelForm.nodes" border class="editor-table">
+        <el-table :data="modelForm.nodes" stripe class="editor-table">
           <el-table-column label="节点编码" width="150"><template #default="{ row }"><el-input v-model="row.nodeCode" :disabled="row.nodeType === 'OUTPUT'" /></template></el-table-column>
           <el-table-column label="名称" min-width="150"><template #default="{ row }"><el-input v-model="row.nodeName" /></template></el-table-column>
           <el-table-column label="类型" width="120"><template #default="{ row }"><el-select v-model="row.nodeType" @change="normalizeNode(row)"><el-option v-for="option in nodeTypeOptions" :key="option.value" v-bind="option" /></el-select></template></el-table-column>
@@ -260,13 +286,13 @@
           <el-table-column label="费用项" min-width="220"><template #default="{ row }"><el-select v-if="row.nodeType !== 'OUTPUT'" :model-value="componentRef(row)" filterable @change="selectComponent(row, $event)"><el-option v-for="component in publishedComponents" :key="`${component.componentCode}:${component.componentVersion}`" :label="`${component.componentName} (${component.componentCode}/${component.componentVersion})`" :value="`${component.componentCode}:${component.componentVersion}`" /></el-select><span v-else class="muted">客户应付输出</span></template></el-table-column>
           <el-table-column label="参数" width="130"><template #default="{ row }"><el-input-number v-if="['FIXED_AMOUNT', 'PERCENTAGE_OF'].includes(row.operator)" v-model="row.parameterValue" :min="0" :precision="6" controls-position="right" /><span v-else class="muted">自动</span></template></el-table-column>
           <el-table-column label="顺序" width="90"><template #default="{ row }"><el-input-number v-model="row.executionOrder" :min="0" controls-position="right" /></template></el-table-column>
-          <el-table-column label="操作" width="70"><template #default="{ row, $index }"><el-button v-if="row.nodeType !== 'OUTPUT'" link type="danger" @click="removeNode($index)">删除</el-button></template></el-table-column>
+          <el-table-column label="操作" width="100" class-name="ti-action-column"><template #default="{ row, $index }"><el-button v-if="row.nodeType !== 'OUTPUT'" size="small" type="danger" :icon="Delete" @click="removeNode($index)">删除</el-button></template></el-table-column>
         </el-table>
         <div class="editor-heading"><div><h3>依赖关系</h3><span>前序节点金额作为后序节点输入；内部成本无需连接到客户应付。</span></div><el-button @click="modelForm.edges.push({ fromNodeCode: '', toNodeCode: '' })">新增依赖</el-button></div>
-        <el-table :data="modelForm.edges" border class="edge-table">
+        <el-table :data="modelForm.edges" stripe class="edge-table">
           <el-table-column label="前序节点"><template #default="{ row }"><el-select v-model="row.fromNodeCode" filterable><el-option v-for="node in modelForm.nodes" :key="node.nodeCode" :label="`${node.nodeName || node.nodeCode} (${node.nodeCode})`" :value="node.nodeCode" /></el-select></template></el-table-column>
           <el-table-column label="后序节点"><template #default="{ row }"><el-select v-model="row.toNodeCode" filterable><el-option v-for="node in modelForm.nodes" :key="node.nodeCode" :label="`${node.nodeName || node.nodeCode} (${node.nodeCode})`" :value="node.nodeCode" /></el-select></template></el-table-column>
-          <el-table-column label="操作" width="80"><template #default="{ $index }"><el-button link type="danger" @click="modelForm.edges.splice($index, 1)">删除</el-button></template></el-table-column>
+          <el-table-column label="操作" width="100" class-name="ti-action-column"><template #default="{ $index }"><el-button size="small" type="danger" :icon="Delete" @click="modelForm.edges.splice($index, 1)">删除</el-button></template></el-table-column>
         </el-table>
       </el-form>
       <template #footer><el-button @click="modelCreateVisible = false">继续浏览</el-button><el-button type="primary" :loading="saving" @click="saveModel">创建草稿</el-button></template>
@@ -274,17 +300,17 @@
 
     <el-drawer v-model="detailVisible" :title="detailTitle" size="min(720px, 100vw)">
       <template v-if="componentDetail">
-        <el-descriptions :column="2" border><el-descriptions-item label="编码">{{ componentDetail.componentCode }}</el-descriptions-item><el-descriptions-item label="版本">{{ componentDetail.componentVersion }}</el-descriptions-item><el-descriptions-item label="分类">{{ labelOf(categoryOptions, componentDetail.category) }}</el-descriptions-item><el-descriptions-item label="通道">{{ labelOf(channelOptions, componentDetail.amountChannel) }}</el-descriptions-item><el-descriptions-item label="账务分类">{{ componentDetail.accountingClass }}</el-descriptions-item><el-descriptions-item label="客户可见">{{ componentDetail.customerVisible ? '是' : '否' }}</el-descriptions-item><el-descriptions-item label="内容哈希" :span="2"><span class="hash">{{ componentDetail.contentHash || '-' }}</span></el-descriptions-item></el-descriptions>
+        <el-descriptions :column="detailColumns" border><el-descriptions-item label="编码">{{ componentDetail.componentCode }}</el-descriptions-item><el-descriptions-item label="版本">{{ componentDetail.componentVersion }}</el-descriptions-item><el-descriptions-item label="分类">{{ labelOf(categoryOptions, componentDetail.category) }}</el-descriptions-item><el-descriptions-item label="通道">{{ labelOf(channelOptions, componentDetail.amountChannel) }}</el-descriptions-item><el-descriptions-item label="账务分类">{{ componentDetail.accountingClass }}</el-descriptions-item><el-descriptions-item label="客户可见">{{ componentDetail.customerVisible ? '是' : '否' }}</el-descriptions-item><el-descriptions-item label="内容哈希" :span="2"><span class="hash">{{ componentDetail.contentHash || '-' }}</span></el-descriptions-item></el-descriptions>
       </template>
       <template v-if="modelDetail">
-        <el-descriptions :column="2" border><el-descriptions-item label="编码">{{ modelDetail.modelCode }}</el-descriptions-item><el-descriptions-item label="版本">{{ modelDetail.modelVersion }}</el-descriptions-item><el-descriptions-item label="币种">{{ modelDetail.currency }}</el-descriptions-item><el-descriptions-item label="状态">{{ statusLabel(modelDetail.status) }}</el-descriptions-item><el-descriptions-item label="内容哈希" :span="2"><span class="hash">{{ modelDetail.contentHash || '-' }}</span></el-descriptions-item></el-descriptions>
+        <el-descriptions :column="detailColumns" border><el-descriptions-item label="编码">{{ modelDetail.modelCode }}</el-descriptions-item><el-descriptions-item label="版本">{{ modelDetail.modelVersion }}</el-descriptions-item><el-descriptions-item label="币种">{{ modelDetail.currency }}</el-descriptions-item><el-descriptions-item label="状态">{{ statusLabel(modelDetail.status) }}</el-descriptions-item><el-descriptions-item label="内容哈希" :span="2"><span class="hash">{{ modelDetail.contentHash || '-' }}</span></el-descriptions-item></el-descriptions>
         <el-divider content-position="left">计算节点</el-divider>
-        <el-table :data="modelDetail.nodes" border><el-table-column prop="nodeCode" label="编码" /><el-table-column prop="nodeName" label="名称" /><el-table-column prop="operator" label="运算" /><el-table-column label="费用项"><template #default="{ row }">{{ row.componentCode ? `${row.componentCode}/${row.componentVersion}` : '-' }}</template></el-table-column></el-table>
+        <el-table :data="modelDetail.nodes" stripe><el-table-column prop="nodeCode" label="编码" /><el-table-column prop="nodeName" label="名称" /><el-table-column prop="operator" label="运算" /><el-table-column label="费用项"><template #default="{ row }">{{ row.componentCode ? `${row.componentCode}/${row.componentVersion}` : '-' }}</template></el-table-column></el-table>
         <el-divider content-position="left">依赖关系</el-divider>
-        <el-table :data="modelDetail.edges" border><el-table-column prop="fromNodeCode" label="前序节点" /><el-table-column prop="toNodeCode" label="后序节点" /></el-table>
+        <el-table :data="modelDetail.edges" stripe><el-table-column prop="fromNodeCode" label="前序节点" /><el-table-column prop="toNodeCode" label="后序节点" /></el-table>
       </template>
       <template v-if="taxPolicyDetail">
-        <el-descriptions :column="2" border>
+        <el-descriptions :column="detailColumns" border>
           <el-descriptions-item label="编码">{{ taxPolicyDetail.policyCode }}</el-descriptions-item><el-descriptions-item label="版本">{{ taxPolicyDetail.policyVersion }}</el-descriptions-item>
           <el-descriptions-item label="名称">{{ taxPolicyDetail.policyName }}</el-descriptions-item><el-descriptions-item label="司法辖区">{{ taxPolicyDetail.jurisdictionCode }}</el-descriptions-item>
           <el-descriptions-item label="税率">{{ percentText(taxPolicyDetail.taxRate) }}</el-descriptions-item><el-descriptions-item label="价内外模式">{{ taxPriceModeLabel(taxPolicyDetail.priceMode) }}</el-descriptions-item>
@@ -294,7 +320,7 @@
         </el-descriptions>
       </template>
       <template v-if="dynamicFactorDetail">
-        <el-descriptions :column="2" border>
+        <el-descriptions :column="detailColumns" border>
           <el-descriptions-item label="编码">{{ dynamicFactorDetail.factorCode }}</el-descriptions-item><el-descriptions-item label="版本">{{ dynamicFactorDetail.factorVersion }}</el-descriptions-item>
           <el-descriptions-item label="原始特征">{{ dynamicFactorDetail.featureCode }}</el-descriptions-item><el-descriptions-item label="特征版本">{{ dynamicFactorDetail.featureDefinitionVersion }}</el-descriptions-item>
           <el-descriptions-item label="来源">{{ labelOf(factorSourceOptions, dynamicFactorDetail.sourceType) }}</el-descriptions-item><el-descriptions-item label="取值时点">{{ labelOf(factorTimeOptions, dynamicFactorDetail.valueTimePolicy) }}</el-descriptions-item>
@@ -308,19 +334,34 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, toRefs } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
-import { Refresh } from '@element-plus/icons-vue'
+import { CircleCheck, Delete, Refresh, Remove, Select, View } from '@element-plus/icons-vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
+import TiTable from '@/components/TiTable/index.vue'
+import TiSearchForm from '@/components/TiSearchForm/index.vue'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
+import { useDetailColumns } from '@/composables/useDetailColumns'
 import { useDict } from '@/composables/useDict'
+import { formatAmount } from '@/utils/format'
+import { formatDateTime } from '@/utils/date'
 import { getProductList } from '@/api/product'
 import type { ProductVO } from '@/types/business.d'
 import { approveCalculationModel, approveChargeComponent, approveDynamicFactor, approveTaxPolicy, createCalculationModel, createChargeComponent, createDynamicFactor, createTaxPolicy, getActuarialMaskingPolicy, getCalculationModel, getChargeComponent, getDynamicFactor, getPremiumCalculation, getTaxPolicy, listCalculationModels, listChargeComponents, listDynamicFactors, listTaxPolicies, publishCalculationModel, publishChargeComponent, publishDynamicFactor, publishTaxPolicy, retireCalculationModel, retireChargeComponent, retireDynamicFactor, retireTaxPolicy, updateActuarialMaskingPolicy, type ActuarialMaskingPolicy, type CalculationEdge, type CalculationLine, type CalculationModel, type CalculationNode, type ChargeComponent, type DynamicFactor, type PremiumCalculation, type TaxPolicy } from '@/api/actuarial'
 
+/** 描述区：字段中短，宽屏 2 档 */
+const detailColumns = useDetailColumns(2)
+
+/** 计算摘要：业务单号/币种/金额/状态等 8 个同类短值并排，宽屏 4 档（语义面板，非通用档位） */
+const summaryColumns = useDetailColumns(4)
+
 const router = useRouter()
-const products = ref<ProductVO[]>([]); const productId = ref(''); const status = ref(''); const activeTab = ref('components'); const loading = ref(false); const saving = ref(false)
+const products = ref<ProductVO[]>([]); const activeTab = ref('components'); const loading = ref(false); const saving = ref(false)
+// 检索条件收进单一对象：TiSearchForm 的 `:model` 与字段绑定必须指向同一份数据，否则重置空转。
+// toRefs 让下面多处 `productId.value` / `status.value` 零改动。
+const queryParams = reactive({ productId: '', status: '' })
+const { productId, status } = toRefs(queryParams)
 const components = ref<ChargeComponent[]>([]); const models = ref<CalculationModel[]>([]); const taxPolicies = ref<TaxPolicy[]>([]); const dynamicFactors = ref<DynamicFactor[]>([])
 const componentCreateVisible = ref(false); const modelCreateVisible = ref(false); const taxPolicyCreateVisible = ref(false); const dynamicFactorCreateVisible = ref(false); const detailVisible = ref(false)
 const policyVisible = ref(false); const policySaving = ref(false); const calculationLoading = ref(false); const calculationId = ref('')
@@ -347,7 +388,10 @@ const { dictOptions: nodeTypeOptions } = useDict('CALCULATION_NODE_TYPE')
 const { dictOptions: operatorOptions } = useDict('CALCULATION_OPERATOR')
 const labelOf = (options: Array<{ label: string; value: string }>, value: string) => options.find((item) => item.value === value)?.label || value
 const percentText = (value?: number) => value === undefined || value === null ? '-' : `${(value * 100).toFixed(4).replace(/0+$/, '').replace(/\.$/, '')}%`
-const amountText = (value?: number, masked = false) => value === undefined || value === null ? masked ? '已脱敏' : '-' : String(value)
+/** 金额展示：币种取自本次计算；脱敏通道后端不返回值时以「已脱敏」占位（区别于普通空值的 '-'） */
+const amountText = (value?: number, masked = false) => value === undefined || value === null ? (masked ? '已脱敏' : '-') : formatAmount(value, calculation.value?.currency)
+/** 费率列展示原值：费率的小数位语义与货币最小单位无关，不得走 formatAmount（见 src/utils/format.ts） */
+const ratePlainText = (value?: number, masked = false) => value === undefined || value === null ? (masked ? '已脱敏' : '-') : String(value)
 const factorTransformLabel = (value: unknown) => { const factor = value as DynamicFactor; return factor.transformType === 'IDENTITY' ? '原值' : `${factor.multiplier} × x + ${factor.offset}` }
 const isMaskedAmount = (value: unknown) => (value as CalculationLine).amountChannel === 'INTERNAL_COST' && maskingPolicy.maskInternalAmount
 const now = () => new Date().toISOString().slice(0, 19)
@@ -391,18 +435,20 @@ async function loadCalculation() { if (!calculationId.value.trim()) return ElMes
 onMounted(async () => { await Promise.all([loadProducts(), loadMaskingPolicy()]) })
 </script>
 
-<style scoped>
+<style scoped lang="scss">
 .actuarial-page { min-width: 0; }
 .page-heading, .context-bar, .tab-toolbar, .editor-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .page-heading { margin-bottom: 16px; }
 .page-heading h2, .editor-heading h3 { margin: 0 0 6px; }
-.page-heading p, .tab-toolbar span, .editor-heading span, .muted { margin: 0; color: var(--ti-text-secondary, #86909c); }
+.page-heading p, .tab-toolbar span, .editor-heading span, .muted { margin: 0; color: $text-secondary; }
 .asset-links { display: flex; flex-wrap: wrap; gap: 8px; }
 .context-bar { min-height: 58px; padding: 10px 14px; margin-bottom: 12px; border: 1px solid var(--el-border-color-light); background: var(--el-fill-color-blank); }
 .context-bar :deep(.el-form-item) { margin-bottom: 0; }
+/* 搜索区与「刷新」并排：外层的 space-between 仍是两个子元素，布局与改造前一致 */
+.context-filters { display: flex; align-items: center; gap: 8px; }
 .product-select { width: 320px; }
 .status-select { width: 140px; }
-.context-meta { display: flex; gap: 16px; color: var(--ti-text-secondary, #86909c); font-size: 13px; }
+.context-meta { display: flex; gap: 16px; color: $text-secondary; font-size: 13px; }
 .workbench-tabs :deep(.el-tabs__header) { margin-bottom: 12px; }
 .workbench-tabs :deep(.el-badge__content) { transform: translateY(-1px) scale(.86); }
 .tab-toolbar { min-height: 44px; margin-bottom: 10px; }
@@ -412,11 +458,11 @@ onMounted(async () => { await Promise.all([loadProducts(), loadMaskingPolicy()])
 .inline-numbers :deep(.el-input-number) { flex: 1; min-width: 0; }
 .model-header-grid { display: grid; grid-template-columns: 1.2fr .7fr 1.4fr .7fr 1.1fr; gap: 0 14px; }
 .editor-heading { margin: 14px 0 8px; }
-.editor-heading h3 { font-size: 15px; }
+.editor-heading h3 { font-size: $font-size-lg; }
 .editor-heading span { font-size: 12px; }
 .editor-table, .edge-table { width: 100%; }
 .calculation-query { display: flex; width: min(560px, 100%); gap: 8px; margin-bottom: 12px; }
 .calculation-summary { margin-bottom: 12px; }
 .hash { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
-@media (max-width: 900px) { .page-heading, .context-bar, .tab-toolbar { align-items: flex-start; flex-direction: column; } .product-select { width: min(320px, 72vw); } .form-grid, .model-header-grid { grid-template-columns: minmax(0, 1fr); } .span-2 { grid-column: auto; } .tab-toolbar :deep(.el-button) { align-self: flex-end; } }
+@media (max-width: $breakpoint-narrow) { .page-heading, .context-bar, .tab-toolbar { align-items: flex-start; flex-direction: column; } .product-select { width: min(320px, 72vw); } .form-grid, .model-header-grid { grid-template-columns: minmax(0, 1fr); } .span-2 { grid-column: auto; } .tab-toolbar :deep(.el-button) { align-self: flex-end; } }
 </style>

@@ -1,6 +1,16 @@
 <template>
   <!-- 角色权限管理页 -->
   <div class="ti-page">
+    <!-- 搜索区：后端 /web/v1/roles 不接收过滤参数，按名称/编码在前端过滤（口径见脚本 fetchFn 注释） -->
+    <TiSearchForm :model="queryParams" @search="handleSearch" @reset="handleReset">
+      <el-form-item label="角色名称">
+        <el-input v-model="queryParams.name" clearable placeholder="模糊搜索" style="width: 180px" />
+      </el-form-item>
+      <el-form-item label="角色编码">
+        <el-input v-model="queryParams.code" clearable placeholder="模糊搜索" style="width: 180px" />
+      </el-form-item>
+    </TiSearchForm>
+
     <div class="ti-toolbar" style="margin-bottom: 12px">
       <div class="ti-toolbar-left">
         <el-button type="primary" :icon="Plus" v-permission="'system:role:create'" @click="openDialog()">
@@ -9,7 +19,20 @@
       </div>
     </div>
 
-    <TiTable :data="tableData" :total="pagination.total" :loading="tableLoading" @page-change="onPageChange" @size-change="onSizeChange">
+    <!-- 🔴 :page-num / :page-size 必须传：TiTable 内部的 el-pagination 用
+         `computed({ get: () => props.pageNum, set: v => emit('update:pageNum', v) })` 驱动 current-page，
+         两个 prop 不传就恒为默认值 1/20 ⇒ 点第 2 页数据真的翻了（@page-change 照常触发并重新取数），
+         但分页器高亮弹回第 1 页——用户看到「第 1 页的字样 + 第 2 页的数据」。 -->
+    <TiTable
+      :data="tableData"
+      :total="pagination.total"
+      :page-num="pagination.pageNum"
+      :page-size="pagination.pageSize"
+      :loading="tableLoading"
+      :max-height="'var(--ti-table-max-height-default)'"
+      @page-change="onPageChange"
+      @size-change="onSizeChange"
+    >
       <el-table-column prop="code" label="角色编码" width="160" class-name="ti-code-column">
         <template #default="{ row }">
           <TiCopyText :text="row.code" />
@@ -26,14 +49,17 @@
       <el-table-column label="操作" min-width="160" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
           <el-button size="small" :icon="Edit" v-permission="'system:role:edit'" @click="openDialog(row)">编辑</el-button>
-          <el-button size="small" type="warning" v-permission="'system:role:assign'" @click="openPermDialog(row)">分配权限</el-button>
+          <!-- 「分配权限」是进入配置界面的中性入口，与「编辑」同类，故不着色。
+               此前用 type="warning" 是**在中性动作上套警示色**——与 ConfigPanel 的
+               destructive 判据同源：红色/警示色用在非危险动作上，等于训练用户忽略它。 -->
+          <el-button size="small" v-permission="'system:role:assign'" @click="openPermDialog(row)">分配权限</el-button>
         </template>
       </el-table-column>
     </TiTable>
 
     <!-- 新增/编辑角色对话框 -->
     <el-dialog v-model="dialogVisible" :title="editId ? '编辑角色' : '新增角色'" width="440px">
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="90px">
+      <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
         <el-form-item label="角色编码" prop="code">
           <el-input v-model="form.code" :disabled="!!editId" />
         </el-form-item>
@@ -78,11 +104,47 @@ import type { RoleVO } from '@/api/role'
 import { getPermissionTree, type PermissionTreeNode } from '@/api/permission'
 import { useTable } from '@/composables/useTable'
 import TiTable from '@/components/TiTable/index.vue'
+import TiSearchForm from '@/components/TiSearchForm/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import TiCopyText from '@/components/TiCopyText/index.vue'
 
-const { tableData, tableLoading, pagination, fetchData, onPageChange, onSizeChange } =
-  useTable<RoleVO, Record<string, unknown>>((params) => getRoleList(params))
+const queryParams = reactive({ name: '', code: '' })
+
+/**
+ * 角色列表 + 前端过滤。
+ *
+ * <p>🔴 过滤必须在前端做：后端 `RoleController.list()` 不接收任何过滤入参，
+ * `getRoleList(params)` 把 params 当查询串发出去也只会被忽略。若照搬其它页写成
+ * `useTable((params) => getRoleList(params), queryParams)`，接口会正常返回**完整列表**，
+ * 界面在「搜索」后纹丝不动 —— 用户看到的是一个点了没反应、却毫无报错的搜索按钮。</p>
+ *
+ * <p>🔴 本页的切片必须自己算，且必须返回 PageResult 信封（见下方 return）。</p>
+ */
+const { tableData, tableLoading, pagination, fetchData, handleSearch, handleReset, onPageChange, onSizeChange } =
+  useTable<RoleVO, typeof queryParams>(async (params) => {
+    // params 的键在重置后可能被整体删除（useTable.handleReset 会 delete 掉全部键再赋默认值），
+    // 故按 undefined 兜底，不能直接 .trim()
+    const name = (params.name ?? '').trim()
+    const code = (params.code ?? '').trim()
+    const all = await getRoleList()
+    const filtered = !name && !code
+      ? all
+      : all.filter((role) => (!name || role.name.includes(name)) && (!code || role.code.includes(code)))
+    // 🔴 必须返回 `{ list, total }` 信封，而不是裸数组：
+    //    后端 RoleController.list() 不认 page/pageSize，一次返回**全量裸数组**；而 useTable 对裸数组
+    //    只做「tableData = 整个数组，total = 数组长度」，TiTable 自身**也不切片**（它是服务端分页组件，
+    //    认定 :data 就是当前页）。两者叠加 ⇒ 角色一旦超过 20 条，表格会**一次平铺全部 N 行**，
+    //    分页器同时显示「共 N 条 / 共 2 页」；点第 2 页只是把高亮移到 2 再取回同一份全量，
+    //    第 1、2 页内容逐行相同 —— 用户点了一次真正起作用的按钮，看到的却是原地不动的表格。
+    //    total 取**过滤后**的条数（分页器据此算页数），list 只放当前页那一段。
+    const start = (params.pageNum - 1) * params.pageSize
+    return {
+      list: filtered.slice(start, start + params.pageSize),
+      total: filtered.length,
+      pageNum: params.pageNum,
+      pageSize: params.pageSize,
+    }
+  }, queryParams)
 
 fetchData()
 

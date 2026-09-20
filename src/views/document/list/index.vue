@@ -19,6 +19,7 @@
       :page-num="pagination.pageNum"
       :page-size="pagination.pageSize"
       :loading="tableLoading"
+      :max-height="'var(--ti-table-max-height-lean)'"
       @page-change="onPageChange"
       @size-change="onSizeChange"
     >
@@ -49,12 +50,18 @@
         <template #default="{ row }">{{ formatDateTime(row.createTime) }}</template>
       </el-table-column>
       <!-- @vue-generic {DocumentVO} -->
-      <el-table-column label="操作" min-width="150" fixed="right" class-name="ti-action-column">
+      <el-table-column label="操作" min-width="160" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
           <el-button size="small" :icon="View" @click="handleView(row)">详情</el-button>
           <!-- 下载按钮仅在文件已落盘的状态可见：GENERATING 阶段文件尚未生成，点了必然 404 -->
+          <!-- 🔴 权限码是 document:list，**没有更细的 document:download**：admin 种子 128 个码里
+               document 域只有 list 一个，DocumentProxyController 的 `GET /{documentId}/download`
+               本身就用 DOCUMENT_LIST 守着。故这里是「与后端逐字对齐」而非「编造一个更细的码」——
+               编造不存在的码会让按钮对非超管永久隐藏（比不加权限更危险）。
+               实际效果上本页用户必然已持有该码（否则进不来），故这条检查恒真，作用是**如实地把
+               真实权威写在代码里**，而不是留一个看起来"忘了判权限"的按钮。 -->
           <el-button
-            v-if="DOWNLOADABLE_STATUS.includes(row.status)"
+            v-if="DOWNLOADABLE_STATUS.includes(row.status) && hasPermission('document:list')"
             size="small" type="primary"
             :icon="Download"
             @click="handleDownload(row)"
@@ -82,6 +89,7 @@ import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
 import TiCopyText from '@/components/TiCopyText/index.vue'
 import { useDict } from '@/composables/useDict'
+import { usePermission } from '@/composables/usePermission'
 
 /** 状态标签颜色映射（对齐领域状态机 GENERATING → GENERATED → SIGNED → ARCHIVED） */
 const STATUS_COLOR: Record<string, string> = {
@@ -107,6 +115,8 @@ const BUSINESS_TYPE_LABEL: Record<string, string> = {
 
 const { getLabel: documentStatusLabel } = useDict('DOCUMENT_STATUS')
 const { getLabel: documentTypeLabel } = useDict('DOCUMENT_TYPE')
+/** 下载按钮的权限判定（判在 v-if 表达式里，见模板注释） */
+const { hasPermission } = usePermission()
 
 const businessTypeLabel = (businessType?: string): string =>
   businessType ? BUSINESS_TYPE_LABEL[businessType] || businessType : ''
@@ -169,7 +179,7 @@ const handleDownload = async (row: DocumentVO) => {
 }
 </script>
 
-<style scoped>
+<style scoped lang="scss">
 .ti-business-type {
   margin-right: 6px;
   color: var(--el-text-color-secondary);

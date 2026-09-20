@@ -19,6 +19,7 @@
       :page-num="pagination.pageNum"
       :page-size="pagination.pageSize"
       :loading="tableLoading"
+      :max-height="'var(--ti-table-max-height-lean)'"
       @page-change="onPageChange"
       @size-change="onSizeChange"
     >
@@ -41,7 +42,7 @@
           {{ formatDateTime(row.createTime) }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="120" fixed="right">
+      <el-table-column label="操作" min-width="100" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
           <el-button size="small" :icon="View" @click="handleViewDetail(row.customerId)">详情</el-button>
         </template>

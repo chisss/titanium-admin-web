@@ -54,8 +54,12 @@ test('useTable 把未知总数原样透传，不压成 0', () => {
 test('总数未知时表格渲染无总数的翻页控件，而不是消失', () => {
   // 未知分支必须存在：既有的 `total > 0` 判断在 total 为 null 时会让整个分页区消失
   assert.match(tiTable, /v-else-if="total === null && data\.length > 0"/)
-  assert.match(tiTable, /t\('common\.prevPage'\)/)
-  assert.match(tiTable, /t\('common\.nextPage'\)/)
+  // 🔴 原断言钉的是 `t('common.prevPage')` / `t('common.nextPage')`——那是**当时的实现写法**。
+  // D-12 移除前端 i18n 后文案改为中文字面量，本用例要守的是「未知总数分支仍给出上一页/下一页
+  // 两个翻页出口」，不是那两行代码长什么样；文案本身由 ti-table-contracts ⑦ 按渲染结果守护。
+  // 若继续钉 t()，等于把一个即将被移除的机制冻结进测试里。
+  assert.match(tiTable, />\s*上一页\s*</)
+  assert.match(tiTable, />\s*下一页\s*</)
   // 「下一页」只在有证据表明后面还有时可用：本页未满 ⇒ 必是末页
   assert.match(tiTable, /const hasNextPage = computed\(\(\) => props\.data\.length >= props\.pageSize\)/)
 })

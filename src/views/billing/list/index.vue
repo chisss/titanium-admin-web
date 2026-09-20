@@ -30,6 +30,7 @@
       :page-num="pagination.pageNum"
       :page-size="pagination.pageSize"
       :loading="tableLoading"
+      :max-height="'var(--ti-table-max-height-default)'"
       @page-change="onPageChange"
       @size-change="onSizeChange"
     >
@@ -40,8 +41,8 @@
         </template>
       </el-table-column>
 
-      <el-table-column prop="amount" label="金额" width="120">
-        <template #default="{ row }">¥{{ row.amount?.toLocaleString() }}</template>
+      <el-table-column prop="amount" label="金额" width="120" align="right">
+        <template #default="{ row }">{{ formatAmount(row.amount) }}</template>
       </el-table-column>
       <el-table-column prop="status" label="状态" width="100">
         <template #default="{ row }">
@@ -52,7 +53,10 @@
       <el-table-column prop="paidDate" label="实缴日" width="120">
         <template #default="{ row }">{{ row.paidDate || row.paymentDate || '-' }}</template>
       </el-table-column>
-      <el-table-column prop="createdAt" label="创建时间" width="160" />
+      <el-table-column prop="createdAt" label="创建时间" width="160">
+        <!-- 时间列统一走全局日期工具，避免直出后端 ISO 串（2026-09-18 全站实测 7 页 8 列） -->
+        <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
+      </el-table-column>
       <el-table-column label="操作" min-width="100" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
           <el-button size="small" :icon="View" @click="toDetail(row.billId || row.id)">详情</el-button>
@@ -75,6 +79,8 @@ import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import TiCopyText from '@/components/TiCopyText/index.vue'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
 import { useDict } from '@/composables/useDict'
+import { formatDateTime } from '@/utils/date'
+import { formatAmount } from '@/utils/format'
 import type { PageResult } from '@/types/api.d'
 
 const router = useRouter()

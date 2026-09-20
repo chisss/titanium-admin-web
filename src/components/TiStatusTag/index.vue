@@ -35,7 +35,10 @@ const COLOR_MAP: Record<string, TagType> = {
   AUTO_REVIEWING: 'warning',
   MANUAL_REVIEWING: 'warning',
   PROCESSING: 'warning',
+  IN_PROGRESS: 'warning',
+  READY: 'warning',
   PENDING_REVIEW: 'warning',
+  SKIPPED: 'info',
   PAID: 'success',
   CLOSED: 'info',
   INACTIVE: 'danger',
@@ -70,6 +73,13 @@ const STATUS_TEXT: Record<string, string> = {
   DRAFT: '草稿',
   PENDING: '待处理',
   PROCESSING: '处理中',
+  // 🔴 保全**任务**状态（READY/IN_PROGRESS/SKIPPED）：这三码只在保全工作台使用，
+  // 且后端 t_dict_type 中**无对应字典**（保全案件级用 MAINTENANCE_CASE_STATUS 的 PROCESSING，
+  // 任务级用 IN_PROGRESS —— 是两层不同词汇，不能复用），故调用点无从取 label，
+  // 只能由本兜底表承载。补入前该页状态列裸显英文码并逐行告警。
+  IN_PROGRESS: '处理中',
+  READY: '待办理',
+  SKIPPED: '已跳过',
   PENDING_PAYMENT: '待缴费',
   PENDING_EFFECTIVE: '待生效',
   PENDING_REVIEW: '待复核',

@@ -2,29 +2,34 @@
   <!-- 保单详情页 - 含5个 Tab + 寿险生命周期操作按钮 -->
   <div class="ti-page">
     <div class="ti-card" v-loading="loading">
-      <div class="detail-header">
-        <el-button :icon="ArrowLeft" text @click="$router.back()">返回</el-button>
-        <h3 class="detail-title">保单详情 - {{ policy?.policyNo }}</h3>
+      <TiDetailHeader :title="`保单详情 - ${policy?.policyNo ?? ''}`">
         <!-- 🔴 状态徽章须传 label：TiStatusTag 只有颜色映射、没有域内文案（D-501-42，此前裸显 TERMINATED） -->
-        <TiStatusTag v-if="policy" :value="policy.status" :label="policyStatusLabel(policy.status)" />
-        <div class="detail-actions" v-if="policy">
+        <template #meta>
+          <TiStatusTag v-if="policy" :value="policy.status" :label="policyStatusLabel(policy.status)" />
+        </template>
+        <template #actions v-if="policy">
           <!-- 状态相关操作按钮 -->
+          <!-- 🔴 :loading 不可删：下拉里 cancel/waive/dividend/annuityStart/annuityPay/mature
+               六类操作**不经过对话框**，直接由 ElMessageBox 确认后调 doAction。doAction 虽会置
+               submitting=true，但其原先唯一的绑定处是 4 个 dialog footer 按钮——对话框此时并未
+               打开，于是这六类操作**全程无任何可见反馈**（接口慢时界面像卡死）。
+               绑到下拉触发按钮后，操作期间按钮转圈，且顺带防止重复点击。 -->
           <el-dropdown trigger="click" @command="handleAction">
-            <el-button type="primary">
+            <el-button type="primary" :loading="submitting">
               操作 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
             </el-button>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item command="suspend" v-if="policy.status === 'ACTIVE' || policy.status === 'EFFECTIVE'">
+                <el-dropdown-item command="suspend" class="ti-dropdown-item--danger" v-if="policy.status === 'ACTIVE' || policy.status === 'EFFECTIVE'">
                   <el-icon><VideoPause /></el-icon> 中止保单
                 </el-dropdown-item>
                 <el-dropdown-item command="resume" v-if="policy.status === 'SUSPENDED'">
                   <el-icon><VideoPlay /></el-icon> 恢复保单
                 </el-dropdown-item>
-                <el-dropdown-item command="terminate" divided>
+                <el-dropdown-item command="terminate" divided class="ti-dropdown-item--danger">
                   <el-icon><CircleClose /></el-icon> 退保/终止
                 </el-dropdown-item>
-                <el-dropdown-item command="cancel" v-if="canCancel">
+                <el-dropdown-item command="cancel" class="ti-dropdown-item--danger" v-if="canCancel">
                   <el-icon><Delete /></el-icon> 撤销保单
                 </el-dropdown-item>
                 <el-dropdown-item command="waive" divided>
@@ -48,13 +53,13 @@
               </el-dropdown-menu>
             </template>
           </el-dropdown>
-        </div>
-      </div>
+        </template>
+      </TiDetailHeader>
 
       <el-tabs v-if="policy" v-model="activeTab" class="policy-tabs">
         <!-- Tab1：基本信息 -->
         <el-tab-pane label="基本信息" name="basic">
-          <el-descriptions :column="3" border>
+          <el-descriptions :column="detailColumns" border>
             <el-descriptions-item label="保单号">
               <span>{{ policy.policyNo }}</span>
               <el-button text size="small" :icon="CopyDocument" @click="copyText(policy.policyNo)" />
@@ -63,8 +68,8 @@
             <el-descriptions-item label="产品名称">{{ policy.productName }}</el-descriptions-item>
             <el-descriptions-item label="投保人">{{ policy.policyHolderName }}</el-descriptions-item>
             <el-descriptions-item label="被保人">{{ policy.insuredName }}</el-descriptions-item>
-            <el-descriptions-item label="年缴保费">¥{{ policy.premium?.toLocaleString() }}</el-descriptions-item>
-            <el-descriptions-item label="基本保额">¥{{ policy.sumInsured?.toLocaleString() }}</el-descriptions-item>
+            <el-descriptions-item label="年缴保费">{{ formatAmount(policy.premium) }}</el-descriptions-item>
+            <el-descriptions-item label="基本保额">{{ formatAmount(policy.sumInsured) }}</el-descriptions-item>
             <el-descriptions-item label="生效日期">{{ formatDate(policy.effectiveDate) }}</el-descriptions-item>
             <el-descriptions-item label="到期日期">{{ formatDate(policy.expiryDate) }}</el-descriptions-item>
             <el-descriptions-item label="创建时间">{{ formatDateTime(policy.createTime) }}</el-descriptions-item>
@@ -81,7 +86,7 @@
                   <strong>{{ subject.subjectName || subjectTypeLabel(subject.subjectType) }}</strong>
                   <TiStatusTag v-if="subject.riskLevel" :value="subject.riskLevel" />
                 </div>
-                <el-descriptions :column="3" border size="small">
+                <el-descriptions :column="detailColumns" border size="small">
                   <el-descriptions-item label="标的类型">{{ subjectTypeLabel(subject.subjectType) }}</el-descriptions-item>
                   <el-descriptions-item label="标的保额">{{ formatAmount(subject.subjectSumInsured) }}</el-descriptions-item>
                   <el-descriptions-item v-for="field in subjectFields(subject)" :key="field.key" :label="field.label">
@@ -111,7 +116,10 @@
             <el-table-column prop="source" label="来源" width="110"><template #default="{ row }">{{ row.source === 'MANUAL' ? '后台人工' : 'API 自动' }}</template></el-table-column>
             <el-table-column prop="status" label="案件状态" width="120"><template #default="{ row }"><TiStatusTag :value="row.status" :label="maintenanceStatusLabel(row.status)" /></template></el-table-column>
             <el-table-column prop="effectStatus" label="生效状态" width="120"><template #default="{ row }"><TiStatusTag :value="row.effectStatus || 'NOT_STARTED'" :label="effectStatusLabel(row.effectStatus || 'NOT_STARTED')" /></template></el-table-column>
-            <el-table-column prop="createdAt" label="创建时间" width="175" />
+            <!-- 时间列统一走全局日期工具，避免直出后端 ISO 串（2026-09-18 全站实测） -->
+            <el-table-column prop="createdAt" label="创建时间" width="175">
+              <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
+            </el-table-column>
             <el-table-column label="查看" width="100"><template #default="{ row }"><el-button link type="primary" @click="$router.push(`/maintenance/workbench/${row.caseId}`)">工作台</el-button></template></el-table-column>
             <template #empty><el-empty description="暂无保全记录" :image-size="80" /></template>
           </el-table>
@@ -126,8 +134,8 @@
 
     <!-- 中止保单对话框 -->
     <el-dialog v-model="dialogs.suspend" title="中止保单" width="400px">
-      <el-form :model="forms.suspend" label-width="100px">
-        <el-form-item label="中止原因" required>
+      <el-form ref="suspendFormRef" :model="forms.suspend" :rules="suspendRules" label-width="100px">
+        <el-form-item label="中止原因" prop="reason">
           <el-input v-model="forms.suspend.reason" type="textarea" :rows="3" placeholder="请输入中止原因" />
         </el-form-item>
       </el-form>
@@ -139,8 +147,8 @@
 
     <!-- 恢复保单对话框 -->
     <el-dialog v-model="dialogs.resume" title="恢复保单" width="400px">
-      <el-form :model="forms.resume" label-width="100px">
-        <el-form-item label="恢复原因" required>
+      <el-form ref="resumeFormRef" :model="forms.resume" :rules="resumeRules" label-width="100px">
+        <el-form-item label="恢复原因" prop="reason">
           <el-input v-model="forms.resume.reason" type="textarea" :rows="3" placeholder="请输入恢复原因" />
         </el-form-item>
       </el-form>
@@ -152,11 +160,11 @@
 
     <!-- 退保/终止对话框 -->
     <el-dialog v-model="dialogs.terminate" title="退保/终止保单" width="440px">
-      <el-alert type="warning" :closable="false" style="margin-bottom: 16px">
+      <el-alert type="warning" :closable="false" class="ti-dialog-alert">
         <p>退保后将扣除手续费，按现金价值退还保费，操作不可撤销。</p>
       </el-alert>
-      <el-form :model="forms.terminate" label-width="110px">
-        <el-form-item label="终止原因" required>
+      <el-form ref="terminateFormRef" :model="forms.terminate" :rules="terminateRules" label-width="120px">
+        <el-form-item label="终止原因" prop="terminationReason">
           <TiDictSelect v-model="forms.terminate.terminationReason" dict-type="POLICY_TERMINATION_REASON" :clearable="false" style="width: 100%" />
         </el-form-item>
         <el-form-item label="备注说明">
@@ -171,14 +179,14 @@
 
     <!-- 申请批改对话框 -->
     <el-dialog v-model="dialogs.endorsement" title="申请批改" width="480px">
-      <el-form :model="forms.endorsement" label-width="110px">
-        <el-form-item label="批单号" required>
+      <el-form ref="endorsementFormRef" :model="forms.endorsement" :rules="endorsementRules" label-width="120px">
+        <el-form-item label="批单号" prop="endorsementNo">
           <el-input v-model="forms.endorsement.endorsementNo" placeholder="请输入批单号" />
         </el-form-item>
-        <el-form-item label="批改类型" required>
+        <el-form-item label="批改类型" prop="updateType">
           <TiDictSelect v-model="forms.endorsement.updateType" dict-type="MAINTENANCE_TYPE" :clearable="false" style="width: 100%" />
         </el-form-item>
-        <el-form-item label="变更说明" required>
+        <el-form-item label="变更说明" prop="changeSummary">
           <el-input v-model="forms.endorsement.changeSummary" type="textarea" :rows="3" placeholder="请描述具体变更内容" />
         </el-form-item>
         <el-form-item label="生效日期">
@@ -197,8 +205,9 @@
 import { ref, computed, onMounted, reactive, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import type { FormInstance, FormRules } from 'element-plus'
 import {
-  ArrowLeft, ArrowDown, VideoPause, VideoPlay, CircleClose,
+  ArrowDown, VideoPause, VideoPlay, CircleClose,
   Delete, Discount, Money, Coin, Wallet, Flag, Edit, CopyDocument,
 } from '@element-plus/icons-vue'
 import {
@@ -207,18 +216,24 @@ import {
   payAnnuityBenefit, maturePolicy, applyEndorsement,
   type PolicyDataUpdateType, type TerminationReason,
 } from '@/api/policy'
+import TiDetailHeader from '@/components/TiDetailHeader/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
 import type { PolicyVO } from '@/types/business.d'
 import type { PolicySubjectVO } from '@/api/policy'
 import { getMaintenanceCaseList, type MaintenanceCaseSummary } from '@/api/maintenance'
 import { useDict } from '@/composables/useDict'
+import { useDetailColumns } from '@/composables/useDetailColumns'
 import { formatDate, formatDateTime } from '@/utils/date'
+import { formatAmount } from '@/utils/format'
 
 /** 状态文案取自后端字典（域内语义最准，D-501-42） */
 const { getLabel: policyStatusLabel } = useDict('POLICY_STATUS')
 const { getLabel: maintenanceStatusLabel } = useDict('MAINTENANCE_CASE_STATUS')
 const { getLabel: effectStatusLabel } = useDict('MAINTENANCE_EFFECT_STATUS')
+
+/** 保单信息各面板：字段短，宽屏 3 档 */
+const detailColumns = useDetailColumns(3)
 
 const route = useRoute()
 const loading = ref(false)
@@ -247,6 +262,37 @@ const forms = reactive({
   },
 })
 
+/**
+ * 四个操作弹窗的表单实例与校验规则。
+ * 🔴 原先这四个表单**只有 `required` 属性、没有 rules**：required 在 Element Plus 里
+ * 只是标签前的星号装饰，不产生任何校验（RulesProp 为空即不校验）。
+ * 各 submit 里确有 `if (!x) { ElMessage.warning() }` —— 判断是对的，但反馈只落在全局
+ * 消息条上：用户看不到**哪个**输入框有问题，弹窗里 4 个字段时尤其难定位。
+ * 现在规则与这些 if 一一对应（判据不变，只是把结论落到字段上），if 保留为兜底。
+ */
+const suspendFormRef = ref<FormInstance>()
+const resumeFormRef = ref<FormInstance>()
+const terminateFormRef = ref<FormInstance>()
+const endorsementFormRef = ref<FormInstance>()
+
+/** 合同不可逆：reason 的必填判据来自既有 required 与 submitSuspend 的 if
+ *  `whitespace: true` 不可省：async-validator 默认只判「非空字符串」，
+ *  一串空格能通过 required —— 而原 if 用的是 `.trim()`，判据更严。 */
+const suspendRules: FormRules = {
+  reason: [{ required: true, whitespace: true, message: '请填写中止原因', trigger: 'blur' }],
+}
+const resumeRules: FormRules = {
+  reason: [{ required: true, whitespace: true, message: '请填写恢复原因', trigger: 'blur' }],
+}
+const terminateRules: FormRules = {
+  terminationReason: [{ required: true, message: '请选择终止原因', trigger: 'change' }],
+}
+const endorsementRules: FormRules = {
+  endorsementNo: [{ required: true, whitespace: true, message: '请输入批单号', trigger: 'blur' }],
+  updateType: [{ required: true, message: '请选择批改类型', trigger: 'change' }],
+  changeSummary: [{ required: true, whitespace: true, message: '请描述具体变更内容', trigger: 'blur' }],
+}
+
 /** 是否可撤销（投保后15天内或待生效状态） */
 const canCancel = computed(() =>
   policy.value?.status === 'PENDING' || policy.value?.status === 'PENDING_EFFECTIVE',
@@ -259,7 +305,7 @@ const handleAction = async (cmd: string) => {
     case 'resume': dialogs.resume = true; break
     case 'terminate': dialogs.terminate = true; break
     case 'cancel':
-      await ElMessageBox.confirm('确认撤销该保单？此操作不可撤销。', '警告', { type: 'warning' })
+      await ElMessageBox.confirm('确认撤销该保单？此操作不可撤销。', '警告', { type: 'warning', confirmButtonClass: 'el-button--danger' })
       await doAction(() => cancelPolicy(policy.value!.policyId, '管理员操作撤销'))
       break
     case 'waive':
@@ -310,7 +356,7 @@ const doAction = async (fn: () => Promise<void>) => {
 
 /** 提交中止 */
 const submitSuspend = async () => {
-  if (!forms.suspend.reason.trim()) { ElMessage.warning('请填写中止原因'); return }
+  if (!(await suspendFormRef.value?.validate().then(() => true).catch(() => false))) return
   await doAction(() => suspendPolicy(policy.value!.policyId, forms.suspend.reason))
   dialogs.suspend = false
   forms.suspend.reason = ''
@@ -318,14 +364,14 @@ const submitSuspend = async () => {
 
 /** 提交恢复 */
 const submitResume = async () => {
-  if (!forms.resume.reason.trim()) { ElMessage.warning('请填写恢复原因'); return }
+  if (!(await resumeFormRef.value?.validate().then(() => true).catch(() => false))) return
   await doAction(() => resumePolicy(policy.value!.policyId, forms.resume.reason))
   dialogs.resume = false
 }
 
 /** 提交终止 */
 const submitTerminate = async () => {
-  if (!forms.terminate.terminationReason) { ElMessage.warning('请选择终止原因'); return }
+  if (!(await terminateFormRef.value?.validate().then(() => true).catch(() => false))) return
   await doAction(() => terminatePolicy(policy.value!.policyId, {
     reason: forms.terminate.reason,
     terminationReason: forms.terminate.terminationReason as TerminationReason,
@@ -335,9 +381,7 @@ const submitTerminate = async () => {
 
 /** 提交批改 */
 const submitEndorsement = async () => {
-  if (!forms.endorsement.endorsementNo.trim() || !forms.endorsement.updateType || !forms.endorsement.changeSummary) {
-    ElMessage.warning('请填写完整批改信息'); return
-  }
+  if (!(await endorsementFormRef.value?.validate().then(() => true).catch(() => false))) return
   submitting.value = true
   try {
     const result = await applyEndorsement(policy.value!.policyId, {
@@ -362,8 +406,6 @@ const subjectTypeLabel = (type?: string) => ({
   VEHICLE: '车辆', PROPERTY: '财产', ORGANIZATION: '组织', PERSON: '人员',
   HOUSEHOLD: '家庭财产', CARGO: '货物', VESSEL: '船舶', AIRCRAFT: '航空器',
 }[type || ''] || type || '标的')
-
-const formatAmount = (amount?: number) => amount == null ? '-' : `¥${amount.toLocaleString()}`
 
 const subjectFieldLabels: Record<string, string> = {
   licensePlate: '车牌号', vin: 'VIN', firstRegistrationDate: '初次登记日期',
@@ -474,24 +516,6 @@ onMounted(loadPolicy)
 </script>
 
 <style scoped lang="scss">
-.detail-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 20px;
-
-  .detail-title {
-    margin: 0;
-    font-size: 16px;
-    font-weight: 600;
-    flex: 1;
-  }
-
-  .detail-actions {
-    margin-left: auto;
-  }
-}
-
 .policy-tabs {
   :deep(.el-tabs__header) {
     margin-bottom: 16px;

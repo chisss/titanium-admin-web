@@ -35,6 +35,7 @@
       :page-num="pagination.pageNum"
       :page-size="pagination.pageSize"
       :loading="tableLoading"
+      :max-height="'var(--ti-table-max-height-default)'"
       @page-change="onPageChange"
       @size-change="onSizeChange"
     >
@@ -59,11 +60,12 @@
           <TiStatusTag :value="row.status" :color="STATUS_COLOR[row.status]" :label="regulatoryStatusLabel(row.status)" />
         </template>
       </el-table-column>
-      <el-table-column prop="updatedAt" label="提交时间" width="170">
-        <template #default="{ row }">{{ row.submittedAt || '-' }}</template>
+      <!-- 时间列统一走全局日期工具，避免直出后端 ISO 串（2026-09-18 全站实测）；prop 同步改为真实字段 submittedAt（此前误写 updatedAt，与实际渲染字段不符） -->
+      <el-table-column prop="submittedAt" label="提交时间" width="170">
+        <template #default="{ row }">{{ formatDateTime(row.submittedAt) }}</template>
       </el-table-column>
       <!-- @vue-generic {RegulatoryReportVO} -->
-      <el-table-column label="操作" min-width="220" fixed="right" class-name="ti-action-column">
+      <el-table-column label="操作" min-width="200" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
           <el-button size="small" :icon="View" @click="handleView(row)">查看</el-button>
           <!-- 状态机实际取值只有 PENDING/SUBMITTED/APPROVED/REJECTED，字典中的 DRAFT 从不产生 -->
@@ -71,6 +73,7 @@
             v-if="row.status === 'PENDING'"
             size="small" type="primary"
             v-permission="'regulatory:submit'"
+            :loading="rowPending === actionKey(row.reportId, 'submit')"
             @click="handleSubmit(row)"
           >
             提交
@@ -79,6 +82,7 @@
             v-if="row.status === 'SUBMITTED'"
             size="small" type="success"
             v-permission="'regulatory:approve'"
+            :loading="rowPending === actionKey(row.reportId, 'approve')"
             @click="handleApprove(row)"
           >
             通过
@@ -87,6 +91,7 @@
             v-if="row.status === 'SUBMITTED'"
             size="small" type="danger"
             v-permission="'regulatory:approve'"
+            :loading="rowPending === actionKey(row.reportId, 'reject')"
             @click="handleReject(row)"
           >
             驳回
@@ -128,7 +133,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch } from 'vue'
+import { ref, reactive, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, View } from '@element-plus/icons-vue'
 import type { FormInstance, FormRules } from 'element-plus'
@@ -145,6 +150,8 @@ import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
 import TiCopyText from '@/components/TiCopyText/index.vue'
 import { useDict } from '@/composables/useDict'
+import { formatDateTime } from '@/utils/date'
+import { useRowAction, confirmAction, actionKey } from '@/composables/useRowAction'
 
 /** 状态标签颜色映射（值域与下游 RegulatoryReportStatus 对齐） */
 const STATUS_COLOR: Record<string, string> = {
@@ -165,17 +172,32 @@ const queryParams = reactive({
   endDate: undefined as string | undefined,
 })
 
-// 报告期间范围（拆分为 startDate/endDate 后传给后端）
-const dateRange = ref<string[] | undefined>(undefined)
-watch(dateRange, (val) => {
-  queryParams.startDate = val?.[0]
-  queryParams.endDate = val?.[1]
+/**
+ * 报告期间范围：**直接派生自 queryParams**，不再是一份独立的影子状态。
+ *
+ * <p>🔴 原实现是 `const dateRange = ref()` + `watch(dateRange)` 往 queryParams 里回写
+ * startDate/endDate。单看没问题，但「重置」只清 queryParams（TiSearchForm 还原 model、
+ * useTable.handleReset 删掉全部键），**dateRange 不在这份数据里、无人清它** ——
+ * 于是重置后列表已经不按期间过滤了，日期框里却仍显示着旧的区间：
+ * 控件在说谎，用户会以为结果被 2026-01-01~03-01 过滤过。</p>
+ *
+ * <p>改成 get/set 计算属性后，日期框只是 queryParams 的一个视图，两者不可能再不同步。</p>
+ */
+const dateRange = computed<string[] | undefined>({
+  get: () => (queryParams.startDate && queryParams.endDate ? [queryParams.startDate, queryParams.endDate] : undefined),
+  set: (val) => {
+    queryParams.startDate = val?.[0]
+    queryParams.endDate = val?.[1]
+  },
 })
 
 const { tableData, tableLoading, pagination, fetchData, handleSearch, handleReset, onPageChange, onSizeChange } =
   useTable<RegulatoryReportVO, typeof queryParams>((params) => getRegulatoryReportList(params), queryParams)
 
 fetchData()
+
+/** 行内状态推进（提交/通过/驳回）的 pending 与错误兜底统一由 useRowAction 承担 */
+const { rowPending, run } = useRowAction(fetchData)
 
 const dialogVisible = ref(false)
 const saving = ref(false)
@@ -252,14 +274,11 @@ const handleView = async (row: RegulatoryReportVO) => {
 
 /** 提交报告 */
 const handleSubmit = async (row: RegulatoryReportVO) => {
-  try {
-    await ElMessageBox.confirm(`确认提交报告"${row.reportId}"？`, '提示', { type: 'warning' })
-  } catch {
-    return
-  }
-  await submitRegulatoryReport(row.reportId)
-  ElMessage.success('提交成功')
-  fetchData()
+  if (!(await confirmAction(`确认提交报告"${row.reportId}"？`, '提示', { type: 'warning' }))) return
+  await run(actionKey(row.reportId, 'submit'), async () => {
+    await submitRegulatoryReport(row.reportId)
+    ElMessage.success('提交成功')
+  })
 }
 
 /** 审批通过 */
@@ -274,9 +293,10 @@ const handleApprove = async (row: RegulatoryReportVO) => {
   } catch {
     return
   }
-  await approveRegulatoryReport(row.reportId, { comment })
-  ElMessage.success('已通过')
-  fetchData()
+  await run(actionKey(row.reportId, 'approve'), async () => {
+    await approveRegulatoryReport(row.reportId, { comment })
+    ElMessage.success('已通过')
+  })
 }
 
 /** 驳回报告 */
@@ -291,8 +311,9 @@ const handleReject = async (row: RegulatoryReportVO) => {
   } catch {
     return
   }
-  await rejectRegulatoryReport(row.reportId, { comment })
-  ElMessage.success('已驳回')
-  fetchData()
+  await run(actionKey(row.reportId, 'reject'), async () => {
+    await rejectRegulatoryReport(row.reportId, { comment })
+    ElMessage.success('已驳回')
+  })
 }
 </script>

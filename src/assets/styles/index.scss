@@ -14,7 +14,7 @@ body {
   height: 100%;
   font-family: $font-family;
   font-size: $font-size-base;
-  color: #303133;
+  color: $text-primary;
   background-color: $content-bg;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -22,6 +22,30 @@ body {
 
 #app {
   height: 100%;
+}
+
+// 标题归一化：h1~h6 落到字号令牌档位
+// 🔴 此前只给 body 设了 font-size，h1~h6 **完全没有定义**，因而落到浏览器默认的
+//    h2 = 1.5em / h3 = 1.17em。在 14px 基准下实测算出 **21px 与 16.38px**：
+//    前者不在令牌表内，后者还带小数，且两者都会随基准字号一起漂移。
+//    真机实测（2026-09-18，全站 47 路由）：.page-intro h2 = 21px（9 处）、
+//    .page-heading h3 = 16.38px（2 处）、h1 = 28px、h4 = 14px（h4 恰好与令牌同值）。
+// 🔴 只归一字号：字重/行高不动，避免夹带未经实测的视觉变更。
+h1 {
+  font-size: $font-size-2xl; // 22px
+}
+h2 {
+  font-size: $font-size-xl; // 18px
+}
+h3 {
+  font-size: $font-size-lg; // 16px
+}
+h4 {
+  font-size: $font-size-base; // 14px
+}
+h5,
+h6 {
+  font-size: $font-size-md; // 13px
 }
 
 // 滚动条样式
@@ -32,16 +56,133 @@ body {
 
 ::-webkit-scrollbar-track {
   background: #f1f1f1;
-  border-radius: 3px;
+  border-radius: $radius-sm;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #c0c4cc;
-  border-radius: 3px;
+  background: $scrollbar-thumb;
+  border-radius: $radius-sm;
 
   &:hover {
-    background: #909399;
+    background: $scrollbar-thumb-hover;
   }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 键盘焦点可见性
+//
+// 🔴 为什么必须全局兜底而不是逐个组件加：项目自有的交互元素此前 0 处 :focus-visible，
+// 而 EP 只覆盖它自己的组件。开发者遇到「点按钮出蓝框」时只能去关 outline——
+// 结果是自己写的按钮彻底失去焦点提示，键盘用户无法知道自己在哪。
+//
+// 用 :focus-visible 而非 :focus，浏览器按**输入方式**判定：键盘 Tab 命中、鼠标点击不命中，
+// 无需任何 JS 检测。⚠️ 但这条规律对**文本输入类元素不成立**——规范要求文本输入无论
+// 以何种方式获得焦点都应显示焦点，故 input/textarea 的 :focus-visible 在鼠标点击时也命中。
+// 本文件因此**不**给输入框加轮廓（见下方说明），只做「鼠标干净、键盘可见」成立的选择器。
+//
+// 🔴 三条设计约束（均为真机实测换来，不要改回去）：
+//
+// ① **不用 `:where()` 降特异性**。此前写作 `:where(a, button, …):focus-visible`，注释里
+//    写的理由是「压到特异性 0，只在没有更具体规则接管时才生效」——**前半句对，后半句错**：
+//    EP 对几乎每个交互组件都自带 `:focus-visible`，于是这条兜底**等价于永不生效**。
+//    实测同一条规则：裸 `<button>` 上 11.28:1 生效；`.el-button`（全站 303 个）被 EP
+//    压成 2.57~2.75:1。去掉 `:where()` 后特异性为 (0,0,1)，仍低于 EP 的组件规则
+//    （`.el-button:focus-visible` 是 (0,1,1)），但足以在**没有第三方规则**的元素上生效。
+//
+// ② **不含 `[tabindex]`**。`tabindex` 是「这个元素可聚焦」的**实现细节**，不是
+//    「这个元素需要兜底焦点样式」的判据。用它当选择器的后果：侧栏为键盘可达补的
+//    `<li tabindex="0">`（EP 的 el-menu 垂直模式不提供键盘支持，故由我们补）会被这条兜底圈住，
+//    品牌色压在侧栏深底上实测仅 **1.46:1**（近乎不可见），且子菜单展开时该环会圈住整个展开组。
+//    焦点样式应由**元素承担的角色**决定，不由它恰好带了哪个属性决定。
+//
+// ③ **不含 input / select / textarea**。EP 已声明 `.el-input__inner { outline: none }`（0,1,0）
+//    压住本条，写在这里**当前不产生任何效果**，只是噪音。裸输入框若将来出现，按角色单独补
+//    （并注意文本输入类元素的 `:focus-visible` 在**鼠标点击时也命中**，不能靠它区分输入方式
+//    ——见下方「不给 wrapper 加轮廓」的说明）。
+//
+// 保留 `a`：项目源码里没有裸 `<a href>`，但 `router-link` 渲染后就是 `<a>`。
+// ═══════════════════════════════════════════════════════════════
+a:focus-visible,
+button:focus-visible,
+summary:focus-visible {
+  outline: 2px solid $primary-color;
+  outline-offset: 2px;
+}
+
+// 🔴 为什么**不**给 .el-input__wrapper / .el-textarea__inner / .el-select__wrapper 加轮廓
+// （此处曾是 `outline: 2px solid $primary-color`，实测后删除）：
+//
+// 起因是「EP 输入框的焦点提示只有 1px 内阴影，键盘用户看不真切」。但文本输入类元素的
+// :focus-visible 不区分输入方式，加轮廓的后果是**点一下任何搜索框都会画一圈 2px 边框**——
+// 真机验证：鼠标点击登录页用户名输入框，wrapper 计算样式为 solid 2px rgb(26,58,107)。
+// 这与「不得破坏鼠标点击时的视觉」直接冲突，且全站表单无一幸免。
+//
+// 实测 EP 自带的焦点指示：`.el-input__wrapper.is-focus` 的 box-shadow 为
+// `rgb(143,157,181) 0 0 0 1px inset`（浅灰蓝），白底上 **2.74:1**，未达本项目自定的
+// 3:1 门槛；且 wrapper 的 `border-width` 为 0，边框不参与焦点指示，唯一的指示就是这个 1px 内阴影。
+// 对比未聚焦态的 #dcdfe6（约 1.4:1），从 1.4→2.74 的变化**可见、可区分**，
+// 满足 WCAG 2.4.7（Focus Visible，AA）；不满足的只是 2.4.11（Focus Appearance，AAA）。
+//
+// 🔴 这是一次**有意识的降级**，不是遗漏：把输入框焦点环补到 2px 品牌色，代价是全站
+// 每一次鼠标点击输入框都画一圈边框（原因见上），收益仅是 AAA 级美化——代价大于收益。
+// 若将来确需 AAA，正确做法是引入「最近一次输入方式」检测（JS 在 <body> 上标记 modality，
+// 如 `body.is-kbd .el-input__wrapper.is-focus { … }`），而不是靠 :focus-visible——
+// 后者在文本输入上根本不具备区分能力。**不要**在没有 modality 检测前直接给 wrapper 加 outline。
+
+// 菜单项与下拉项靠背景色变化表达选中，键盘聚焦时再加一层轮廓区分「聚焦」与「选中」。
+// ⚠️ 此处原有第三条 `.el-table__body tr:focus-visible`，已删除——表格行不可聚焦
+// （实测 `tabIndex === -1`、`hasTabindexAttr === false`），该规则**永不匹配**，是死规则。
+// 且表格行本就不应成为焦点目标：行内按钮才是可操作单元，把行加进 Tab 序列只会增加停靠点。
+// （同族死规则还有 `.el-menu-item:focus-visible`——其根因是 EP 的 el-menu 不提供键盘支持，
+//   菜单项 tabindex 全为 -1；该条已在 Sidebar.vue 补 tabindex 后复活，见彼处注释。）
+.el-menu-item:focus-visible,
+.el-dropdown-menu__item:focus-visible {
+  outline: 2px solid $primary-color;
+  outline-offset: -2px;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 覆盖 EP 的浅色焦点环（WCAG 2.4.11 要求焦点指示与相邻色 ≥3:1）
+//
+// 🔴 为什么上方 :where() 兜底救不了：它特异性恒为 0，只在 EP **没有** :focus-visible
+// 规则时才生效。而 EP 对几乎每个交互组件都自带该规则（见其 dist/index.css 全表），
+// 故兜底在 EP 组件上**近乎永不生效**。真实 Tab 遍历 /system/user（32 格）实测：
+//   .el-button--success    rgb(179,225,157) 压白 = 1.42:1   ← 全站最差
+//   .el-button--danger     rgb(250,182,182) 压白 = 1.69:1
+//   .el-button--primary     rgb(141,157,181) 压白 = 2.75:1
+//   .el-pager li.is-active  rgb(26,58,107) 压自身背景 = 1:1   ← 完全不可见
+// 32 格中仅 `div.topbar__user` 一格达标（10.51:1）——因为 EP 对它没有规则，兜底才得以生效。
+//
+// 机理：EP 的 `--el-button-outline-color` 默认取 `--el-color-{type}-light-5`。
+// 「主色压到 light-5」用作背景/边框是合理的设计系统手法，但用作**焦点环**时白底上天然不达标。
+//
+// ⚠️ 不能用 `:root { --el-button-outline-color: … }` 覆盖：该变量声明在 `.el-button` /
+//    `.el-button--X` **类作用域**上（非 :root），元素自身声明优先于继承，从 :root 写会**静默失效**
+//    （与第三轮记录的 `--el-table-header-text-color` 同族）。
+// ⚠️ 也不能单纯提高上方兜底的特异性：那会连带改动 input 等本应保持 EP 行为的元素。
+//    ⇒ 按组件逐条「同特异性 + 后加载」覆盖，每条都可独立真机复验。
+// ═══════════════════════════════════════════════════════════════
+
+// 按钮（全站 303 个）。EP 两条规则特异性分别为 (0,2,0) 与 (0,4,0)，此处逐一对应。
+.el-button:focus-visible,
+.el-button.is-text:not(.is-disabled):focus-visible {
+  outline: 2px solid $primary-color;
+  outline-offset: 2px;
+}
+
+// 分页器。EP 用 `1px solid var(--el-pagination-hover-color)` + `outline-offset:-1px`，
+// 两处都不达标：① 1px 不满足 2.4.11 的面积要求；② 描边画在元素内部，而**当前页背景
+// 恰好也是品牌色** ⇒ 描边＝背景，对比度 1:1。
+.el-pagination .btn-prev:focus-visible,
+.el-pagination .btn-next:focus-visible,
+.el-pager li:focus-visible {
+  outline: 2px solid $primary-color;
+  outline-offset: -2px;
+}
+
+// 当前页背景即品牌色，焦点环必须换浅色才可能在自身背景上可辨（白压 #1a3a6b = 11.28:1）
+.el-pager li.is-active:focus-visible {
+  outline-color: #ffffff;
 }
 
 // 卡片通用样式
@@ -59,7 +200,7 @@ body {
   overflow-y: auto;
 }
 
-@media (max-width: 767px) {
+@media (max-width: $breakpoint-mobile) {
   .ti-page {
     padding: 12px;
   }
@@ -79,6 +220,46 @@ body {
   padding: 20px;
   margin-bottom: 16px;
   box-shadow: $card-shadow;
+}
+
+// 搜索控件宽度：把 $search-control-width-* 令牌变成真正可用的类（ui-011）
+//
+// 🔴 令牌早就声明了，但**此前 0 处引用**——20 个页面仍各自写着 14 种内联像素值
+// （`style="width: 150px"`），令牌只是「本该如此」的注释，不是能用的东西。
+// 声明一个没人能用的令牌，与没有它没有区别；这里补上它的第一个消费入口：
+//   <el-input class="ti-search-control-md" …>   宽度从此由令牌决定，页面不再写像素值
+//
+// 🔴🔴 选择器为什么写成 `.ti-search-control-md.ti-search-control-md`（而非单个类名）：
+// EP 自带 `.el-input { width: var(--el-input-width) }`（--el-input-width 默认 100%）、
+// `.el-select { width: var(--el-select-width) }`，与单类名**特异性同为 (0,1,0)**——
+// 命中哪个只由样式表顺序决定。而 vite.config.ts 里 `unplugin-vue-components` +
+// `ElementPlusResolver` 会为每个按需引入的组件**再注入一份组件样式**，那次注入发生在
+// index.scss 之后，于是 EP 的规则排在后面、单类名必然落败。
+// 真机实测（Chrome + 本项目 dev server）：`<el-input class="ti-search-control-md">`
+// 计算宽度 189.5px、`el-select` 44px，都不是令牌里的 160px；而同一个类挂在裸 div 上
+// 精确得到 120px（说明规则本身没问题，是被同特异性的 EP 规则按顺序压掉了）。
+// 写成重复类名即得 (0,2,0)，**无条件**压过 EP，与顺序无关——与上方 `:root:root` 同一手法。
+//
+// ⚠️ 存量页面的内联 style **优先级高于本类**（内联 style 恒胜选择器），不会被动到；
+// 它们改用本类即可，不需要一次性全改。TiSearchForm 的声明式字段（fields）已默认走这里。
+// ⚠️ 放在全局而非组件 scoped 内：类要能作用到**插槽内容**（页面传进来的 el-input），
+// 组件 scoped 样式默认只覆盖自身模板。
+//
+// 📌 此处曾有一条 `@media (max-width: $breakpoint-mobile) { … width: 100% }` 的窄屏放开规则，
+// 实测后删除：`width: 100%` 的百分比是相对 `.el-form-item__content`（`flex: 1 1 0%`，
+// 被 inline-flex 的表单项收缩到 ~190px）解析的，**并不会**把控件放开成整行——
+// 它兑现不了「窄屏不被挤爆」这个说法。而令牌本身取值 120/160/220，在 320px 视口下
+// 加上标签仍放得下，并不存在需要放开的场景。留着只会是一条名不副实的规则。
+.ti-search-control-sm.ti-search-control-sm {
+  width: $search-control-width-sm;
+}
+
+.ti-search-control-md.ti-search-control-md {
+  width: $search-control-width-md;
+}
+
+.ti-search-control-lg.ti-search-control-lg {
+  width: $search-control-width-lg;
 }
 
 // 工具栏
@@ -107,6 +288,165 @@ body {
   padding: 16px;
 }
 
+// 表格容器「无卡片」变体（ui-103）
+//
+// 🔴 为什么需要它：TiTable 的根节点 .ti-table-wrap 本身**就是一张卡片**（白底 + 圆角 + 阴影 +
+// 内边距）。把这套已经齐全的页面收编进 TiTable 时，若表格原本就嵌在 .ti-card 里
+// （system/dict 右侧面板、maintenance/workbench 的 section-card），就会出现**卡中卡**：
+// 一层卡片边距里再套一层卡片边距，视觉上多出 32px 无用内缩与一圈多余的阴影。
+//
+// 用法：<TiTable class="ti-table--flush">。TiTable 未关闭 inheritAttrs 且内部 v-bind="$attrs"，
+// 故该类会同时落在根 div 与内层 el-table 上——选择器写成复合式 .ti-table-wrap.ti-table--flush
+// 只会命中根 div，el-table 上那个多余的类名无样式、无副作用。
+//
+// 特异性 (0,2,0) 高于上方 .ti-table-wrap (0,1,0)，亦高于移动端媒体查询里的同名规则，
+// 无需双写类名（此处要压的是本文件自己的规则，不涉及 EP 组件属性）。
+.ti-table-wrap.ti-table--flush {
+  background: transparent;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 表单容器宽度类（ui-106）
+//
+// 🔴 此前 12 处直接写 `style="max-width: 640px"`，用了 5 种取值（720/640/480/760/560）。
+// 收敛为 3 档后，模板改用具名类 `.ti-form-width--*`，取值仍在 variables.scss 一处。
+//
+// 为什么这里用**类**而不是像表高那样导出 CSS 自定义属性：那一处是因为 EP 的 height/max-height
+// 只能由**组件属性**传入（它要在 JS 里算表体高度），模板必须给出一个值，才不得不经
+// `var(--ti-…)` 过桥。max-width 是纯粹的 CSS 属性、没有任何 EP 属性参与，
+// 走一个类即可让模板与取值解耦，不必多一层运行时间接。
+//
+// 特异性 (0,1,0)：EP 的 .el-form 不设 max-width，不存在需要压过的同名规则。
+//
+// 用法：<el-form class="ti-form-width--standard">。同一内容列里的兄弟元素（如 el-alert 横幅）
+// 应使用同一个类，否则横幅会比表单宽/窄，列边界对不齐。
+// ═══════════════════════════════════════════════════════════════
+.ti-form-width--compact {
+  max-width: $form-max-width-compact;
+}
+
+.ti-form-width--standard {
+  max-width: $form-max-width-standard;
+}
+
+.ti-form-width--wide {
+  max-width: $form-max-width-wide;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 对话框内「后果提示条」
+//
+// 🔴 为什么用具名类而不是内联 `style="margin-bottom: 16px"`：
+//    内联样式是「同一个视觉决策在 N 处各写一遍」，改间距要全仓搜字符串，且无法被
+//    样式守卫看见（审计 §9.5 记了全站 248 处内联 style，这是其中之一）。
+//    本类把「对话框顶部提示条距下方表单 16px」这个决策收到一处。
+//
+// 用法：<el-alert type="warning" :closable="false" class="ti-dialog-alert">
+//
+// 🔴 它承载的是**不可逆操作的后果说明**（退保、拒赔），不是普通提示。删掉提示条等于
+//    让用户在不知后果的情况下提交终局动作——这类提示的**存在性**本身就是要求，
+//    故与动作绑定，不要随「界面太挤」一起删。
+//
+// 间距用 $space-4 而非字面 16px：全站唯一真源在 variables.scss。
+// 特异性 (0,1,0)，EP 的 .el-alert 不设 margin，无须压过任何同名规则。
+// ═══════════════════════════════════════════════════════════════
+.ti-dialog-alert {
+  margin-bottom: $space-4;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 下拉项「破坏性动作」变体（ui-107）
+//
+// 🔴 为什么需要它：EP 的 el-dropdown-item **没有 type 属性**（props 只有 command/disabled/
+// divided/icon），所以「更多」下拉里的动作**一个都着不了色**。而全站恰恰把最不可逆的动作
+// 放进了下拉：policy/detail 的「退保/终止」「撤销保单」、product/list 的「下架」「驳回」。
+// 结果就是同一个动词在两种形态下语义相反——「退役」在操作列是红字，在「更多」里是普通黑字。
+// 这与 ConfigPanel 已有的 destructive 判据同源（那处管的是确认框按钮：
+// 「把红色用在非危险动作上，等于训练用户忽略红色」，反过来，危险动作不上红同样是失真）。
+//
+// 用法：<el-dropdown-item class="ti-dropdown-item--danger">（静态文案）
+//      <el-dropdown-item :class="{ 'ti-dropdown-item--danger': action.destructive }">（动态文案）
+//
+// 特异性必须**同时**压过 EP 的两条规则，且不能靠引入顺序（产物分块会改变顺序）：
+//   · 基色 `.el-dropdown-menu__item{color:var(--el-text-color-regular)}` = (0,1,0)
+//   · hover/focus `.el-dropdown-menu__item:not(.is-disabled):hover` = (0,3,0)
+// 故写 (0,2,0) 与 (0,4,0)，高于对方，与字节序无关。
+// 只改 color 不改 background——hover 背景仍由 EP 的 --el-dropdown-menuItem-hover-* 决定，
+// 红字落在浅蓝 hover 底上仍清晰可辨。
+//
+// 🔴 用 $danger-text 而非 $danger-color（2026-09-18 真机实测）：本条原写 $danger-color，
+//    而 #f56c6c 压白底仅 **2.90:1**——「下架」「退保」这类**告诉你后果**的字样恰恰最需要看清，
+//    结果它是全站对比度最低的文本之一。改用文字变体后为 6.16:1。
+// ═══════════════════════════════════════════════════════════════
+.el-dropdown-menu__item.ti-dropdown-item--danger {
+  color: $danger-text;
+}
+
+.el-dropdown-menu__item.ti-dropdown-item--danger:not(.is-disabled):hover,
+.el-dropdown-menu__item.ti-dropdown-item--danger:not(.is-disabled):focus {
+  color: $danger-text;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 列表页固定表头高度令牌 → CSS 自定义属性（ui-103）
+//
+// 页面模板是 HTML，引用不到 SCSS 变量；而 EP 的 height/max-height 只能由**属性**传入
+// （它要在 JS 里算表体高度）。故把 SCSS 令牌导出一份 CSS 变量，页面写
+//   <TiTable :max-height="'var(--ti-table-max-height-default)'">
+// 取值定义仍在 variables.scss 一处，不产生第二个真源。
+//
+// 为何传 var()/calc() 而不是像素数字：EP 的 parseHeight 对非纯数字字符串原样透传，
+// 最终落到 .el-table 的 inline max-height 与滚动容器的 calc(...) 上，天然随窗口变化；
+// 传数字则需 JS 监听 resize 重算，且在窗口尺寸变化时会短暂算错。
+// ═══════════════════════════════════════════════════════════════
+:root {
+  --ti-table-max-height-default: #{$table-max-height-default};
+  --ti-table-max-height-tabbed: #{$table-max-height-tabbed};
+  --ti-table-max-height-lean: #{$table-max-height-lean};
+  --ti-table-max-height-split: #{$table-max-height-split};
+
+  // ═══════════════════════════════════════════════════════════════
+  // 品牌色阶与侧边栏配色的 CSS 变量出口
+  //
+  // 🔴 为什么需要这一层：**canvas 与组件属性拿不到 CSS 级联**。
+  //    · ECharts 画到 canvas，配置里写 `var(--x)` 不会被解析（src/utils/cssVar.ts 有详述）；
+  //    · el-menu 的 background-color/text-color/active-text-color 是 **JS 属性**，
+  //      EP 会拿它做颜色运算（use-menu-color.mjs：`new TinyColor(bg).shade(20)` 求 hover 底色），
+  //      传 `var(...)` 会让 TinyColor 解析失败。
+  //    两条路径都只能用**字面值**，于是此前这些地方直接抄了令牌的数值：
+  //      侧边栏 3 个字面量、ECharts 调色板 3 个、折线色 2 处、渐变 rgba 4 处（共 13 处）。
+  //    后果是**换品牌色时它们纹丝不动**——令牌改了一处、这 13 处各存一份旧的。
+  //    加这一层出口后，两处都改从 CSS 变量取字面值，真源仍只有 variables.scss 一处。
+  //
+  // ⚠️ 命名用 `--ti-` 前缀而非复用 `--el-color-primary-light-3`：EP 的 light-N 是
+  //    mix(#fff, primary, N*10%)（提亮并**大幅去饱和**），与品牌色阶 $primary-light /
+  //    $primary-lighter（保留饱和度的提亮）**不是一回事**，不可互相顶替（见 variables.scss 顶部说明）。
+  // ═══════════════════════════════════════════════════════════════
+  --ti-primary: #{$primary-color};
+  --ti-primary-light: #{$primary-light};
+  --ti-primary-lighter: #{$primary-lighter};
+  --ti-sidebar-bg: #{$sidebar-bg};
+  --ti-sidebar-text: #{$sidebar-text};
+  --ti-sidebar-active-text: #{$sidebar-active-text};
+
+  // 语义色「文字变体」的 CSS 变量出口。
+  // 🔴 为什么必须有：$success-text 族此前**只有 SCSS 值、没有 CSS 变量**，于是凡是
+  //    「拿不到 SCSS 但要着色」的地方（组件 `:color` 属性、canvas、内联 style）只能退而
+  //    借用语义色**本体**（--el-color-success 等），而那正是 F8 反复踩的 2.0~2.9:1。
+  //    本轮回填的这一处最典型：system/menu 的「隐藏」列**整格只有一枚图标、没有文字兜底**，
+  //    图标即内容，按 WCAG 1.4.11 非文本对比须 ≥3:1，实测 danger 2.90 / success 2.24 双双不达标。
+  //    （`color: var()` 在 DOM 里由浏览器解析，本可直接内联；但 `:color="…"` 是**属性**，
+  //     组件未必把它落到 CSS 上，故仍以 var() 形式传入最稳妥。）
+  --ti-success-text: #{$success-text};
+  --ti-warning-text: #{$warning-text};
+  --ti-danger-text: #{$danger-text};
+  --ti-info-text: #{$info-text};
+  --ti-border: #{$border-color};
+}
+
 // 分页容器
 .ti-pagination {
   display: flex;
@@ -115,7 +455,10 @@ body {
 }
 
 // 操作列：全站统一——按钮横向排布、绝不换行；配合足够列宽实现"动态宽度"观感
-.ti-action-column {
+// 🔴 类名须双写：Element Plus 自带 `.el-table .cell { white-space: normal }`，与本块同为 (0,2,0)
+// 且在其样式表中位置更靠后，单写时 nowrap 会被压掉——声明存在却从未生效（ui-102 真机实测
+// 计算值仍为 normal，不换行只是 inline-flex 的副产物，一旦 display 被动过就会失效）。
+.ti-action-column.ti-action-column {
   .cell {
     white-space: nowrap;
     display: inline-flex;
@@ -130,36 +473,10 @@ body {
 }
 
 // 编码列：全站统一——不换行，避免编码被挤成多行
-.ti-code-column {
+// 🔴 同上：须双写类名抬特异性，否则 nowrap 被 EP 的 `.el-table .cell { white-space: normal }` 压掉
+.ti-code-column.ti-code-column {
   .cell {
     white-space: nowrap;
-  }
-}
-
-// 状态标签颜色
-.status-tag {
-  &--draft {
-    color: $info-color;
-    background: rgba($info-color, 0.1);
-    border-color: rgba($info-color, 0.3);
-  }
-
-  &--pending {
-    color: $warning-color;
-    background: rgba($warning-color, 0.1);
-    border-color: rgba($warning-color, 0.3);
-  }
-
-  &--active {
-    color: $success-color;
-    background: rgba($success-color, 0.1);
-    border-color: rgba($success-color, 0.3);
-  }
-
-  &--inactive {
-    color: $danger-color;
-    background: rgba($danger-color, 0.1);
-    border-color: rgba($danger-color, 0.3);
   }
 }
 
@@ -169,11 +486,130 @@ body {
   height: 3px !important;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
 // Element Plus 主题覆盖
-:root {
+//
+// 🔴 为什么选择器写成 `:root:root`（而非 `:root`）：
+// EP 在 element-plus/dist/index.css 里以 `:root` 声明同一批变量，main.ts 又全量引入了
+// 那份 CSS。两个 `:root` 特异性相同（0,1,0），命中哪个**完全由构建产物的字节顺序决定**——
+// 这是「靠侥幸生效」，任何一次 chunk 拆分或引入顺序调整都会静默回退到出厂蓝。
+// `:root:root` 特异性为 (0,2,0)，**无条件**压过 EP 的 `:root`，与顺序无关。
+//
+// 🔴 为什么用 mix() 而非写死色值：
+// EP 的 light-N 派生公式是 mix(#fff, $primary, N*10%)，dark-2 是 mix(#000, $primary, 20%)。
+// 之前 light-3 写死 #4a7cc9，比主色更艳（正确值应为 #5f7597），破坏了 light 阶梯的
+// 单调性——按钮 hover 比常态更抢眼。改为公式派生后，换主色只需改 $primary-color 一处。
+// ═══════════════════════════════════════════════════════════════════════════
+:root:root {
+  // ── 主色本体与 RGB 三元组（供 rgba() 派生场景使用）──
   --el-color-primary: #{$primary-color};
-  --el-color-primary-light-3: #{$primary-lighter};
+  --el-color-primary-rgb: #{red($primary-color)}, #{green($primary-color)}, #{blue($primary-color)};
+
+  // ── light 阶梯：混白 30/50/70/80/90% ──
+  // light-3 主按钮 hover 边框 / light-5 主按钮 disabled·loading、键盘聚焦环
+  // light-7 默认按钮 hover 边框 / light-8 el-tag primary 边框
+  // light-9 默认按钮 hover 底色、el-tag primary 底色、el-table 当前行高亮
+  --el-color-primary-light-3: #{mix(#ffffff, $primary-color, 30%)};
+  --el-color-primary-light-5: #{mix(#ffffff, $primary-color, 50%)};
+  --el-color-primary-light-7: #{mix(#ffffff, $primary-color, 70%)};
+  --el-color-primary-light-8: #{mix(#ffffff, $primary-color, 80%)};
+  --el-color-primary-light-9: #{mix(#ffffff, $primary-color, 90%)};
+
+  // ── dark-2：主按钮按下态（混黑 20%）──
+  --el-color-primary-dark-2: #{mix(#000000, $primary-color, 20%)};
+
+  // ── 圆角：EP 默认 4px，与卡片 8px 形成 4/8 双体系；收敛为 6/8 ──
+  --el-border-radius-base: #{$radius-md};
+
+  // ── 基准字号：把 EP 的字号基准绑到我们的令牌，而非依赖其内置默认 ──
+  --el-font-size-base: #{$font-size-base};
+
+  // ── 次要文字色：把 EP 的第二个「次要文字色」真源收敛到 $text-secondary ──
+  // 🔴 为什么必须在这里收：EP 出厂把 `--el-text-color-secondary: #909399` 声明在 `:root`
+  //    （与 --el-text-color-primary/regular 同一块，构建产物已核实），而**全站 29 处内联
+  //    `style="color: var(--el-text-color-secondary)"` 直接消费它**（product/create 7、
+  //    product/revise 9、product/template-config 5、maintenance 5、document/list 1 等 9 个文件）。
+  //    这些写法既不含字面色值（D-04 拦不到），也不引用 $text-secondary（改令牌也够不着），
+  //    于是构成**并行的第二个「次要文字色」真源**——$text-secondary 已在 F7 修到达标，
+  //    这 29 处却仍是 3.08:1 / 2.87:1。
+  //    收敛办法不是在 29 个站点逐个改（那是「N 个变体写 N 条规则」，必然漏第 N+1 个），
+  //    而是**改真源**：EP 内置组件（.el-empty__description p、.el-table__empty-text、
+  //    .el-select-dropdown__empty 等）也读同一个变量，改一处即整站跟随。
+  // 🔴 这里写在 `:root:root` 是有效的：EP 声明在 `:root` 上（**不是**元素自身），
+  //    与上方 --el-color-primary 同源同理；若它像 --el-table-header-text-color 那样声明在
+  //    元素自身，则此处会静默失效——两类变量的处置方式不可混用。
+  // ⚠️ 不含 --el-text-color-placeholder：占位符「故意浅于已填值」是设计取舍（见 ROUND3 N2），不在此收敛。
+  --el-text-color-secondary: #{$text-secondary};
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 可访问性：表格表头与状态标签的文字对比度
+//
+// 背景：EP 出厂把**次要文字色**同时用于表头，把**语义原色本身**用于标签文字，
+// 两者压在同色浅底上均低于 WCAG AA 正文要求的 4.5:1。真机实测（2026-09-18）：
+//   · 表头 #909399 压白底 = **3.08:1**，全站 **262 处**（29 个列表页）
+//   · el-tag success #67c23a 压 #f0f9eb = **2.08:1**
+//   · el-tag warning #e6a23c 压 #fdf6ec = **2.04:1**
+//   · el-tag danger  #f56c6c 压 #fef0f0 = **2.61:1**
+//   · el-tag info    #909399 压 #f4f4f5 = **2.83:1**
+// 合计 377 处标签 + 262 处表头。
+//
+// 🔴 为什么不能写在 `:root:root` 里：这两个变量都由 EP 声明在**元素自身**
+//    （`--el-table-header-text-color` 在 `.el-table`、`--el-tag-text-color` 在
+//    `.el-tag.el-tag--X`）。元素自身的声明永远压过从 :root 继承来的值，
+//    **特异性再高也无效**——写在 :root 上会静默失效，且守卫/构建都不会报错。
+//
+// 🔴 为什么都要抬特异性：EP 的 `.el-table` 与 `.el-tag.el-tag--success` 分别
+//    是 (0,1,0) 与 (0,2,0)。写成同特异性时会退化成"靠产物字节序命中"，
+//    与本文件中 `:root:root` 的既有处理同源，故一律抬一级：
+//    `.el-table.el-table`(0,2,0) 与 `.el-tag.el-tag--X.el-tag--X`(0,3,0)。
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── 表头：收敛到 $text-regular（#606266 压白底 = 6.11:1）──
+// 与表体同色，层级由字重承载（表头 600 / 表体 400，均为真机实测值），
+// 这也是 Ant Design 表格的做法；比另造一个介于 #909399 与 #606266 之间的新灰色更少一处魔数。
+.el-table.el-table {
+  --el-table-header-text-color: #{$text-regular};
+}
+
+// ── 语义色「文字」统一收敛 ──
+// 语义色本体（#67c23a 等）是**填充色**，当文字用压白底只有 2.0~2.9:1；文字变体
+// （$success-text 等，mix 黑 40%）压白底 5.1~6.2:1，定义见 variables.scss。
+//
+// 🔴 为什么用 @each 循环而不是逐条写：同一个缺陷在本轮**三次**以同一形态复发——
+//    ① 第一轮只修了 el-tag--primary，success/warning/danger/info 四类原样留着；
+//    ② ui-107 给下拉项着色时又直接用了 $danger-color 本体（2.90:1）；
+//    ③ 链接按钮的 danger 用 EP 的 --el-color-danger（2.90:1）。
+//    三次的共同点是「按色种逐个处理」，于是每次都有色种被漏掉。
+//    写成对同一张映射表的循环后，「四类型一起改」由**结构**保证，不靠人记得。
+//
+// 🔴 三个载体的变量声明位置不同，故选择器各不相同：
+//    · el-tag  — EP 在 `.el-tag.el-tag--X`(0,2,0) 上声明 --el-tag-text-color
+//    · 链接按钮 — EP 在 `.el-button--X.is-link`(0,2,0) 上声明 --el-button-text-color
+//    · el-text — EP 在 `.el-text--X`(0,1,0) 上声明 --el-text-color
+//    三者都是**元素自身声明**，从 :root 继承的值永远压不过它们（特异性再高也无效），
+//    所以只能逐个写匹配该元素、且特异性高一档的选择器。
+//
+// 链接按钮的 hover/active 一并处理：EP 默认 hover 变实心填充（白字压本色，同样只有 2.9:1），
+// 这里把 hover 填充也换成文字变体（白字压深色 5~6:1），语义不变、可读性达标。
+@each $type, $text in (success: $success-text, warning: $warning-text, danger: $danger-text, info: $info-text) {
+  .el-tag.el-tag--#{$type}.el-tag--#{$type} {
+    --el-tag-text-color: #{$text};
+  }
+
+  .el-button--#{$type}.is-link.el-button--#{$type}.is-link {
+    --el-button-text-color: #{$text};
+    --el-button-hover-bg-color: #{$text};
+    --el-button-hover-border-color: #{$text};
+    --el-button-active-bg-color: #{$text};
+    --el-button-active-border-color: #{$text};
+  }
+
+  .el-text--#{$type}.el-text--#{$type} {
+    --el-text-color: #{$text};
+  }
+}
+
 
 // 过渡动画
 .fade-enter-active,

@@ -27,6 +27,7 @@
       :page-num="pagination.pageNum"
       :page-size="pagination.pageSize"
       :loading="tableLoading"
+      :max-height="'var(--ti-table-max-height-default)'"
       @page-change="onPageChange"
       @size-change="onSizeChange"
     >
@@ -44,16 +45,20 @@
           <TiStatusTag :value="row.status" :label="commonStatusLabel(row.status)" />
         </template>
       </el-table-column>
-      <el-table-column prop="createdAt" label="创建时间" width="160" />
+      <el-table-column prop="createdAt" label="创建时间" width="160">
+        <!-- 时间列统一走全局日期工具，避免直出后端 ISO 串（2026-09-18 全站实测 7 页 8 列） -->
+        <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
+      </el-table-column>
       <!-- @vue-generic {UserListItem} -->
       <el-table-column label="操作" min-width="200" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
           <el-button size="small" :icon="Edit" v-permission="'system:user:edit'" @click="openDialog(row)">编辑</el-button>
-          <el-button size="small" v-permission="'system:user:reset-pwd'" @click="handleResetPwd(row)">重置密码</el-button>
+          <el-button size="small" v-permission="'system:user:reset-pwd'" :loading="rowPending === actionKey(row.id, 'reset-pwd')" @click="handleResetPwd(row)">重置密码</el-button>
           <el-button
             size="small"
             :type="row.status === 'ACTIVE' ? 'danger' : 'success'"
             v-permission="'system:user:toggle'"
+            :loading="rowPending === actionKey(row.id, 'toggle')"
             @click="handleToggle(row)"
           >
             {{ row.status === 'ACTIVE' ? '禁用' : '启用' }}
@@ -64,7 +69,7 @@
 
     <!-- 新增/编辑对话框 -->
     <el-dialog v-model="dialogVisible" :title="editId ? '编辑用户' : '新增用户'" width="480px">
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="90px">
+      <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
         <el-form-item label="用户名" prop="username">
           <el-input v-model="form.username" :disabled="!!editId" />
         </el-form-item>
@@ -102,6 +107,7 @@
 <script setup lang="ts">
 import { ref, reactive } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useRowAction, confirmAction, actionKey } from '@/composables/useRowAction'
 import { Plus, Edit } from '@element-plus/icons-vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import { getUserList, createUser, updateUser, toggleUserStatus, resetPassword, assignRoles } from '@/api/user'
@@ -113,6 +119,7 @@ import TiTable from '@/components/TiTable/index.vue'
 import TiSearchForm from '@/components/TiSearchForm/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
+import { formatDateTime } from '@/utils/date'
 import { useDict } from '@/composables/useDict'
 
 const { getLabel: commonStatusLabel } = useDict('COMMON_STATUS')
@@ -123,6 +130,9 @@ const { tableData, tableLoading, pagination, fetchData, handleSearch, handleRese
   useTable<UserListItem, typeof queryParams>((params) => getUserList(params), queryParams)
 
 fetchData()
+
+/** 行内动作（重置密码 / 启用禁用）的 pending 与错误兜底统一由 useRowAction 承担 */
+const { rowPending, run } = useRowAction(fetchData)
 
 const dialogVisible = ref(false)
 const editId = ref<string | null>(null)
@@ -183,22 +193,45 @@ const handleSave = async () => {
 
 const handleResetPwd = async (row: UserListItem) => {
   // 密码由管理员显式指定：后端已无「系统默认密码」语义，且不接受空口令
-  const input = await ElMessageBox.prompt(`请为用户「${row.username}」设置新密码`, '重置密码', {
-    inputType: 'password',
-    confirmButtonText: '确认重置',
-    // 与后端 @Size(min = 8) 对齐，避免前端放行、后端 400 的契约错位
-    inputValidator: (v) => (v && v.length >= 8 ? true : '密码长度需为 8-64 位'),
-  }).catch(() => null)
+  let input: { value: string } | null = null
+  try {
+    input = await ElMessageBox.prompt(`请为用户「${row.username}」设置新密码`, '重置密码', {
+      inputType: 'password',
+      confirmButtonText: '确认重置',
+      // 与后端 @Size(min = 8) 对齐，避免前端放行、后端 400 的契约错位
+      inputValidator: (v) => (v && v.length >= 8 ? true : '密码长度需为 8-64 位'),
+    })
+  } catch {
+    return // 用户取消：prompt 同样以 reject 表达取消，必须吞掉
+  }
   if (!input?.value) return
-  await resetPassword(row.id, input.value)
-  ElMessage.success('密码已重置')
+  await run(actionKey(row.id, 'reset-pwd'), async () => {
+    await resetPassword(row.id, input.value)
+    ElMessage.success('密码已重置')
+  })
 }
 
+/**
+ * 启用 / 禁用账号。
+ *
+ * 「禁用」是破坏性操作：该账号**立即无法登录**，且列表行内没有撤销入口——
+ * 误点只能靠管理员再点一次「启用」挽回，而误点者往往并不知道自己刚做了什么。
+ * 故禁用必须二次确认；启用是恢复性操作，不额外增加摩擦（不对称是刻意的）。
+ */
 const handleToggle = async (row: UserListItem) => {
-  const nextStatus = row.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE'
-  await toggleUserStatus(row.id, nextStatus)
-  ElMessage.success('操作成功')
-  fetchData()
+  const isDisabling = row.status === 'ACTIVE'
+  if (isDisabling) {
+    const ok = await confirmAction(
+      `确定禁用用户「${row.username}」？禁用后该账号将立即无法登录系统。`,
+      '禁用用户',
+      { type: 'warning', confirmButtonText: '确定禁用', cancelButtonText: '取消' },
+    )
+    if (!ok) return
+  }
+  await run(actionKey(row.id, 'toggle'), async () => {
+    await toggleUserStatus(row.id, isDisabling ? 'INACTIVE' : 'ACTIVE')
+    ElMessage.success('操作成功')
+  })
 }
 
 const getDeptName = (deptId?: string) => {

@@ -2,20 +2,20 @@
   <!-- 核保工单详情 -->
   <div class="ti-page">
     <div class="ti-card" v-loading="loading">
-      <div class="detail-header">
-        <el-button :icon="ArrowLeft" text @click="$router.back()">返回</el-button>
-        <h3>核保工单 - {{ detail?.caseNo || detail?.underwritingId }}</h3>
-        <TiStatusTag v-if="detail" :value="detail.status" :label="underwritingStatusLabel(detail.status)" />
-      </div>
+      <TiDetailHeader :title="`核保工单 - ${detail?.caseNo || detail?.underwritingId || ''}`">
+        <template #meta>
+          <TiStatusTag v-if="detail" :value="detail.status" :label="underwritingStatusLabel(detail.status)" />
+        </template>
+      </TiDetailHeader>
 
       <!-- 核保基本信息 -->
-      <el-descriptions v-if="detail" :column="3" border style="margin-bottom: 24px">
+      <el-descriptions v-if="detail" :column="detailColumns" border style="margin-bottom: 24px">
         <el-descriptions-item label="核保案号">
           <TiCopyText :text="detail.caseNo || '-'" />
         </el-descriptions-item>
         <el-descriptions-item label="核保类型">{{ underwritingTypeLabel(detail.underwritingType ?? '') }}</el-descriptions-item>
         <el-descriptions-item label="核保金额">
-          {{ detail.amount != null ? `¥${Number(detail.amount).toLocaleString()}` : '-' }}
+          {{ formatAmount(detail.amount) }}
         </el-descriptions-item>
         <el-descriptions-item label="风险等级">{{ riskLevelLabel(detail.riskLevel) }}</el-descriptions-item>
         <el-descriptions-item label="结论类型">{{ conclusionTypeLabel(detail.conclusionType) }}</el-descriptions-item>
@@ -33,7 +33,7 @@
       <!-- 核保结论与保费信息（有结论字段时显示） -->
       <template v-if="detail && hasConclusion(detail)">
         <div class="section-title">核保结论</div>
-        <el-descriptions :column="3" border style="margin-bottom: 24px">
+        <el-descriptions :column="detailColumns" border style="margin-bottom: 24px">
           <el-descriptions-item v-if="detail.rejectReason" label="拒保原因" :span="3">{{ detail.rejectReason }}</el-descriptions-item>
           <el-descriptions-item v-if="detail.reviewComments" label="复核意见" :span="3">{{ detail.reviewComments }}</el-descriptions-item>
           <el-descriptions-item v-if="detail.premiumSurchargeRate != null" label="加费比例">
@@ -45,10 +45,10 @@
             {{ detail.postponePeriodMonths }} 个月
           </el-descriptions-item>
           <el-descriptions-item v-if="detail.postponeReason" label="延期原因" :span="2">{{ detail.postponeReason }}</el-descriptions-item>
-          <el-descriptions-item label="基础保费">{{ formatMoney(detail.basePremium) }}</el-descriptions-item>
-          <el-descriptions-item label="加费金额">{{ formatMoney(detail.additionalPremium) }}</el-descriptions-item>
-          <el-descriptions-item label="折扣金额">{{ formatMoney(detail.discountAmount) }}</el-descriptions-item>
-          <el-descriptions-item label="最终保费">{{ formatMoney(detail.finalPremium) }}</el-descriptions-item>
+          <el-descriptions-item label="基础保费">{{ formatAmount(detail.basePremium) }}</el-descriptions-item>
+          <el-descriptions-item label="加费金额">{{ formatAmount(detail.additionalPremium) }}</el-descriptions-item>
+          <el-descriptions-item label="折扣金额">{{ formatAmount(detail.discountAmount) }}</el-descriptions-item>
+          <el-descriptions-item label="最终保费">{{ formatAmount(detail.finalPremium) }}</el-descriptions-item>
           <el-descriptions-item label="是否需要复核">{{ detail.requiresReview ? '是' : '否' }}</el-descriptions-item>
           <el-descriptions-item label="复核人意见">{{ detail.reviewerComments || '-' }}</el-descriptions-item>
         </el-descriptions>
@@ -63,7 +63,7 @@
           :model="decisionForm"
           :rules="decisionRules"
           label-width="100px"
-          style="max-width: 560px"
+          class="ti-form-width--compact"
         >
           <el-form-item label="审核类型" prop="auditType">
             <el-select v-model="decisionForm.auditType" placeholder="请选择审核类型" style="width: 200px">
@@ -85,13 +85,15 @@ import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { ArrowLeft } from '@element-plus/icons-vue'
 import { getUnderwritingDetail, makeDecision } from '@/api/underwriting'
 import type { UnderwritingCaseVO, DecisionRequest } from '@/api/underwriting'
+import TiDetailHeader from '@/components/TiDetailHeader/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import TiCopyText from '@/components/TiCopyText/index.vue'
 import { useDict } from '@/composables/useDict'
+import { useDetailColumns } from '@/composables/useDetailColumns'
 import { formatDateTime } from '@/utils/date'
+import { formatAmount } from '@/utils/format'
 
 const { getLabel: underwritingStatusLabel } = useDict('UNDERWRITING_STATUS')
 const { getLabel: underwritingTypeLabel } = useDict('UNDERWRITING_TYPE')
@@ -126,9 +128,6 @@ const auditTypeLabel = (code?: string): string => {
 }
 
 /** 金额格式化 */
-const formatMoney = (value?: number): string => {
-  return value != null ? `¥${Number(value).toLocaleString()}` : '-'
-}
 
 /** 是否有可展示的核保结论信息 */
 const hasConclusion = (detail: UnderwritingCaseVO): boolean => {
@@ -140,6 +139,9 @@ const hasConclusion = (detail: UnderwritingCaseVO): boolean => {
     || detail.reviewerComments,
   )
 }
+
+/** 核保信息与结论面板：字段短，宽屏 3 档 */
+const detailColumns = useDetailColumns(3)
 
 const route = useRoute()
 const router = useRouter()
@@ -186,23 +188,10 @@ const handleSubmitDecision = async () => {
 </script>
 
 <style scoped lang="scss">
-.detail-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 20px;
-
-  h3 {
-    margin: 0;
-    font-size: 18px;
-    flex: 1;
-  }
-}
-
 .section-title {
-  font-size: 15px;
+  font-size: $font-size-lg;
   font-weight: 600;
-  color: #303133;
+  color: $text-primary;
   margin-bottom: 12px;
 }
 </style>

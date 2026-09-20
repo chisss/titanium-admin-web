@@ -43,6 +43,7 @@
       :page-num="pagination.pageNum"
       :page-size="pagination.pageSize"
       :loading="tableLoading"
+      :max-height="'var(--ti-table-max-height-default)'"
       row-key="claimId"
       @page-change="onPageChange"
       @size-change="onSizeChange"
@@ -51,11 +52,15 @@
       <el-table-column label="理赔类型" width="100">
         <template #default="{ row }">{{ claimTypeLabel(row.claimType) }}</template>
       </el-table-column>
-      <el-table-column prop="incidentDate" label="出险日期" width="110">
-        <template #default="{ row }">{{ formatDate(row.incidentDate) }}</template>
+      <!-- 🔴 出险时间用 formatDateTime 而非 formatDate：本字段录入端是 type="datetime"
+           （value-format 含时分秒），后端 Claim.incidentDate 是 LocalDateTime，
+           详情页也已用 formatDateTime ⇒ 列表页用 formatDate 会**丢掉用户录入的时分秒**，
+           并造成「同一实体在列表页与详情页显示不一致」（2026-09-18 全站实测） -->
+      <el-table-column prop="incidentDate" label="出险时间" width="170">
+        <template #default="{ row }">{{ formatDateTime(row.incidentDate) }}</template>
       </el-table-column>
-      <el-table-column prop="claimAmount" label="申请赔付" width="120">
-        <template #default="{ row }">¥{{ row.claimAmount?.toLocaleString() }}</template>
+      <el-table-column prop="claimAmount" label="申请赔付" width="120" align="right">
+        <template #default="{ row }">{{ formatAmount(row.claimAmount) }}</template>
       </el-table-column>
       <el-table-column prop="status" label="状态" width="100">
         <template #default="{ row }">
@@ -86,11 +91,13 @@
             <el-option v-for="opt in claimTypeOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
           </el-select>
         </el-form-item>
-        <el-form-item label="出险日期" prop="incidentDate">
+        <!-- 文案为「时间」而非「日期」：控件是 type="datetime"，强制用户选到时分秒，
+             文案说「日期」与之自相矛盾（2026-09-18 统一；详情页同项一并改） -->
+        <el-form-item label="出险时间" prop="incidentDate">
           <el-date-picker
             v-model="createForm.incidentDate"
             type="datetime"
-            placeholder="请选择出险日期"
+            placeholder="请选择出险时间"
             value-format="YYYY-MM-DDTHH:mm:ss"
             style="width: 100%"
           />
@@ -122,6 +129,12 @@ import {
 import type { ClaimCaseVO, CreateClaimRequest } from '@/api/claim'
 import { useTable } from '@/composables/useTable'
 import { useDict } from '@/composables/useDict'
+import { formatAmount } from '@/utils/format'
+// 日期格式化统一走全局工具：本文件此前自带 `split('T')[0]` / `replace('T',' ')` 两份本地实现，
+// 与 claim/detail 各存一份（全站 29 个文件用全局工具，仅理赔域两处重复）。
+// 本地实现是纯字符串替换：不校验有效性、遇毫秒会保留 `.123`、遇 `Z` 后缀会原样带出，
+// 换后端序列化格式即静默出错（2026-09-18 全站实测）。
+import { formatDateTime } from '@/utils/date'
 import TiTable from '@/components/TiTable/index.vue'
 import TiSearchForm from '@/components/TiSearchForm/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
@@ -134,16 +147,6 @@ const { dictOptions: claimTypeOptions, getLabel: claimTypeLabel } = useDict('CLA
 
 /** 理赔状态字典（后端字典驱动，支持国际化） */
 const { dictOptions: claimStatusOptions, getLabel: claimStatusLabel } = useDict('CLAIM_STATUS')
-
-const formatDate = (dateStr: string | undefined) => {
-  if (!dateStr) return '-'
-  return dateStr.split('T')[0] // YYYY-MM-DD
-}
-
-const formatDateTime = (dateStr: string | undefined) => {
-  if (!dateStr) return '-'
-  return dateStr.replace('T', ' ')
-}
 
 const queryParams = reactive({
   claimNo: '',
@@ -177,7 +180,7 @@ const createRules: FormRules = {
   policyId: [{ required: true, message: '请输入保单ID', trigger: 'blur' }],
   customerId: [{ required: true, message: '请输入客户ID', trigger: 'blur' }],
   claimType: [{ required: true, message: '请选择理赔类型', trigger: 'change' }],
-  incidentDate: [{ required: true, message: '请选择出险日期', trigger: 'change' }],
+  incidentDate: [{ required: true, message: '请选择出险时间', trigger: 'change' }],
   incidentDescription: [{ required: true, message: '请填写事故描述', trigger: 'blur' }],
   claimAmount: [{ required: true, message: '请填写申请金额', trigger: 'blur' }],
 }
@@ -226,7 +229,7 @@ const submitCreate = async () => {
 
   .toolbar-stat {
     font-size: 13px;
-    color: #606266;
+    color: $text-regular;
   }
 }
 </style>

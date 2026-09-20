@@ -13,6 +13,8 @@
     "D-09": { "op": "gte", "value": 15 },
     "D-11": { "op": "lte", "value": 2 },
     "D-12": { "op": "lte", "value": 0 },
+    "D-13": { "op": "lte", "value": 0 },
+    "D-14": { "op": "lte", "value": 0 },
     "S-01": { "op": "eq", "value": 29 },
     "S-01b": { "op": "eq", "value": 29 },
     "S-01c": { "op": "eq", "value": 46 },
@@ -24,7 +26,19 @@
     "S-08": { "op": "lte", "value": 3 },
     "S-09": { "op": "lte", "value": 4 },
     "S-12": { "op": "lte", "value": 0 },
+    "S-15": { "op": "lte", "value": 0 },
     "G-01": { "op": "lte", "value": 1 },
-    "G-02": { "op": "lte", "value": 0 }
+    "G-02": { "op": "lte", "value": 0 },
+    "G-03": { "op": "lte", "value": 0 },
+
+    "F-01": { "op": "lte", "value": 0 },
+    "F-02": { "op": "lte", "value": 0 },
+    "F-03": { "op": "lte", "value": 0 },
+    "A-01": { "op": "lte", "value": 0 },
+    "D-15": { "op": "gte", "value": 14.7 },
+    "D-16": { "op": "lte", "value": 22 },
+    "D-17": { "op": "lte", "value": 210 },
+
+    "I-01": { "op": "lte", "value": 0 }
   }
 }

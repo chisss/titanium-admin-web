@@ -5,7 +5,7 @@
       <el-tabs v-model="activeTab">
         <!-- 全局参数 -->
         <el-tab-pane label="全局参数" name="global">
-          <el-form :model="form.globalConfig" label-width="120px" style="max-width: 480px">
+          <el-form :model="form.globalConfig" label-width="120px" class="ti-form-width--compact">
             <el-form-item label="默认分页大小">
               <el-input-number v-model="form.globalConfig.defaultPageSize" :min="1" :max="200" />
             </el-form-item>
@@ -20,7 +20,7 @@
 
         <!-- 邮件配置 -->
         <el-tab-pane label="邮件配置" name="email">
-          <el-form :model="form.emailConfig" label-width="120px" style="max-width: 480px">
+          <el-form :model="form.emailConfig" label-width="120px" class="ti-form-width--compact">
             <el-form-item label="SMTP服务器">
               <el-input v-model="form.emailConfig.host" placeholder="如 smtp.example.com" />
             </el-form-item>
@@ -38,7 +38,7 @@
 
         <!-- 短信配置 -->
         <el-tab-pane label="短信配置" name="sms">
-          <el-form :model="form.smsConfig" label-width="120px" style="max-width: 480px">
+          <el-form :model="form.smsConfig" label-width="120px" class="ti-form-width--compact">
             <el-form-item label="服务商">
               <TiDictSelect v-model="form.smsConfig.provider" dict-type="CLOUD_SERVICE_PROVIDER" placeholder="请选择" style="width: 100%" />
             </el-form-item>
@@ -96,7 +96,7 @@ const handleSave = async () => {
 }
 </script>
 
-<style scoped>
+<style scoped lang="scss">
 .ti-config-footer {
   margin-top: 16px;
   padding-left: 120px;

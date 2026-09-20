@@ -7,7 +7,7 @@
         <div class="ti-card dict-type-panel">
           <div class="dict-type-panel__header">
             <span class="dict-type-panel__title">字典类型</span>
-            <el-button type="primary" :icon="Plus" size="small" @click="openTypeDialog()">新增</el-button>
+            <el-button type="primary" :icon="Plus" size="small" v-permission="'system:dict:create'" @click="openTypeDialog()">新增</el-button>
           </div>
           <el-input v-model="typeSearch" placeholder="搜索字典类型" :prefix-icon="Search" clearable style="margin-bottom: 12px" />
           <el-scrollbar>
@@ -15,7 +15,10 @@
               v-for="type in filteredTypes"
               :key="type.id"
               class="dict-type-item"
-              :class="{ 'dict-type-item--active': selectedType?.id === type.id }"
+              :class="{
+                'dict-type-item--active': selectedType?.id === type.id,
+                'dict-type-item--busy': typeRowPending === actionKey(type.id, 'delete'),
+              }"
               @click="selectType(type)"
             >
               <div class="dict-type-item__main">
@@ -23,8 +26,15 @@
                 <span class="dict-type-item__code">{{ type.code }}</span>
               </div>
               <div class="dict-type-item__actions">
-                <el-button size="small" :icon="Edit" @click.stop="openTypeDialog(type)" />
-                <el-button size="small" type="danger" :icon="Delete" @click.stop="handleDeleteType(type)" />
+                <el-button size="small" :icon="Edit" v-permission="'system:dict:edit'" @click.stop="openTypeDialog(type)" />
+                <el-button
+                  size="small"
+                  type="danger"
+                  :icon="Delete"
+                  v-permission="'system:dict:delete'"
+                  :loading="typeRowPending === actionKey(type.id, 'delete')"
+                  @click.stop="handleDeleteType(type)"
+                />
               </div>
             </div>
           </el-scrollbar>
@@ -38,8 +48,12 @@
             <span class="dict-data-title">
               {{ selectedType ? `${selectedType.name}（${selectedType.code}）` : '请选择字典类型' }}
             </span>
+            <!-- 🔴 权限判在 v-if 表达式里（本按钮自带 `v-if="selectedType"`），不用 v-permission 指令：
+                 指令在 mounted 里直接摘真实 DOM，与同一元素上的动态挂载/卸载叠加会让 vnode 树与
+                 实际 DOM 不一致。权限码取自 admin 自身种子：类型与字典项的增删改共用
+                 system:dict:create / :edit / :delete 三码（后端没有把「类型」和「字典项」分成两套）。 -->
             <el-button
-              v-if="selectedType"
+              v-if="selectedType && hasPermission('system:dict:create')"
               type="primary"
               :icon="Plus"
               size="small"
@@ -49,7 +63,16 @@
             </el-button>
           </div>
 
-          <el-table v-if="selectedType" :data="dictDataList" v-loading="dataLoading" stripe>
+          <!-- 右栏字典项表格：嵌在 .dict-data-panel 这张卡片里，须用 --flush 免得卡中卡。
+               高度令牌用 split 档——本页是「左类型列表 / 右明细」双栏骨架，
+               页面自身高度被定死（见 <style> 的 .dict-page），与整页流式布局的可用高无换算关系 -->
+          <TiTable
+            v-if="selectedType"
+            class="ti-table--flush"
+            :data="dictDataList"
+            :loading="dataLoading"
+            :max-height="'var(--ti-table-max-height-split)'"
+          >
             <el-table-column prop="value" label="字典值" width="160" />
             <el-table-column prop="label" label="默认标签" width="140" />
             <el-table-column label="多语言" min-width="200">
@@ -75,13 +98,22 @@
               </template>
             </el-table-column>
             <!-- @vue-generic {DictData} -->
-            <el-table-column label="操作" width="120" fixed="right">
+            <el-table-column label="操作" min-width="160" fixed="right" class-name="ti-action-column">
               <template #default="{ row }">
-                <el-button size="small" :icon="Edit" @click="openDataDialog(row)">编辑</el-button>
-                <el-button size="small" type="danger" :icon="Delete" @click="handleDeleteData(row)">删除</el-button>
+                <el-button size="small" :icon="Edit" v-permission="'system:dict:edit'" @click="openDataDialog(row)">编辑</el-button>
+                <el-button
+                  size="small"
+                  type="danger"
+                  :icon="Delete"
+                  v-permission="'system:dict:delete'"
+                  :loading="dataRowPending === actionKey(row.id, 'delete')"
+                  @click="handleDeleteData(row)"
+                >
+                  删除
+                </el-button>
               </template>
             </el-table-column>
-          </el-table>
+          </TiTable>
           <el-empty v-else description="请从左侧选择字典类型" :image-size="80" style="margin-top: 60px" />
         </div>
       </el-col>
@@ -115,7 +147,7 @@
       :title="editDataId ? '编辑字典项' : '新增字典项'"
       width="560px"
     >
-      <el-form ref="dataFormRef" :model="dataForm" :rules="dataRules" label-width="110px">
+      <el-form ref="dataFormRef" :model="dataForm" :rules="dataRules" label-width="120px">
         <el-form-item label="字典值" prop="value">
           <el-input v-model="dataForm.value" placeholder="如：ACTIVE" />
         </el-form-item>
@@ -161,7 +193,8 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
+import { useRowAction, confirmAction, actionKey } from '@/composables/useRowAction'
 import { Plus, Edit, Delete, Search } from '@element-plus/icons-vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import {
@@ -170,9 +203,14 @@ import {
   getDictDataByType, createDictData, updateDictData, deleteDictData,
 } from '@/api/dict'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
+import TiTable from '@/components/TiTable/index.vue'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
 import { useDictStore } from '@/stores/dict'
+import { usePermission } from '@/composables/usePermission'
 import type { DictType, DictData } from '@/types/business.d'
+
+/** 字典类型/字典项的新增按钮权限判定（判在 v-if 表达式里，见模板注释） */
+const { hasPermission } = usePermission()
 
 // 字典类型列表
 const typeList = ref<DictType[]>([])
@@ -186,8 +224,22 @@ const filteredTypes = computed(() =>
 )
 
 const loadTypes = async () => {
-  const result = await getDictTypeList({ pageNum: 1, pageSize: 200 })
-  typeList.value = result.list
+  // 🔴 原写法 `getDictTypeList({ pageNum: 1, pageSize: 200 })` 单次只拉 200 条：
+  //    字典类型超过 200 个时，第 201 条起**既不在左栏列表里、也搜不到**——因为搜索框走的是
+  //    前端过滤（filteredTypes 过滤 typeList），而且**没有任何提示**，属静默截断。
+  //    本列表的设计意图是全量（el-scrollbar 滚动浏览 + 前端搜索），故改为按页取完，
+  //    不改变交互形态（加分页器会让「搜索」只搜到已加载的那一页，语义反而更差）。
+  const PAGE_SIZE = 200
+  const MAX_PAGES = 50 // 兜底 10000 条：真实字典类型远达不到，触顶只可能是后端分页异常（防死循环）
+  const all: DictType[] = []
+  for (let pageNum = 1; pageNum <= MAX_PAGES; pageNum++) {
+    const page = await getDictTypeList({ pageNum, pageSize: PAGE_SIZE })
+    all.push(...page.list)
+    // 🔴 到底的判据用「本页未取满」，**不用 total**：代理层在下游只返回裸数组且本页已满时
+    //    会如实返回 total=null（总数未知，见 types/api.d 的 PageResult 注释），拿 null 比大小必错。
+    if (page.list.length < PAGE_SIZE) break
+  }
+  typeList.value = all
 }
 
 // 字典数据
@@ -205,6 +257,21 @@ const selectType = async (type: DictType) => {
 }
 
 onMounted(loadTypes)
+
+/** 重新拉取当前选中类型的字典项：右栏表格的刷新口径（删项后按类型重查，重查期间由 dataLoading 给出反馈） */
+const reloadDictData = async () => {
+  const current = selectedType.value
+  if (current) await selectType(current)
+}
+
+/**
+ * 左栏（字典类型）与右栏（字典项）**各持一个** useRowAction，而不是共用一个：
+ * 两块面板同时可见、行主键都叫 id、刷新口径也各自不同（重拉类型列表 / 重查当前类型的字典项），
+ * 合用一个 ref 会让「这次转圈属于哪块面板」无从分辨，也分不清该刷新谁。
+ * 行内删除的 pending 与错误兜底统一由 useRowAction 承担。
+ */
+const { rowPending: typeRowPending, run: runTypeAction } = useRowAction(loadTypes)
+const { rowPending: dataRowPending, run: runDataAction } = useRowAction(reloadDictData)
 
 // 字典类型对话框
 const typeDialogVisible = ref(false)
@@ -249,13 +316,27 @@ const handleSaveType = async () => {
   }
 }
 
+/**
+ * 删除字典类型（连同其下的字典项）。
+ *
+ * <p>需要 pending 的理由：级联删除不可逆，删完还要重拉整个类型列表，
+ * 请求在途时若左栏毫无变化，用户会以为没点中而重复点击。</p>
+ */
 const handleDeleteType = async (row: DictType) => {
-  await ElMessageBox.confirm(`确认删除字典类型"${row.name}"？关联字典数据将一并删除。`, '警告', { type: 'warning' })
-  await deleteDictType(row.id)
-  dictStore.clearCache(row.code)
-  ElMessage.success('删除成功')
-  if (selectedType.value?.id === row.id) selectedType.value = null
-  loadTypes()
+  const ok = await confirmAction(
+    `确认删除字典类型"${row.name}"？关联字典数据将一并删除。`,
+    '警告',
+    { type: 'warning', confirmButtonClass: 'el-button--danger' },
+  )
+  if (!ok) return
+  // 类型项上并排「编辑」「删除」两个动作按钮，pending 键带上动作名以区分
+  await runTypeAction(actionKey(row.id, 'delete'), async () => {
+    await deleteDictType(row.id)
+    dictStore.clearCache(row.code)
+    ElMessage.success('删除成功')
+    // 删掉的正是当前选中项时必须清空选中，否则右栏会继续展示已不存在的类型的字典项
+    if (selectedType.value?.id === row.id) selectedType.value = null
+  })
 }
 
 // 字典数据对话框（含 i18n）
@@ -352,12 +433,24 @@ const handleSaveData = async () => {
   }
 }
 
+/**
+ * 删除字典项。
+ *
+ * <p>需要 pending 的理由：确认框一关、请求在途的这段时间里右栏表格还没有任何变化
+ * （表格自身的 loading 要等删除成功后重查才亮），按钮不转圈就等于这段时间零反馈。</p>
+ */
 const handleDeleteData = async (row: DictData) => {
-  await ElMessageBox.confirm(`确认删除字典项"${row.label}"？`, '警告', { type: 'warning' })
-  await deleteDictData(row.id)
-  if (selectedType.value) dictStore.clearCache(selectedType.value.code)
-  ElMessage.success('删除成功')
-  if (selectedType.value) selectType(selectedType.value)
+  const ok = await confirmAction(`确认删除字典项"${row.label}"？`, '警告', {
+    type: 'warning',
+    confirmButtonClass: 'el-button--danger',
+  })
+  if (!ok) return
+  // 本行并排「编辑」「删除」两个动作按钮，pending 键带上动作名以区分
+  await runDataAction(actionKey(row.id, 'delete'), async () => {
+    await deleteDictData(row.id)
+    if (selectedType.value) dictStore.clearCache(selectedType.value.code)
+    ElMessage.success('删除成功')
+  })
 }
 </script>
 
@@ -384,7 +477,7 @@ const handleDeleteData = async (row: DictData) => {
   }
 
   &__title {
-    font-size: 15px;
+    font-size: $font-size-lg;
     font-weight: 600;
   }
 }
@@ -394,7 +487,7 @@ const handleDeleteData = async (row: DictData) => {
   align-items: center;
   justify-content: space-between;
   padding: 8px 10px;
-  border-radius: 6px;
+  border-radius: $radius-md;
   cursor: pointer;
   margin-bottom: 2px;
   transition: background 0.15s;
@@ -421,12 +514,12 @@ const handleDeleteData = async (row: DictData) => {
 
   &__name {
     font-size: 13px;
-    color: #303133;
+    color: $text-primary;
   }
 
   &__code {
     font-size: 11px;
-    color: #909399;
+    color: $text-secondary;
     font-family: monospace;
   }
 
@@ -435,6 +528,13 @@ const handleDeleteData = async (row: DictData) => {
   }
 
   &:hover &__actions {
+    display: flex;
+  }
+
+  // 🔴 删除在途时强制显示操作区。操作区平时只在 :hover 下可见，而确认框关闭后
+  //    指针往往已离开该项 —— 删除请求在途的那几秒，转圈恰好被 display:none 一起藏起来，
+  //    用户看到的仍是「点了没有任何反应」。这条规则让在途的那一行始终露出操作区。
+  &--busy &__actions {
     display: flex;
   }
 }
@@ -451,9 +551,9 @@ const handleDeleteData = async (row: DictData) => {
 }
 
 .dict-data-title {
-  font-size: 15px;
+  font-size: $font-size-lg;
   font-weight: 600;
-  color: #303133;
+  color: $text-primary;
 }
 
 .i18n-labels {
@@ -462,7 +562,7 @@ const handleDeleteData = async (row: DictData) => {
 }
 
 .no-i18n {
-  color: #c0c4cc;
+  color: $text-disabled;
 }
 
 .i18n-editor {
@@ -476,7 +576,7 @@ const handleDeleteData = async (row: DictData) => {
   }
 }
 
-@media (max-width: 767px) {
+@media (max-width: $breakpoint-mobile) {
   .dict-page {
     height: auto;
     min-height: calc(100vh - 96px);

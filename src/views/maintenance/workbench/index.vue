@@ -1,17 +1,16 @@
 <template>
   <div class="ti-page" v-loading="loading">
     <div class="ti-card" v-if="detail">
-      <div class="workbench-heading">
-        <div>
-          <el-button text :icon="ArrowLeft" @click="router.back()">返回</el-button>
-          <h3>保全工作台</h3>
-        </div>
-        <div class="heading-actions">
+      <TiDetailHeader title="保全工作台">
+        <template #meta>
           <TiStatusTag :value="detail.status" :label="maintenanceCaseStatusLabel(detail.status)" />
+        </template>
+        <template #actions>
           <el-button :icon="Refresh" @click="load">刷新</el-button>
-        </div>
-      </div>
+        </template>
+      </TiDetailHeader>
       <el-descriptions :column="detailColumns" border>
+        <el-descriptions-item label="保全号">{{ detail.maintenanceNo || '-' }}</el-descriptions-item>
         <el-descriptions-item label="保单">{{ detail.policyNumber || detail.policyId }}</el-descriptions-item>
         <el-descriptions-item label="客户">{{ detail.customerId }}</el-descriptions-item>
         <el-descriptions-item label="来源">{{ maintenanceChannelLabel(detail.source) }}</el-descriptions-item>
@@ -34,7 +33,10 @@
     <template v-if="detail">
       <div class="ti-card section-card">
         <div class="section-heading"><h4>保全项与字段变更</h4><span>基准值 → 当前值 → 拟变更值 → 已应用值</span></div>
-        <el-table :data="fieldEntryRows" border stripe class="responsive-table">
+        <!-- 保全项与字段变更：整块是「随页面滚动的编辑表单区」，拟变更值列直接绑 draftValues，
+             下方还有「保存字段草稿」提交动作。这类表行数由案件决定且不宜内滚，故不收编 TiTable——
+             加固定表头只会让页面里多出一条嵌套滚动条。仅统一视觉语言：斑马纹、去纵向边框 -->
+        <el-table :data="fieldEntryRows" stripe class="responsive-table">
           <el-table-column prop="itemCode" label="保全项" min-width="150" />
           <el-table-column label="变更对象" min-width="150" show-overflow-tooltip>
             <template #default="{ row }">{{ row.objectId || '保单主体' }}</template>
@@ -50,43 +52,74 @@
           <el-table-column v-if="!isReadOnly" label="冲突处理" min-width="260">
             <template #default="{ row }">
               <template v-if="isConflict(row)">
-                <el-button size="small" @click="resolveConflict(row, 'USE_CURRENT')">采用当前值</el-button>
-                <el-button size="small" type="primary" @click="resolveConflict(row, 'USE_PROPOSED')">采用拟值</el-button>
-                <el-button size="small" @click="resolveConflict(row, 'REENTER')">重新录入</el-button>
+                <!-- 冲突处置与状态流转同端点（operateCase），后端同判 maintenance:approve -->
+                <!-- 三个按钮同排并立，故 pending 必须带动作名（actionKey），否则点「采用当前值」
+                     会让「采用拟值」「重新录入」一起转圈，用户以为误触了别的字段 -->
+                <el-button size="small" v-permission="'maintenance:approve'" :loading="rowPending === actionKey(changeKey(row), 'USE_CURRENT')" @click="resolveConflict(row, 'USE_CURRENT')">采用当前值</el-button>
+                <el-button size="small" type="primary" v-permission="'maintenance:approve'" :loading="rowPending === actionKey(changeKey(row), 'USE_PROPOSED')" @click="resolveConflict(row, 'USE_PROPOSED')">采用拟值</el-button>
+                <el-button size="small" v-permission="'maintenance:approve'" :loading="rowPending === actionKey(changeKey(row), 'REENTER')" @click="resolveConflict(row, 'REENTER')">重新录入</el-button>
               </template>
               <span v-else>-</span>
             </template>
           </el-table-column>
         </el-table>
-        <div v-if="!isReadOnly" class="section-actions"><el-button type="primary" :loading="savingChanges" @click="saveChanges">保存字段草稿</el-button></div>
+        <!-- 字段草稿走 recordMaintenanceFieldChanges → PUT /items/{itemCode}/changes → maintenance:create -->
+        <div v-if="!isReadOnly" class="section-actions"><el-button type="primary" :loading="savingChanges" v-permission="'maintenance:create'" @click="saveChanges">保存字段草稿</el-button></div>
       </div>
 
       <div class="ti-card section-card">
         <div class="section-heading"><h4>流程任务</h4><span>按冻结配置顺序执行，越序操作由服务端拒绝</span></div>
-        <el-table :data="detail.workflowTasks" border stripe class="responsive-table">
+        <!-- 流程任务：本页唯一「行数无上限 + 带行操作」的主列表（领取/开始/更多三处动作），
+             收编 TiTable 拿到固定表头与统一的失败/空态。max-height 用 lean 档——
+             本页无检索区、无分页，骨架与无检索的列表页同档 -->
+        <TiTable
+          class="ti-table--flush responsive-table"
+          :data="detail.workflowTasks"
+          :max-height="'var(--ti-table-max-height-lean)'"
+        >
           <el-table-column prop="sequence" label="序号" width="70" />
           <el-table-column prop="itemCode" label="保全项" min-width="150" />
           <el-table-column prop="stepType" label="步骤" min-width="160" />
           <el-table-column prop="mode" label="模式" width="110" />
           <el-table-column prop="status" label="状态" width="130"><template #default="{ row }"><TiStatusTag :value="row.status" /></template></el-table-column>
-          <el-table-column label="操作" min-width="280" fixed="right">
+          <el-table-column label="操作" min-width="200" fixed="right" class-name="ti-action-column">
             <template #default="{ row }">
-              <el-button v-if="isClaimable(row)" size="small" @click="taskAction(row, 'claim')">领取</el-button>
-              <el-button v-if="isStartable(row)" size="small" type="primary" @click="taskAction(row, 'start')">开始</el-button>
-              <el-button v-if="canReview(row)" size="small" type="success" @click="review(row, 'APPROVE')">审核通过</el-button>
-              <el-button v-if="canReview(row)" size="small" type="danger" @click="review(row, 'REJECT')">审核拒绝</el-button>
-              <el-button v-if="canCompleteDataEntry(row)" size="small" type="success" @click="taskAction(row, 'complete')">完成</el-button>
-              <el-button v-if="isEffectReady(row)" size="small" type="success" @click="applyEffect(row)">立即生效</el-button>
-              <el-button v-if="row.status === 'FAILED'" size="small" type="warning" @click="taskAction(row, 'retry')">重试</el-button>
+              <!-- 平铺动作收敛为 2 个：领取与开始是任务入口且互斥；审核决策对与其余流转动作进「更多」 -->
+              <!-- 🔴 本列一律用 `v-if="<业务态> && hasPermission(...)"` 而非 v-permission 指令，两条理由：
+                   ① 这些按钮**自带 v-if**（isClaimable/isStartable）。指令在 mounted 里 `el.parentNode.removeChild(el)`
+                      直接改真实 DOM，与 v-if 的动态挂载/卸载叠在同一个元素上时，Vue 的 vnode 树与真实 DOM 会不一致。
+                   ② 「更多」下拉的子项是 el-dropdown-item，其渲染根是 Fragment ⇒ 指令拿到的 el 是片段锚点，
+                      摘掉的是锚点而不是菜单项（静默失效）。故权限判在外层 el-dropdown 上，子项无需各自判。
+                   两者都指向同一结论：**带 v-if 或 Fragment 根的元素，权限判在 v-if 表达式里**。 -->
+              <el-button v-if="isClaimable(row) && hasPermission('maintenance:approve')" size="small" :loading="rowPending === actionKey(row.taskId, 'claim')" @click="taskAction(row, 'claim')">领取</el-button>
+              <el-button v-if="isStartable(row) && hasPermission('maintenance:approve')" size="small" type="primary" :loading="rowPending === actionKey(row.taskId, 'start')" @click="taskAction(row, 'start')">开始</el-button>
+              <el-dropdown
+                v-if="(canReview(row) || canCompleteDataEntry(row) || isEffectReady(row) || row.status === 'FAILED') && hasPermission('maintenance:approve')"
+                trigger="click"
+                @command="(command: string) => runRowCommand(row, command)"
+              >
+                <!-- 下拉内含 5 个命令（通过/驳回/完成/生效/重试），无法把 loading 绑到具体下拉项；
+                     绑在本行触发器上表示「这一行有任务动作在途」 -->
+                <el-button size="small" :icon="MoreFilled" :loading="isTaskBusy(row)">更多</el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item v-if="canReview(row)" command="reviewApprove">审核通过</el-dropdown-item>
+                    <el-dropdown-item v-if="canReview(row)" command="reviewReject" class="ti-dropdown-item--danger">审核拒绝</el-dropdown-item>
+                    <el-dropdown-item v-if="canCompleteDataEntry(row)" command="complete">完成</el-dropdown-item>
+                    <el-dropdown-item v-if="isEffectReady(row)" command="effect">立即生效</el-dropdown-item>
+                    <el-dropdown-item v-if="row.status === 'FAILED'" command="retry">重试</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
             </template>
           </el-table-column>
-        </el-table>
+        </TiTable>
       </div>
 
       <div class="two-column">
         <div class="ti-card section-card">
           <div class="section-heading"><h4>配置与 Offering 快照</h4></div>
-          <el-table :data="detail.items" border size="small">
+          <el-table :data="detail.items" stripe size="small">
             <el-table-column prop="itemCode" label="保全项" min-width="150" />
             <el-table-column prop="configurationVersion" label="配置版本" width="110" />
             <el-table-column prop="configurationContentHash" label="配置哈希" min-width="180" show-overflow-tooltip />
@@ -113,7 +146,7 @@
         <div v-for="task in financialTasks" :key="task.taskId" class="financial-evidence">
           <el-descriptions :column="detailColumns" border>
             <el-descriptions-item label="保全项">{{ task.itemCode }}</el-descriptions-item>
-            <el-descriptions-item label="收退费">{{ money(task.premiumQuoteEvidence?.amount, task.premiumQuoteEvidence?.currency) }} · {{ task.premiumQuoteEvidence?.direction || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="收退费">{{ formatAmount(task.premiumQuoteEvidence?.amount, task.premiumQuoteEvidence?.currency) }} · {{ task.premiumQuoteEvidence?.direction || '-' }}</el-descriptions-item>
             <el-descriptions-item label="报价版本">{{ task.premiumQuoteEvidence?.quoteVersion || task.premiumQuoteEvidence?.pricingPlanVersion || '-' }}</el-descriptions-item>
             <el-descriptions-item label="计算明细" :span="detailColumns">{{ task.premiumQuoteEvidence?.detailSummary || '-' }}</el-descriptions-item>
             <el-descriptions-item label="Billing 状态">{{ task.billingPostingEvidence?.status || '-' }}</el-descriptions-item>
@@ -133,11 +166,14 @@
           <el-descriptions-item label="快照引用">{{ snapshotCount }} 份</el-descriptions-item>
         </el-descriptions>
         <div v-if="!isReadOnly" class="section-actions">
-          <el-button @click="refreshConflicts">刷新冲突</el-button>
+          <!-- 刷新冲突/暂停/恢复/立即执行都走 operateCase，后端同判 maintenance:approve -->
+          <el-button v-permission="'maintenance:approve'" :loading="rowPending === 'conflict-refresh'" @click="refreshConflicts">刷新冲突</el-button>
           <template v-if="detail.effectSchedule?.scheduleId">
-            <el-button v-if="detail.effectSchedule.status === 'ACTIVE'" type="warning" @click="scheduleAction('pause')">暂停生效计划</el-button>
-            <el-button v-if="['PAUSED', 'FAILED'].includes(detail.effectSchedule.status || '')" type="primary" @click="scheduleAction('resume')">恢复生效计划</el-button>
-            <el-button v-if="canExecuteScheduleNow" type="success" @click="scheduleAction('execute-now')">立即执行生效计划</el-button>
+            <!-- 这三个按钮自带 v-if，故同任务动作列：权限判在 v-if 表达式里（不用指令）。
+                 三者互斥（同一状态只有一个可见），但仍带动作名——见下方 scheduleAction 注释 -->
+            <el-button v-if="detail.effectSchedule.status === 'ACTIVE' && hasPermission('maintenance:approve')" type="warning" :loading="rowPending === actionKey('schedule', 'pause')" @click="scheduleAction('pause')">暂停生效计划</el-button>
+            <el-button v-if="['PAUSED', 'FAILED'].includes(detail.effectSchedule.status || '') && hasPermission('maintenance:approve')" type="primary" :loading="rowPending === actionKey('schedule', 'resume')" @click="scheduleAction('resume')">恢复生效计划</el-button>
+            <el-button v-if="canExecuteScheduleNow && hasPermission('maintenance:approve')" type="success" :loading="rowPending === actionKey('schedule', 'execute-now')" @click="scheduleAction('execute-now')">立即执行生效计划</el-button>
           </template>
         </div>
       </div>
@@ -148,9 +184,9 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Refresh } from '@element-plus/icons-vue'
+import { Refresh, MoreFilled } from '@element-plus/icons-vue'
 import {
   getMaintenanceConfiguration,
   getMaintenanceCaseDetail,
@@ -166,14 +202,32 @@ import type {
   MaintenanceFieldChange,
   MaintenanceWorkflowTask,
 } from '@/api/maintenance'
+import TiDetailHeader from '@/components/TiDetailHeader/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
+import TiTable from '@/components/TiTable/index.vue'
 import { useUserStore } from '@/stores/user'
 import { formatDateTime, formatDateTimeInZone } from '@/utils/date'
+import { formatAmount } from '@/utils/format'
 import { useDict } from '@/composables/useDict'
+import { useDetailColumns } from '@/composables/useDetailColumns'
+import { usePermission } from '@/composables/usePermission'
+import { useRowAction, actionKey } from '@/composables/useRowAction'
 
 const route = useRoute()
-const router = useRouter()
 const userStore = useUserStore()
+/**
+ * 权限判据的来源：本页所有写操作都打 admin 的 proxy 端点，
+ * `MaintenanceCaseProxyController` 上逐个方法标了 `@PreAuthorize`，那是唯一的权威：
+ *   · `POST /cases/{caseId}/tasks/{taskId}/{action}`（operateTask）  → maintenance:approve
+ *   · `POST /cases/{caseId}/{action}`（operateCase，含冲突处置与生效计划）→ maintenance:approve
+ *   · `PUT  /cases/{caseId}/items/{itemCode}/changes`（字段草稿）    → maintenance:create
+ * 即：领取/开始/审核通过/审核拒绝/完成/立即生效/重试/采用当前值/采用拟值/重新录入/刷新冲突/
+ *     暂停生效计划/恢复生效计划/立即执行生效计划 —— 共用 maintenance:approve；
+ *     保存字段草稿走 maintenance:create（与「创建保全」同码）。
+ * ⚠️ 不要按按钮文案猜码：`maintenance:approve` 的中文名是「审核保全」，
+ *    但后端把**全部状态流转**都挂在这一个码上，前端必须跟后端一致而非跟字面语义一致。
+ */
+const { hasPermission } = usePermission()
 const { getLabel: maintenanceCaseStatusLabel } = useDict('MAINTENANCE_CASE_STATUS')
 const { getLabel: maintenanceChannelDictLabel } = useDict('MAINTENANCE_CHANNEL')
 const { getLabel: maintenanceEffectiveTypeDictLabel } = useDict('MAINTENANCE_EFFECTIVE_TIME_TYPE')
@@ -181,11 +235,40 @@ const maintenanceChannelLabel = (value?: string) => value ? maintenanceChannelDi
 const maintenanceEffectiveTypeLabel = (value?: string) => value ? maintenanceEffectiveTypeDictLabel(value) : '-'
 const loading = ref(false)
 const savingChanges = ref(false)
+/**
+ * 「冲突处理 / 生效计划」两族动作的在途行键（与 `useRowAction` 共用同一套 key 约定）。
+ *
+ * 🔴 原先这两族共 7 个按钮（采用当前值/采用拟值/重新录入 × 刷新冲突/暂停/恢复/立即执行）
+ * 全部没有 pending 绑定：点下去界面纹丝不动，而这几个动作都走 `operateCase`
+ * ——**保全案件的状态推进**，重复提交的代价是双份字段变更。接口慢时用户必然再点一次。
+ * 与同页 `saveChanges`（有 `savingChanges` + finally）形成同页两套标准。
+ *
+ * key 用 `actionKey(changeKey(field), action)`：冲突行按「字段」区分，
+ * 生效计划按固定前缀 `'schedule'` 区分，两者都不会互相点亮。
+ *
+ * 🔴 传的是 `() => refreshAfterMutation()` 而非直接传函数引用：`refreshAfterMutation`
+ * 在下方才以 `const` 箭头函数定义，`const` **没有提升**，此处直接引用会在 setup 执行到本行时
+ * 抛 "Cannot access before initialization"。包一层 thunk 把取值推迟到动作成功之后。
+ */
+const { rowPending, run } = useRowAction(() => refreshAfterMutation())
+
+/**
+ * 该**任务行**是否有动作在途。
+ *
+ * 任务动作族（领取/开始/通过/驳回/完成/生效/重试）的键是 `taskId:动作名`，
+ * 而冲突处理族的键是 `itemCode:objectId:fieldCode:动作名`——两族的键前缀不同，
+ * 故本判据只对任务行生效，不会把冲突行的在途状态误判到任务行上。
+ */
+const isTaskBusy = (row: unknown) =>
+  rowPending.value !== null && String(rowPending.value).split(':')[0] === (row as MaintenanceWorkflowTask).taskId
 const detail = ref<MaintenanceCaseDetail>()
 const draftValues = reactive<Record<string, string>>({})
 const fieldRulesByItem = ref<Record<string, MaintenanceConfigurationFieldRule[]>>({})
 const beneficiaryObjectsByItem = ref<Record<string, PolicyBeneficiaryVO[]>>({})
-const detailColumns = computed(() => window.innerWidth < 768 ? 1 : 3)
+/** 保全信息面板：字段中长（说明/计算明细已用 :span 独占整行），宽屏 3 档。
+ *  🔴 此前写的是 window.innerWidth < 768 —— 与断点同量级（移动档上界），但 window.innerWidth **不是
+ *  响应式来源**，包在 computed 里也不会随窗口缩放重算；改走 useMediaQuery 才真的会降为 1 列。 */
+const detailColumns = useDetailColumns(3)
 const snapshotCount = computed(() => Object.values(detail.value?.snapshots || {}).filter(Boolean).length)
 const isReadOnly = computed(() => ['COMPLETED', 'REJECTED', 'WITHDRAWN'].includes(detail.value?.status || ''))
 const conflictCount = computed(() => detail.value?.fieldChanges.filter(isConflict).length || 0)
@@ -253,7 +336,6 @@ const formatScheduleTime = (value?: string) => {
   if (Number.isNaN(parsed.getTime())) return formatDateTime(value)
   return formatDateTimeInZone(parsed, zoneId)
 }
-const money = (amount?: number, currency?: string) => amount == null ? '-' : `${amount.toFixed(2)} ${currency || ''}`.trim()
 const changeKey = (rawRow: unknown) => {
   const row = rawRow as MaintenanceFieldChange
   return `${row.itemCode}:${row.objectId}:${row.fieldCode}`
@@ -337,26 +419,46 @@ const taskAction = async (rawTask: unknown, action: string) => {
   const body: Record<string, unknown> = { operationId: operationId() }
   if (action === 'complete') Object.assign(body, { resultCode: 'PASS', reason: '后台操作完成' })
   if (action === 'retry') body.reason = '后台人工重试'
-  await operateMaintenanceTask(caseId, task.taskId, action, body)
-  ElMessage.success('任务操作成功')
-  await refreshAfterMutation()
+  await run(actionKey(task.taskId, action), async () => {
+    await operateMaintenanceTask(caseId, task.taskId, action, body)
+    ElMessage.success('任务操作成功')
+  })
 }
 
 const review = async (rawTask: unknown, decision: string) => {
   const task = rawTask as MaintenanceWorkflowTask
-  const result = await ElMessageBox.prompt('请输入审核意见', '人工审核', { inputValue: decision === 'APPROVE' ? '审核通过' : '', inputType: 'textarea' })
-  await operateMaintenanceTask(caseId, task.taskId, 'review-decision', {
-    operationId: operationId(), decision, policyVersion: task.reviewEvidence?.policyVersion || '1', comment: result.value,
+  let result: { value: string }
+  try {
+    result = await ElMessageBox.prompt('请输入审核意见', '人工审核', { inputValue: decision === 'APPROVE' ? '审核通过' : '', inputType: 'textarea' })
+  } catch {
+    return // 用户取消：prompt 以 reject 表达取消
+  }
+  await run(actionKey(task.taskId, decision), async () => {
+    await operateMaintenanceTask(caseId, task.taskId, 'review-decision', {
+      operationId: operationId(), decision, policyVersion: task.reviewEvidence?.policyVersion || '1', comment: result.value,
+    })
+    ElMessage.success('审核意见已提交')
   })
-  ElMessage.success('审核结果已提交')
-  await refreshAfterMutation()
 }
 
 const applyEffect = async (rawTask: unknown) => {
   const task = rawTask as MaintenanceWorkflowTask
-  await operateMaintenanceTask(caseId, task.taskId, 'effect', { operationId: operationId() })
-  ElMessage.success('保全已生效')
-  await refreshAfterMutation()
+  await run(actionKey(task.taskId, 'effect'), async () => {
+    await operateMaintenanceTask(caseId, task.taskId, 'effect', { operationId: operationId() })
+    ElMessage.success('保全已生效')
+  })
+}
+
+/** 操作列「更多」下拉派发：命令值即动作语义，与下拉项 command 一一对应 */
+const runRowCommand = (row: unknown, command: string) => {
+  const handlers: Record<string, (target: unknown) => void> = {
+    reviewApprove: (target) => review(target, 'APPROVE'),
+    reviewReject: (target) => review(target, 'REJECT'),
+    complete: (target) => taskAction(target, 'complete'),
+    effect: (target) => applyEffect(target),
+    retry: (target) => taskAction(target, 'retry'),
+  }
+  handlers[command]?.(row)
 }
 
 const saveChanges = async () => {
@@ -376,56 +478,70 @@ const saveChanges = async () => {
 }
 
 const refreshConflicts = async () => {
-  await operateMaintenanceCase(caseId, 'field-conflicts/refresh', { operationId: operationId() })
-  ElMessage.success('冲突状态已刷新')
-  await refreshAfterMutation()
+  await run('conflict-refresh', async () => {
+    await operateMaintenanceCase(caseId, 'field-conflicts/refresh', { operationId: operationId() })
+    ElMessage.success('冲突状态已刷新')
+  })
 }
 
 const resolveConflict = async (rawField: unknown, action: 'USE_CURRENT' | 'USE_PROPOSED' | 'REENTER') => {
   const field = rawField as MaintenanceFieldChange
+  // 键取「冲突字段」本身（itemCode:objectId:fieldCode，与草稿值的键同一套），
+  // 于是「A 字段正在处理」不会点亮 B 字段的按钮
+  const key = actionKey(changeKey(field), action)
   let canonicalValue: string | undefined
   if (action === 'REENTER') {
-    const result = await ElMessageBox.prompt('请输入新的字段值', '重新录入冲突字段', {
-      inputValue: draftValues[changeKey(field)] || field.proposedValue || '',
-    })
-    canonicalValue = result.value
+    try {
+      const result = await ElMessageBox.prompt('请输入新的字段值', '重新录入冲突字段', {
+        inputValue: draftValues[changeKey(field)] || field.proposedValue || '',
+      })
+      canonicalValue = result.value
+    } catch {
+      return // 用户取消：prompt 以 reject 表达取消
+    }
   }
-  await operateMaintenanceCase(caseId, 'field-conflicts/resolve', {
-    operationId: operationId(),
-    itemCode: field.itemCode,
-    objectId: field.objectId || detail.value?.policyId,
-    fieldCode: field.fieldCode,
-    action,
-    ...(action === 'REENTER' ? { dataType: field.dataType || 'TEXT', canonicalValue } : {}),
-    reason: '后台操作员解决字段冲突',
+  await run(key, async () => {
+    await operateMaintenanceCase(caseId, 'field-conflicts/resolve', {
+      operationId: operationId(),
+      itemCode: field.itemCode,
+      objectId: field.objectId || detail.value?.policyId,
+      fieldCode: field.fieldCode,
+      action,
+      ...(action === 'REENTER' ? { dataType: field.dataType || 'TEXT', canonicalValue } : {}),
+      reason: '后台操作员解决字段冲突',
+    })
+    ElMessage.success('冲突字段已处理')
   })
-  ElMessage.success('冲突字段已处理')
-  await refreshAfterMutation()
 }
 
 const scheduleAction = async (action: 'pause' | 'resume' | 'execute-now') => {
   let reason = '后台操作员提前执行'
   if (action !== 'execute-now') {
-    const result = await ElMessageBox.prompt(
-      action === 'pause' ? '请输入暂停原因' : '请输入恢复原因',
-      action === 'pause' ? '暂停生效计划' : '恢复生效计划',
-      { inputType: 'textarea', inputValidator: (value) => value.trim() ? true : '原因不能为空' },
-    )
-    reason = result.value
+    try {
+      const result = await ElMessageBox.prompt(
+        action === 'pause' ? '请输入暂停原因' : '请输入恢复原因',
+        action === 'pause' ? '暂停生效计划' : '恢复生效计划',
+        { inputType: 'textarea', inputValidator: (value) => value.trim() ? true : '原因不能为空' },
+      )
+      reason = result.value
+    } catch {
+      return // 用户取消
+    }
   }
-  await operateMaintenanceCase(caseId, `effect-schedule/${action}`, { operationId: operationId(), reason })
-  ElMessage.success('操作成功')
-  await refreshAfterMutation()
+  // 键带动作名：暂停/恢复/立即执行三者虽互斥，但「立即执行」可在执行中让状态流转，
+  // 带上动作名可确保转圈的永远是刚点的那一个
+  await run(actionKey('schedule', action), async () => {
+    await operateMaintenanceCase(caseId, `effect-schedule/${action}`, { operationId: operationId(), reason })
+    ElMessage.success('操作成功')
+  })
 }
 
 onMounted(load)
 </script>
 
-<style scoped>
-.workbench-heading, .section-heading, .heading-actions, .section-actions { display: flex; align-items: center; gap: 12px; }
-.workbench-heading, .section-heading { justify-content: space-between; }
-.workbench-heading h3 { margin: 10px 0 0; }
-.case-id { color: var(--el-text-color-secondary); font-size: 13px; font-weight: 400; margin-left: 8px; }
+<style scoped lang="scss">
+.section-heading, .section-actions { display: flex; align-items: center; gap: 12px; }
+.section-heading { justify-content: space-between; }
 .section-heading { margin-bottom: 14px; }
 .section-heading h4 { margin: 0; }
 .section-heading span { color: var(--el-text-color-secondary); font-size: 12px; }
@@ -435,6 +551,6 @@ onMounted(load)
 .two-column { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .hash-text { word-break: break-all; font-family: monospace; }
 .financial-evidence + .financial-evidence { margin-top: 14px; }
-@media (max-width: 900px) { .two-column { grid-template-columns: 1fr; } }
-@media (max-width: 600px) { .workbench-heading, .section-heading { align-items: flex-start; flex-direction: column; } .heading-actions { align-self: stretch; justify-content: space-between; } .responsive-table { min-width: 900px; } }
+@media (max-width: $breakpoint-narrow) { .two-column { grid-template-columns: 1fr; } }
+@media (max-width: $breakpoint-mobile) { .section-heading { align-items: flex-start; flex-direction: column; } /* 窄屏给表格一个横向最小宽度，让列不被压扁——选择器必须只命中 el-table 本身：此前写成 .responsive-table 裸类名，收编 TiTable 后该类名同时落在 .ti-table-wrap 根节点上，会把整张卡片撑到 900px 冲破栅格 */ .el-table.responsive-table, .responsive-table .el-table { min-width: 900px; } }
 </style>

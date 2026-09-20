@@ -2,11 +2,11 @@
   <!-- 产品详情页 -->
   <div class="ti-page">
     <div class="ti-card" v-loading="loading">
-      <div class="detail-header">
-        <el-button :icon="ArrowLeft" text @click="$router.back()">返回</el-button>
-        <h3>产品详情</h3>
-        <TiStatusTag v-if="product" :value="product.status" :label="getStatusLabel(product.status)" />
-        <div class="detail-header__actions">
+      <TiDetailHeader title="产品详情">
+        <template #meta>
+          <TiStatusTag v-if="product" :value="product.status" :label="getStatusLabel(product.status)" />
+        </template>
+        <template #actions>
           <el-button
             v-if="product?.status === 'EFFECTIVE'"
             type="primary"
@@ -25,13 +25,13 @@
           >
             配置模板
           </el-button>
-        </div>
-      </div>
+        </template>
+      </TiDetailHeader>
 
       <template v-if="product">
         <!-- 基本信息 -->
         <el-divider content-position="left">基本信息</el-divider>
-        <el-descriptions :column="3" border>
+        <el-descriptions :column="detailColumns" border>
           <el-descriptions-item label="产品名称">{{ product.name }}</el-descriptions-item>
           <el-descriptions-item label="产品代码">{{ product.code }}</el-descriptions-item>
           <el-descriptions-item label="险种分类">{{ getCategoryLabel(product.category) || product.category }}</el-descriptions-item>
@@ -49,7 +49,7 @@
 
         <!-- 投保条件 -->
         <el-divider content-position="left">投保条件</el-divider>
-        <el-descriptions :column="3" border>
+        <el-descriptions :column="detailColumns" border>
           <el-descriptions-item label="投保年龄">{{ ageRange }}</el-descriptions-item>
           <el-descriptions-item label="投保人数">{{ groupSizeRange }}</el-descriptions-item>
           <el-descriptions-item label="保额区间">{{ insuredAmountRange }}</el-descriptions-item>
@@ -60,17 +60,17 @@
 
         <!-- 费率规则 -->
         <el-divider content-position="left">费率规则</el-divider>
-        <el-descriptions :column="3" border>
+        <el-descriptions :column="detailColumns" border>
           <el-descriptions-item label="定价模式">{{ pricingModeLabel(product.pricingMode) }}</el-descriptions-item>
           <el-descriptions-item label="定价类型">{{ pricingTypeLabel(product.pricingBasicRule?.pricingType) }}</el-descriptions-item>
           <el-descriptions-item label="基础费率">{{ rate(product.pricingBasicRule?.baseRate) }}</el-descriptions-item>
-          <el-descriptions-item label="最低保费">{{ money(product.pricingBasicRule?.minPremium) }}</el-descriptions-item>
-          <el-descriptions-item label="最高保费">{{ money(product.pricingBasicRule?.maxPremium) }}</el-descriptions-item>
+          <el-descriptions-item label="最低保费">{{ formatAmount(product.pricingBasicRule?.minPremium) }}</el-descriptions-item>
+          <el-descriptions-item label="最高保费">{{ formatAmount(product.pricingBasicRule?.maxPremium) }}</el-descriptions-item>
         </el-descriptions>
 
         <!-- 核保配置（产品级核保策略 + 规则集绑定；存量产品未配置时展示占位） -->
         <el-divider content-position="left">核保配置</el-divider>
-        <el-descriptions :column="3" border>
+        <el-descriptions :column="detailColumns" border>
           <el-descriptions-item label="核保模式">
             {{ underwritingModeLabel(product.underwritingConfig?.underwritingMode) }}
           </el-descriptions-item>
@@ -78,7 +78,7 @@
             {{ ruleSetName(product.underwritingConfig?.ruleSetCode) }}
           </el-descriptions-item>
           <el-descriptions-item label="转人工核保阈值">
-            {{ money(product.underwritingConfig?.manualReviewAmountThreshold) }}
+            {{ formatAmount(product.underwritingConfig?.manualReviewAmountThreshold) }}
           </el-descriptions-item>
           <el-descriptions-item label="核保时效">
             {{ days(product.underwritingConfig?.underwritingSLADays) }}
@@ -100,7 +100,7 @@
         <!-- 模板行为配置（出单/保全/理赔/缴费/再保/分红），随模板加载 -->
         <template v-if="template">
           <el-divider content-position="left">出单与流程配置</el-divider>
-          <el-descriptions :column="3" border>
+          <el-descriptions :column="detailColumns" border>
             <el-descriptions-item label="出单模式">{{ issuanceModeLabel(template.issuanceMode) }}</el-descriptions-item>
             <el-descriptions-item label="模板名称">{{ template.templateName || '-' }}</el-descriptions-item>
             <el-descriptions-item label="模板编码">{{ template.templateCode || '-' }}</el-descriptions-item>
@@ -123,14 +123,31 @@
               <span v-else>-</span>
             </el-descriptions-item>
           </el-descriptions>
-          <el-descriptions :column="3" border>
+          <el-descriptions :column="detailColumns" border>
             <el-descriptions-item label="犹豫期">{{ days(template.maintenanceConfig?.freeLookPeriodDays) }}</el-descriptions-item>
             <el-descriptions-item label="退保规则集">{{ template.maintenanceConfig?.surrenderRuleSet || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="批改规则集">{{ template.maintenanceConfig?.endorsementRuleSet || '-' }}</el-descriptions-item>
+            <!--
+              术语说明：与 product/template-config 中的「批改规则集」是同一概念。
+              同一个词在一处解释、另一处不解释，用户读到的就是两个术语；故此处也给出处。
+            -->
+            <el-descriptions-item>
+              <template #label>
+                <span class="term-help">
+                  批改规则集
+                  <el-tooltip
+                    placement="top"
+                    content="批改（endorsement）：保单生效后对保单内容的变更，如投保人/受益人变更、缴费方式变更、保额或保险期间调整。保全案件生效后由保全域出具批单留痕，与「退保」并列同属保全业务。"
+                  >
+                    <el-icon class="term-help__icon"><QuestionFilled /></el-icon>
+                  </el-tooltip>
+                </span>
+              </template>
+              {{ template.maintenanceConfig?.endorsementRuleSet || '-' }}
+            </el-descriptions-item>
           </el-descriptions>
 
           <el-divider content-position="left">理赔配置</el-divider>
-          <el-descriptions :column="3" border>
+          <el-descriptions :column="detailColumns" border>
             <el-descriptions-item label="理赔阶段" :span="3">
               {{ template.claimConfig?.claimStages?.join(' → ') || '-' }}
             </el-descriptions-item>
@@ -143,7 +160,7 @@
           </el-descriptions>
 
           <el-divider content-position="left">缴费配置</el-divider>
-          <el-descriptions :column="3" border>
+          <el-descriptions :column="detailColumns" border>
             <el-descriptions-item label="允许缴费方式" :span="3">
               {{ paymentModesText(template.billingConfig?.allowedPaymentModes) }}
             </el-descriptions-item>
@@ -154,7 +171,7 @@
 
           <template v-if="template.dividendConfig?.distribution">
             <el-divider content-position="left">分红配置</el-divider>
-            <el-descriptions :column="4" border>
+            <el-descriptions :column="summaryColumns" border>
               <el-descriptions-item label="红利分配方式">{{ dividendLabel(template.dividendConfig.distribution) }}</el-descriptions-item>
               <el-descriptions-item label="低档演示利率">{{ pct(template.dividendConfig.lowDemoRate) }}</el-descriptions-item>
               <el-descriptions-item label="中档演示利率">{{ pct(template.dividendConfig.midDemoRate) }}</el-descriptions-item>
@@ -166,7 +183,7 @@
         <!-- 寿险规格（保额管理），寿险线才展示且已配置 -->
         <template v-if="lifeSpec">
           <el-divider content-position="left">保额管理（寿险规格）</el-divider>
-          <el-descriptions :column="3" border>
+          <el-descriptions :column="detailColumns" border>
             <el-descriptions-item label="险种三级分类">{{ productTypeLabel(lifeSpec.productType) }}</el-descriptions-item>
             <el-descriptions-item label="投保年龄">{{ lifeAgeRange }}</el-descriptions-item>
             <el-descriptions-item label="基本保额">{{ lifeSumRange }}</el-descriptions-item>
@@ -208,7 +225,7 @@
                 <el-table-column label="赔付方式" width="110">
                   <template #default="{ row }">{{ payoutTypeLabel(row.payoutType) }}</template>
                 </el-table-column>
-                <el-table-column label="保险金额" width="130">
+                <el-table-column label="保险金额" width="130" align="right">
                   <template #default="{ row }">{{ coverageAmountText(row) }}</template>
                 </el-table-column>
                 <el-table-column label="赔付/给付细则" min-width="240" show-overflow-tooltip>
@@ -229,7 +246,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, Setting, Edit } from '@element-plus/icons-vue'
+import { Setting, Edit, QuestionFilled } from '@element-plus/icons-vue'
 import {
   getProductDetail,
   getProductClauses,
@@ -241,9 +258,17 @@ import {
 import { getClauseDetail, getCoverages, type CoverageVO } from '@/api/clause'
 import { listRuleSets, type RuleSet } from '@/api/rule-engine'
 import { useDict } from '@/composables/useDict'
+import { useDetailColumns } from '@/composables/useDetailColumns'
 import { formatDateTime, formatDate } from '@/utils/date'
+import { formatAmount } from '@/utils/format'
+import TiDetailHeader from '@/components/TiDetailHeader/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import type { ProductDetailVO } from '@/types/business.d'
+
+/** 产品各信息面板：字段短，宽屏 3 档 */
+const detailColumns = useDetailColumns(3)
+/** 分红配置：红利分配方式 + 3 档演示利率共 4 个同类短值并排，宽屏 4 档（语义面板，非通用档位） */
+const summaryColumns = useDetailColumns(4)
 
 const route = useRoute()
 const router = useRouter()
@@ -287,7 +312,6 @@ const productTypeLabel = (v?: string) => v ? lifeProductTypeDictLabel(v) : '-'
 const paymentModesText = (list?: string[]) =>
   list && list.length ? list.map(paymentFrequencyDictLabel).join('、') : '-'
 const rate = (v?: number) => (v != null ? v.toString() : '-')
-const money = (v?: number) => (v != null ? `¥${v.toLocaleString()}` : '-')
 
 /** 核保模式枚举码 → 中文（metadata ProductEnum.UnderwritingMode，前端本地映射） */
 const underwritingModeLabel = (v?: string) =>
@@ -313,7 +337,7 @@ const insuredAmountRange = computed(() => {
   const min = product.value?.insureCondition?.minInsuredAmount
   const max = product.value?.insureCondition?.maxInsuredAmount
   if (min == null && max == null) return '-'
-  return `${min != null ? '¥' + min.toLocaleString() : '不限'} ~ ${max != null ? '¥' + max.toLocaleString() : '不限'}`
+  return `${min != null ? formatAmount(min) : '不限'} ~ ${max != null ? formatAmount(max) : '不限'}`
 })
 
 // 寿险规格区间展示
@@ -324,7 +348,7 @@ const lifeSumRange = computed(() => {
   const min = lifeSpec.value?.sumInsuredRange?.minSumInsured
   const max = lifeSpec.value?.sumInsuredRange?.maxSumInsured
   if (min == null && max == null) return '-'
-  return `${min != null ? '¥' + min.toLocaleString() : '不限'} ~ ${max != null ? '¥' + max.toLocaleString() : '不限'}`
+  return `${min != null ? formatAmount(min) : '不限'} ~ ${max != null ? formatAmount(max) : '不限'}`
 })
 
 const coverageTypeLabel = (v?: string) => v ? coverageTypeDictLabel(v) : '-'
@@ -332,9 +356,9 @@ const payoutTypeLabel = (v?: string) => v ? payoutTypeDictLabel(v) : '-'
 
 /** 保险金额展示：优先最高保额，退化到赔付上限/日津贴 */
 const coverageAmountText = (row: CoverageVO): string => {
-  if (row.coverageAmount != null) return `¥${Number(row.coverageAmount).toLocaleString()}`
-  if (row.maxPayout != null) return `¥${Number(row.maxPayout).toLocaleString()}`
-  if (row.dailyAmount != null) return `¥${Number(row.dailyAmount).toLocaleString()}/天`
+  if (row.coverageAmount != null) return formatAmount(row.coverageAmount)
+  if (row.maxPayout != null) return formatAmount(row.maxPayout)
+  if (row.dailyAmount != null) return `${formatAmount(row.dailyAmount)}/天`
   return '-'
 }
 
@@ -345,18 +369,18 @@ const coverageSummary = (row: CoverageVO): string => {
   if (row.payoutType === 'REIMBURSEMENT') {
     if (row.reimbursementRatio != null) parts.push(`社保内${row.reimbursementRatio * 100}%`)
     if (row.outSocialRatio != null) parts.push(`社保外${row.outSocialRatio * 100}%`)
-    if (row.deductibleAmount != null) parts.push(`免赔${row.deductibleAmount}元`)
-    if (row.maxPayout != null) parts.push(`上限${Number(row.maxPayout).toLocaleString()}元`)
+    if (row.deductibleAmount != null) parts.push(`免赔${formatAmount(row.deductibleAmount)}`)
+    if (row.maxPayout != null) parts.push(`上限${formatAmount(row.maxPayout)}`)
   } else if (row.payoutType === 'PERIODIC') {
-    if (row.dailyAmount != null) parts.push(`日津贴${row.dailyAmount}元`)
+    if (row.dailyAmount != null) parts.push(`日津贴${formatAmount(row.dailyAmount)}`)
     if (row.deductibleDays != null) parts.push(`免赔${row.deductibleDays}天`)
     if (row.maxDaysPerClaim != null) parts.push(`每次${row.maxDaysPerClaim}天`)
     if (row.maxDaysTotal != null) parts.push(`累计${row.maxDaysTotal}天`)
   } else if (row.payoutType === 'PROPORTIONAL' && row.proportion != null) {
     parts.push(`比例${row.proportion * 100}%`)
   } else if (row.payoutType === 'ACTUAL_LOSS') {
-    if (row.deductibleAmount != null) parts.push(`免赔${row.deductibleAmount}元`)
-    if (row.maxPayout != null) parts.push(`上限${Number(row.maxPayout).toLocaleString()}元`)
+    if (row.deductibleAmount != null) parts.push(`免赔${formatAmount(row.deductibleAmount)}`)
+    if (row.maxPayout != null) parts.push(`上限${formatAmount(row.maxPayout)}`)
   }
   return parts.join('、') || '-'
 }
@@ -441,22 +465,17 @@ onMounted(async () => {
 </script>
 
 <style scoped lang="scss">
-.detail-header {
-  display: flex;
+/* 术语旁的问号图标：与 product/template-config 的标签说明同一观感 */
+.term-help {
+  display: inline-flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 20px;
+  gap: 4px;
+}
 
-  h3 {
-    margin: 0;
-    font-size: 18px;
-    flex: 1;
-  }
-
-  &__actions {
-    display: flex;
-    gap: 8px;
-  }
+.term-help__icon {
+  color: $text-secondary;
+  font-size: 13px;
+  cursor: help;
 }
 
 .clause-title {
@@ -470,7 +489,7 @@ onMounted(async () => {
   }
 
   .clause-meta {
-    color: #909399;
+    color: $text-secondary;
     font-size: 12px;
   }
 }
@@ -481,7 +500,7 @@ onMounted(async () => {
 
 .clause-desc {
   margin: 10px 0 0;
-  color: #606266;
+  color: $text-regular;
   font-size: 13px;
   line-height: 1.6;
 }

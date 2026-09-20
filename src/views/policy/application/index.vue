@@ -43,6 +43,7 @@
       :page-num="pagination.pageNum"
       :page-size="pagination.pageSize"
       :loading="tableLoading"
+      :max-height="'var(--ti-table-max-height-default)'"
       row-key="insuranceId"
       @page-change="onPageChange"
       @size-change="onSizeChange"
@@ -61,7 +62,7 @@
       </el-table-column>
       <el-table-column prop="exactPremium" label="总保费" width="130" align="right">
         <template #default="{ row }">
-          {{ row.exactPremium != null ? `¥${row.exactPremium.toLocaleString()}` : '-' }}
+          {{ formatAmount(row.exactPremium) }}
         </template>
       </el-table-column>
       <el-table-column prop="lineCount" label="险种段" width="90" align="center" />
@@ -71,9 +72,9 @@
         </template>
       </el-table-column>
       <!-- @vue-generic {InsuranceVO} -->
-      <el-table-column label="操作" width="90" fixed="right">
+      <el-table-column label="操作" min-width="100" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
-          <el-button link type="primary" :icon="View" @click="handleDetail(row)">详情</el-button>
+          <el-button size="small" :icon="View" @click="handleDetail(row)">详情</el-button>
         </template>
       </el-table-column>
     </TiTable>
@@ -85,7 +86,7 @@
       destroy-on-close
     >
       <div v-loading="detailLoading" class="detail-content">
-        <el-descriptions v-if="insuranceDetail" :column="2" border>
+        <el-descriptions v-if="insuranceDetail" :column="detailColumns" border>
           <el-descriptions-item label="投保单号">{{ insuranceDetail.insuranceNo }}</el-descriptions-item>
           <el-descriptions-item label="出单业务号">{{ insuranceDetail.bizNo || '-' }}</el-descriptions-item>
           <el-descriptions-item label="投保状态">
@@ -98,10 +99,10 @@
           <el-descriptions-item label="被保险人数">{{ insuranceDetail.insuredCount ?? '-' }}</el-descriptions-item>
           <el-descriptions-item label="险种分类">{{ insuranceDetail.insuranceType || '-' }}</el-descriptions-item>
           <el-descriptions-item label="基本保额">
-            {{ formatMoney(insuranceDetail.sumInsured, insuranceDetail.currency) }}
+            {{ formatAmount(insuranceDetail.sumInsured, insuranceDetail.currency) }}
           </el-descriptions-item>
           <el-descriptions-item label="总保费">
-            {{ formatMoney(insuranceDetail.exactPremium, insuranceDetail.currency) }}
+            {{ formatAmount(insuranceDetail.exactPremium, insuranceDetail.currency) }}
           </el-descriptions-item>
           <el-descriptions-item label="缴费频率">{{ insuranceDetail.paymentFrequency || '-' }}</el-descriptions-item>
           <el-descriptions-item label="缴费年数">{{ insuranceDetail.premiumPaymentYears ?? '-' }}</el-descriptions-item>
@@ -139,7 +140,9 @@ import TiSearchForm from '@/components/TiSearchForm/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import TiCopyText from '@/components/TiCopyText/index.vue'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
+import { useDetailColumns } from '@/composables/useDetailColumns'
 import { useDict } from '@/composables/useDict'
+import { formatAmount } from '@/utils/format'
 
 /** 投保单查询参数 */
 const queryParams = reactive({
@@ -163,6 +166,9 @@ const { tableData, tableLoading, pagination, fetchData, handleSearch, handleRese
 // 初始加载
 fetchData()
 
+/** 描述区：字段中短，宽屏 2 档 */
+const detailColumns = useDetailColumns(2)
+
 const detailVisible = ref(false)
 const detailLoading = ref(false)
 const insuranceDetail = ref<InsuranceVO>()
@@ -181,11 +187,6 @@ const handleDetail = async (row: InsuranceVO) => {
   }
 }
 
-const formatMoney = (value?: number, currency = 'CNY'): string => {
-  if (value == null) return '-'
-  return `${currency} ${value.toLocaleString()}`
-}
-
 /** 导出投保单 */
 const handleExport = () => {
   ElMessage.info('导出功能开发中...')
@@ -196,10 +197,10 @@ const handleExport = () => {
 <style scoped lang="scss">
 .toolbar-stat {
   font-size: 14px;
-  color: #606266;
+  color: $text-regular;
 
   b {
-    color: #409eff;
+    color: $primary-color;
     font-size: 16px;
   }
 }

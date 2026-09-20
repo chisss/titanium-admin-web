@@ -25,6 +25,7 @@
       :page-num="pagination.pageNum"
       :page-size="pagination.pageSize"
       :loading="tableLoading"
+      :max-height="'var(--ti-table-max-height-lean)'"
       @page-change="onPageChange"
       @size-change="onSizeChange"
     >
@@ -37,7 +38,7 @@
         <template #default="{ row }">{{ underwritingTypeLabel(row.underwritingType) }}</template>
       </el-table-column>
       <el-table-column prop="amount" label="核保金额" width="130" align="right">
-        <template #default="{ row }">{{ row.amount != null ? `¥${Number(row.amount).toLocaleString()}` : '-' }}</template>
+        <template #default="{ row }">{{ formatAmount(row.amount) }}</template>
       </el-table-column>
       <el-table-column prop="riskLevel" label="风险等级" width="110">
         <template #default="{ row }">{{ riskLevelLabel(row.riskLevel) }}</template>
@@ -52,17 +53,21 @@
         </template>
       </el-table-column>
       <el-table-column prop="underwritingCompletedTime" label="核保完成时间" width="160">
-        <template #default="{ row }">{{ row.underwritingCompletedTime || '-' }}</template>
+        <!-- 时间列统一走全局日期工具，避免直出后端 ISO 串（2026-09-18 全站实测 7 页 8 列） -->
+        <template #default="{ row }">{{ formatDateTime(row.underwritingCompletedTime) }}</template>
       </el-table-column>
-      <el-table-column label="操作" min-width="140" fixed="right" class-name="ti-action-column">
+      <el-table-column label="操作" min-width="160" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
           <el-button size="small" :icon="View" @click="toDetail(row.underwritingId)">详情</el-button>
+          <!-- 🔴 权限码修正：原写 underwriting:approve，该码在 admin 的 t_permission/t_menu 种子里
+               **0 命中** ⇒ 对非超管永久隐藏。真源是 UnderwritingProxyController：
+               `PUT /underwriting/{id}/decision` 的 @PreAuthorize 是 UNDERWRITING_DECIDE（=underwriting:decide）。 -->
           <el-button
             v-if="row.status === 'MANUAL_REVIEW'"
             text
             size="small"
             type="primary"
-            v-permission="'underwriting:approve'"
+            v-permission="'underwriting:decide'"
             @click="toDetail(row.underwritingId)"
           >
             审核
@@ -87,6 +92,7 @@ import TiCopyText from '@/components/TiCopyText/index.vue'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
 import { useDict } from '@/composables/useDict'
 import { formatDateTime } from '@/utils/date'
+import { formatAmount } from '@/utils/format'
 import type { PageResult } from '@/types/api.d'
 
 const router = useRouter()

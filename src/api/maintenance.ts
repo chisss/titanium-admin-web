@@ -226,6 +226,7 @@ export interface MaintenanceSnapshotReference {
 
 export interface MaintenanceCaseDetail {
   caseId: string
+  maintenanceNo?: string
   policyId: string
   policyNumber?: string
   customerId: string

@@ -44,3 +44,17 @@ Thumbs.db
 # ===== 自动生成的类型声明 =====
 src/types/auto-imports.d.ts
 src/types/components.d.ts
+.planning
+.docs/
+
+# ===== UI 走查证据截图（本地留存，不入库）=====
+docs/ui-audit/**/*.png
+docs/ui-audit/after-*/
+docs/ui-audit/baseline-*/
+
+# ===== harness 运行态与归档（过程文件，不入库）=====
+.harness-active
+harness-archive/
+harness-*.json
+harness-*.txt
+harness-*.sh

@@ -33,7 +33,7 @@
 
         <el-alert v-if="callbackError" :title="callbackError" type="error" show-icon :closable="false" class="table-alert" />
         <div class="table-scroll">
-          <TiTable :data="callbacks" :total="callbackPage.total" :page-num="callbackPage.pageNum" :page-size="callbackPage.pageSize" :loading="callbackLoading" @page-change="changeCallbackPage" @size-change="changeCallbackSize">
+          <TiTable :data="callbacks" :total="callbackPage.total" :page-num="callbackPage.pageNum" :page-size="callbackPage.pageSize" :loading="callbackLoading" :max-height="'var(--ti-table-max-height-tabbed)'" @page-change="changeCallbackPage" @size-change="changeCallbackSize">
             <el-table-column prop="callbackId" label="回调ID" min-width="190"><template #default="{ row }"><TiCopyText :text="row.callbackId" /></template></el-table-column>
             <el-table-column prop="paymentId" label="支付订单" min-width="190"><template #default="{ row }"><TiCopyText :text="row.paymentId" /></template></el-table-column>
             <el-table-column prop="channelCode" label="渠道" width="120" />
@@ -41,11 +41,17 @@
             <el-table-column label="安全模式" width="135"><template #default="{ row }"><TiStatusTag :value="row.securityMode" :label="securityModeLabel(row.securityMode)" /></template></el-table-column>
             <el-table-column prop="channelTransactionId" label="渠道交易号" min-width="190"><template #default="{ row }"><TiCopyText :text="row.channelTransactionId" /></template></el-table-column>
             <el-table-column label="渠道结果" width="105"><template #default="{ row }"><TiStatusTag :value="row.resultStatus" :label="resultLabel(row.resultStatus)" /></template></el-table-column>
-            <el-table-column label="金额" width="135"><template #default="{ row }">{{ amountText(row.amount, row.currency) }}</template></el-table-column>
+            <el-table-column label="金额" width="135" align="right"><template #default="{ row }">{{ amountText(row.amount, row.currency) }}</template></el-table-column>
             <el-table-column label="处理状态" width="110"><template #default="{ row }"><TiStatusTag :value="row.status" :label="callbackStatusLabel(row.status)" /></template></el-table-column>
             <el-table-column prop="failureMessage" label="失败原因" min-width="170" show-overflow-tooltip />
-            <el-table-column prop="occurredAt" label="发生时间" width="170" />
-            <el-table-column prop="updatedAt" label="更新时间" width="170" />
+            <el-table-column prop="occurredAt" label="发生时间" width="170">
+              <!-- 时间列统一走全局日期工具，避免直出后端 ISO 串（2026-09-18 全站实测 7 页 8 列） -->
+              <template #default="{ row }">{{ formatDateTime(row.occurredAt) }}</template>
+            </el-table-column>
+            <!-- 时间列统一走全局日期工具，避免直出后端 ISO 串（2026-09-18 全站实测 7 页 8 列） -->
+            <el-table-column prop="updatedAt" label="更新时间" width="170">
+              <template #default="{ row }">{{ formatDateTime(row.updatedAt) }}</template>
+            </el-table-column>
             <template #empty><el-empty description="暂无支付回调" :image-size="72" /></template>
           </TiTable>
         </div>
@@ -74,7 +80,7 @@
 
         <el-alert v-if="securityError" :title="securityError" type="error" show-icon :closable="false" class="table-alert" />
         <div class="table-scroll">
-          <TiTable :data="securityEvents" :total="securityPage.total" :page-num="securityPage.pageNum" :page-size="securityPage.pageSize" :loading="securityLoading" @page-change="changeSecurityPage" @size-change="changeSecuritySize">
+          <TiTable :data="securityEvents" :total="securityPage.total" :page-num="securityPage.pageNum" :page-size="securityPage.pageSize" :loading="securityLoading" :max-height="'var(--ti-table-max-height-tabbed)'" @page-change="changeSecurityPage" @size-change="changeSecuritySize">
             <el-table-column prop="eventId" label="事件ID" min-width="190"><template #default="{ row }"><TiCopyText :text="row.eventId" /></template></el-table-column>
             <el-table-column prop="callbackId" label="回调ID" min-width="190"><template #default="{ row }"><TiCopyText :text="row.callbackId" /></template></el-table-column>
             <el-table-column prop="paymentId" label="支付订单" min-width="190"><template #default="{ row }"><TiCopyText :text="row.paymentId" /></template></el-table-column>
@@ -84,7 +90,10 @@
             <el-table-column label="级别" width="95"><template #default="{ row }"><TiStatusTag :value="row.severity" :label="securitySeverityLabel(row.severity)" /></template></el-table-column>
             <el-table-column label="告警" width="95"><template #default="{ row }"><TiStatusTag :value="row.alertTriggered ? 'FAILED' : 'PENDING'" :label="row.alertTriggered ? '已触发' : '仅审计'" /></template></el-table-column>
             <el-table-column prop="message" label="事件说明" min-width="220" show-overflow-tooltip />
-            <el-table-column prop="createdAt" label="事件时间" width="170" />
+            <el-table-column prop="createdAt" label="事件时间" width="170">
+              <!-- 时间列统一走全局日期工具，避免直出后端 ISO 串（2026-09-18 全站实测） -->
+              <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
+            </el-table-column>
             <template #empty><el-empty description="暂无安全事件" :image-size="72" /></template>
           </TiTable>
         </div>
@@ -107,17 +116,20 @@
 
         <el-alert v-if="collectionError" :title="collectionError" type="error" show-icon :closable="false" class="table-alert" />
         <div class="table-scroll">
-          <TiTable :data="collections" :total="collectionPage.total" :page-num="collectionPage.pageNum" :page-size="collectionPage.pageSize" :loading="collectionLoading" @page-change="changeCollectionPage" @size-change="changeCollectionSize">
+          <TiTable :data="collections" :total="collectionPage.total" :page-num="collectionPage.pageNum" :page-size="collectionPage.pageSize" :loading="collectionLoading" :max-height="'var(--ti-table-max-height-tabbed)'" @page-change="changeCollectionPage" @size-change="changeCollectionSize">
             <el-table-column prop="orderId" label="收款订单" min-width="190"><template #default="{ row }"><TiCopyText :text="row.orderId" /></template></el-table-column>
             <el-table-column prop="postingId" label="入账ID" min-width="190"><template #default="{ row }"><TiCopyText :text="row.postingId" /></template></el-table-column>
             <el-table-column prop="paymentId" label="支付订单" min-width="190"><template #default="{ row }"><TiCopyText :text="row.paymentId" /></template></el-table-column>
-            <el-table-column label="金额" width="135"><template #default="{ row }">{{ amountText(row.amount, row.currency) }}</template></el-table-column>
+            <el-table-column label="金额" width="135" align="right"><template #default="{ row }">{{ amountText(row.amount, row.currency) }}</template></el-table-column>
             <el-table-column label="Billing状态" width="115"><template #default="{ row }"><TiStatusTag :value="row.status" :label="collectionStatusLabel(row.status)" /></template></el-table-column>
             <el-table-column label="Payment状态" width="120"><template #default="{ row }"><TiStatusTag :value="row.paymentStatus" /></template></el-table-column>
-            <el-table-column prop="updatedAt" label="更新时间" width="170" />
-            <el-table-column label="操作" :fixed="isNarrowScreen ? false : 'right'" width="110">
+            <!-- 时间列统一走全局日期工具，避免直出后端 ISO 串（2026-09-18 全站实测 7 页 8 列） -->
+            <el-table-column prop="updatedAt" label="更新时间" width="170">
+              <template #default="{ row }">{{ formatDateTime(row.updatedAt) }}</template>
+            </el-table-column>
+            <el-table-column label="操作" :fixed="isNarrowScreen ? false : 'right'" min-width="100" class-name="ti-action-column">
               <template #default="{ row }">
-                <el-button v-if="row.status === 'PENDING'" v-permission="'billing:payment-operations:reconcile'" link type="primary" :loading="reconcilingId === row.orderId" @click="reconcile(row)">人工对账</el-button>
+                <el-button v-if="row.status === 'PENDING'" v-permission="'billing:payment-operations:reconcile'" size="small" type="primary" :loading="reconcilingId === row.orderId" @click="reconcile(row)">人工对账</el-button>
               </template>
             </el-table-column>
             <template #empty><el-empty description="暂无收款订单" :image-size="72" /></template>
@@ -145,9 +157,12 @@ import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import TiTable from '@/components/TiTable/index.vue'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
 import { useDict } from '@/composables/useDict'
+import { MEDIA_MAX_MOBILE } from '@/constants/layout'
+import { formatDateTime } from '@/utils/date'
+import { formatAmount } from '@/utils/format'
 
 const activeTab = ref('callbacks')
-const isNarrowScreen = useMediaQuery('(max-width: 767px)')
+const isNarrowScreen = useMediaQuery(MEDIA_MAX_MOBILE)
 const callbackQuery = reactive<CallbackAuditQuery>({ pageNum: 1, pageSize: 20 })
 const securityQuery = reactive<CallbackSecurityEventQuery>({ pageNum: 1, pageSize: 20 })
 const collectionQuery = reactive<CollectionOrderQuery>({ pageNum: 1, pageSize: 20 })
@@ -171,7 +186,7 @@ const reconcilingId = ref('')
 let securityEventsLoaded = false
 let collectionsLoaded = false
 
-const amountText = (amount: number, currency: string) => `${currency} ${Number(amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+const amountText = (amount: number, currency: string) => formatAmount(amount, currency)
 const { getLabel: resultLabel } = useDict('PAYMENT_CALLBACK_RESULT')
 const { getLabel: callbackStatusLabel } = useDict('PAYMENT_CALLBACK_STATUS')
 const { getLabel: collectionStatusLabel } = useDict('PAYMENT_COLLECTION_STATUS')
@@ -233,13 +248,14 @@ async function reconcile(value: unknown) {
 onMounted(fetchCallbacks)
 </script>
 
-<style scoped>
+<style scoped lang="scss">
 .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-h2 { margin: 0; font-size: 22px; }
+// 页面主标题统一 $font-size-xl（18px）：与详情页头及其余页面裸 h2 同档（2026-09-18 实测原为 22px，属第三档）
+h2 { margin: 0; font-size: $font-size-xl; }
 .table-alert { margin-bottom: 12px; }
 .table-scroll { min-width: 0; overflow-x: auto; }
 .table-scroll :deep(.ti-table-wrap) { min-width: 1080px; }
-@media (max-width: 767px) {
+@media (max-width: $breakpoint-mobile) {
   .payment-operations :deep(.el-date-editor) { width: min(100%, 340px); }
   .payment-operations :deep(.ti-search-basic) { align-items: flex-start; }
 }

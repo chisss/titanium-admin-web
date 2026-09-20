@@ -1,40 +1,42 @@
 <template>
   <!-- 理赔案件详情 -->
   <div class="ti-page">
-    <!-- 头部：报案号 + 状态标签 -->
-    <div class="ti-detail-header">
-      <div class="header-left">
-        <el-button :icon="ArrowLeft" text @click="goBack">返回列表</el-button>
-        <el-divider direction="vertical" />
-        <span class="header-title">理赔案件详情</span>
-        <TiStatusTag v-if="claim" :value="claim.status" :label="claimStatusLabel(claim.status)" class="header-tag" />
-      </div>
-      <div class="header-right" v-if="claim">
-        <el-button
-          v-for="action in currentActions"
-          :key="action.key"
-          :type="action.type"
-          :disabled="!claim || actionLoading"
-          @click="onAction(action)"
-        >
-          {{ action.label }}
-        </el-button>
-      </div>
-    </div>
+    <!-- 🔴 头部此前在卡片之外、且自带 .ti-detail-header/.header-left/.header-right 三套类名
+         （全站唯一的竖线分隔写法）；卡片又同时挂了 el-card 与 .ti-card —— EP 的 padding 在
+         .el-card__body 上、.ti-card 的 padding 在外层容器上，两者叠加成 40px 双内边距，
+         外加 EP 的 1px 边框与 .ti-card 的阴影两种卡片语言并存。现统一为 TiDetailHeader + 单层卡片。 -->
+    <div class="ti-card">
+      <TiDetailHeader title="理赔案件详情">
+        <template #meta>
+          <TiStatusTag v-if="claim" :value="claim.status" :label="claimStatusLabel(claim.status)" />
+        </template>
+        <template #actions v-if="claim">
+          <!-- 🔴 除 :disabled 外还须 :loading。原先只靠 :disabled，按钮只是变灰——
+               写动作在途时（快赔支付等）用户看到的是「按钮不能点」，而不是「正在执行」，
+               与各对话框 footer 的 :loading="actionLoading" 也是两套观感。二者补齐为同一套。 -->
+          <el-button
+            v-for="action in currentActions"
+            :key="action.key"
+            :type="action.type"
+            :disabled="!claim || actionLoading"
+            :loading="actionLoading"
+            @click="onAction(action)"
+          >
+            {{ action.label }}
+          </el-button>
+        </template>
+      </TiDetailHeader>
 
-    <!-- 基础信息卡片 -->
-    <el-card class="ti-card" shadow="never">
-      <template #header>
-        <span class="card-title">基础信息</span>
-      </template>
-      <el-descriptions v-if="claim" :column="2" border>
+      <el-divider content-position="left">基础信息</el-divider>
+      <el-descriptions v-if="claim" :column="detailColumns" border>
         <el-descriptions-item label="报案号">
           <el-text class="mono">{{ claim.claimNumber }}</el-text>
         </el-descriptions-item>
         <el-descriptions-item label="理赔类型">{{ claimTypeLabel(claim.claimType) }}</el-descriptions-item>
-        <el-descriptions-item label="出险日期">{{ formatDateTime(claim.incidentDate) }}</el-descriptions-item>
+        <!-- 「时间」而非「日期」：与列表页同项统一，且后端 Claim.incidentDate 为 LocalDateTime -->
+        <el-descriptions-item label="出险时间">{{ formatDateTime(claim.incidentDate) }}</el-descriptions-item>
         <el-descriptions-item label="申请赔付">
-          <span class="amount">¥{{ formatAmount(claim.claimAmount) }}</span>
+          <span class="amount">{{ formatAmount(claim.claimAmount) }}</span>
         </el-descriptions-item>
         <el-descriptions-item label="报案时间">{{ formatDateTime(claim.createdAt) }}</el-descriptions-item>
         <el-descriptions-item label="更新时间">{{ formatDateTime(claim.updatedAt) }}</el-descriptions-item>
@@ -45,10 +47,10 @@
           </el-tag>
         </el-descriptions-item>
         <el-descriptions-item v-if="claim.assessedPayableAmount != null" label="定损核定">
-          <span class="amount">¥{{ formatAmount(claim.assessedPayableAmount) }}</span>
+          <span class="amount">{{ formatAmount(claim.assessedPayableAmount) }}</span>
         </el-descriptions-item>
         <el-descriptions-item v-if="claim.settledAmount != null" label="核定赔付">
-          <span class="amount">¥{{ formatAmount(claim.settledAmount) }}</span>
+          <span class="amount">{{ formatAmount(claim.settledAmount) }}</span>
         </el-descriptions-item>
         <el-descriptions-item v-if="claim.paymentNo" label="支付单号">
           <el-text class="mono">{{ claim.paymentNo }}</el-text>
@@ -62,7 +64,7 @@
         <el-descriptions-item label="事故描述" :span="2">{{ claim.incidentDescription || '-' }}</el-descriptions-item>
       </el-descriptions>
       <el-skeleton v-else :rows="5" animated />
-    </el-card>
+    </div>
 
     <!-- 赔付中提示（结算后待支付域回写，禁止重复结算） -->
     <el-alert
@@ -126,7 +128,7 @@
         <el-form-item label="赔付金额" prop="settledAmount">
           <el-input-number v-model="settleForm.settledAmount" :min="0.01" :precision="2" style="width: 200px" />
           <div v-if="claim?.assessedPayableAmount != null" class="form-tip">
-            本案件已定损，核定赔付金额须等于定损核定额 ¥{{ formatAmount(claim.assessedPayableAmount) }}，不得人工调整
+            本案件已定损，核定赔付金额须等于定损核定额 {{ formatAmount(claim.assessedPayableAmount) }}，不得人工调整
           </div>
         </el-form-item>
         <el-form-item label="支付方式" prop="payoutMethod">
@@ -149,6 +151,12 @@
 
     <!-- 拒赔 -->
     <el-dialog v-model="rejectDialog" title="拒赔" width="560px" destroy-on-close>
+      <!-- 🔴 不可逆提示：拒赔后案件只能结案归档，无回退操作，故与同页「结案」保持一致要给出后果说明
+           （结案走 ElMessageBox.confirm 的 warning，本页用表单对话框，故以 el-alert 承载同样的信息）。
+           与保单详情页「退保/终止」对话框的 el-alert type="warning" 是同一范式，不要删。 -->
+      <el-alert type="warning" :closable="false" class="ti-dialog-alert">
+        拒赔为终局决定，提交后不可撤销，案件将进入「已拒赔」状态并只能结案归档。
+      </el-alert>
       <el-form ref="rejectFormRef" :model="rejectForm" :rules="rejectRules" label-width="100px">
         <el-form-item label="拒赔原因" prop="reasonCode">
           <el-select v-model="rejectForm.reasonCode" placeholder="请选择拒赔原因" style="width: 100%">
@@ -169,9 +177,8 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
-import { ArrowLeft } from '@element-plus/icons-vue'
 import {
   getClaimDetail,
   updateClaimStatus,
@@ -185,12 +192,22 @@ import {
 import type { ClaimCaseVO } from '@/api/claim'
 import { showErrorIfUnhandled } from '@/api/http'
 import { useDict } from '@/composables/useDict'
+import { useDetailColumns } from '@/composables/useDetailColumns'
+import { formatAmount } from '@/utils/format'
+// 日期格式化统一走全局工具：本文件此前自带一份 `replace('T',' ')` 的本地实现，
+// 与 claim/list 各存一份（全站 29 个文件用全局工具，仅理赔域两处重复）。
+// 本地实现是纯字符串替换：不校验有效性、遇毫秒会保留 `.123`、遇 `Z` 后缀会原样带出，
+// 换后端序列化格式即静默出错（2026-09-18 全站实测）。
+import { formatDateTime } from '@/utils/date'
+import TiDetailHeader from '@/components/TiDetailHeader/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
 
 
 const route = useRoute()
-const router = useRouter()
 const claimId = route.params.id as string
+
+/** 理赔基础信息：字段中长（拒赔原因/事故描述已用 :span 独占整行），宽屏 3 档 */
+const detailColumns = useDetailColumns(3)
 
 const claim = ref<ClaimCaseVO | null>(null)
 const actionLoading = ref(false)
@@ -212,13 +229,6 @@ const { dictOptions: payoutMethodOptions } = useDict('CLAIM_PAYOUT_METHOD')
 
 /** 拒赔原因字典（后端字典驱动，支持国际化） */
 const { dictOptions: rejectReasonOptions, getLabel: rejectReasonLabel } = useDict('CLAIM_REJECT_REASON')
-
-const formatDateTime = (dateStr: string | undefined) => {
-  if (!dateStr) return '-'
-  return dateStr.replace('T', ' ')
-}
-
-const formatAmount = (amount: number | undefined) => (amount ?? 0).toLocaleString()
 
 interface ClaimAction {
   key: string
@@ -307,7 +317,6 @@ const loadDetail = async () => {
 
 onMounted(loadDetail)
 
-const goBack = () => router.push('/claim/list')
 
 /** 简单状态流转（立案/核赔通过/快赔）带中文确认框 */
 const confirmSimpleAction = async (action: ClaimAction) => {
@@ -470,40 +479,13 @@ const submitReject = async () => {
 </script>
 
 <style scoped lang="scss">
-.ti-detail-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-
-  .header-left {
-    display: flex;
-    align-items: center;
-
-    .header-title {
-      font-size: 16px;
-      font-weight: 600;
-      color: #303133;
-    }
-
-    .header-tag {
-      margin-left: 12px;
-    }
-  }
-}
-
 .ti-card {
-  .card-title {
-    font-weight: 600;
-    color: #303133;
-  }
-
   .mono {
     font-family: monospace;
   }
 
   .amount {
-    color: #e6a23c;
+    color: $warning-color;
     font-weight: 600;
   }
 }
@@ -514,13 +496,13 @@ const submitReject = async () => {
 
 .unit {
   margin-left: 8px;
-  color: #909399;
+  color: $text-secondary;
 }
 
 .form-tip {
   margin-top: 4px;
   font-size: 12px;
   line-height: 1.5;
-  color: #e6a23c;
+  color: $warning-color;
 }
 </style>

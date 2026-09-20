@@ -18,7 +18,7 @@
         class="page-alert"
       />
 
-      <el-form ref="formRef" :model="form" :rules="rules" label-position="top" class="create-form">
+      <el-form ref="formRef" :model="form" :rules="rules" label-position="top" class="ti-form-width--wide">
         <el-form-item label="保单 ID" prop="policyId">
           <el-input v-model="form.policyId" clearable placeholder="输入需要变更的保单 ID" />
         </el-form-item>
@@ -41,6 +41,15 @@
           </el-select>
           <div v-if="publishedItems.length === 0 && !configurationLoading" class="field-tip">
             暂无配置数据，可先到“保全项配置”确认已发布配置。
+            <!-- 文案已给出去处，补一个真入口，避免「有提示、无门」 -->
+            <el-button
+              v-permission="'maintenance:config:view'"
+              link
+              type="primary"
+              @click="router.push('/maintenance/configuration')"
+            >
+              去保全项配置
+            </el-button>
           </div>
         </el-form-item>
         <el-form-item label="生效方式" prop="effectiveTimeType">
@@ -150,16 +159,15 @@ const submit = async () => {
 onMounted(loadConfigurations)
 </script>
 
-<style scoped>
+<style scoped lang="scss">
 .page-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 18px; }
 .page-heading h3 { margin: 0 0 6px; }
 .page-heading p { margin: 0; color: var(--el-text-color-secondary); }
 .page-alert { margin-bottom: 24px; }
-.create-form { max-width: 760px; }
 .full-width { width: 100%; }
 .field-tip { color: var(--el-text-color-secondary); font-size: 12px; margin-top: 6px; }
 .form-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 12px; }
-@media (max-width: 600px) {
+@media (max-width: $breakpoint-mobile) {
   .page-heading { align-items: stretch; flex-direction: column-reverse; }
   .form-actions { flex-direction: column-reverse; }
   .form-actions .el-button { width: 100%; margin-left: 0; }

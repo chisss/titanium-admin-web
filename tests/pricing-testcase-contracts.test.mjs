@@ -40,7 +40,12 @@ test('运行测试必须展示逐条明细，而不是只回报计数', async ()
   assert.match(source, /row\.passed \? '通过' : '失败'/)
   // 失败原因是唯一可自查线索（稳定错误码或可读文案），不得只有计数
   assert.match(source, /row\.failureReason \|\| '-'/)
-  assert.match(source, /:loading="testRunning"/)
+  // 🔴 断言的是「触发器绑定了本行的在途状态」这一**意图**，不是某个变量名。
+  //    原实现用全局布尔 `testRunning`，2026-09-20 收敛为按行键的 `isRowBusy(row)`：
+  //    全局布尔会让表格里**每一行**的「更多」一起转圈（UI 走查第四轮 §8.1）。
+  //    契约测试锁实现形式会在重构时误报——本次即如此。锁意图才能既保护行为、又不挡改进。
+  assert.match(source, /const \{ rowPending, run \} = useRowAction/)
+  assert.match(source, /:loading="isRowBusy\(row\)"/)
 })
 
 test('试算门禁出参在前端是强类型，明细字段与后端 VO 对齐', async () => {

@@ -23,7 +23,7 @@
           <template v-else>{{ row[col.prop] ?? '-' }}</template>
         </template>
       </el-table-column>
-      <el-table-column label="操作" :min-width="operationWidth" fixed="right">
+      <el-table-column label="操作" fixed="right" min-width="200" class-name="ti-action-column">
         <template #default="{ row }">
           <template v-for="action in visibleActions(row)" :key="action.key">
             <el-button size="small" :type="action.type" @click="runExtraAction(action, row)">
@@ -38,7 +38,7 @@
 
     <!-- 新建/编辑弹窗（🔴 D-501-53：编辑入口与新建入口分离，新增不再隐式覆盖既有配置） -->
     <el-dialog v-model="dialogVisible" :title="`${editingId ? '编辑' : '新建'}${title}`" width="640px" destroy-on-close>
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="110px">
+      <el-form ref="formRef" :model="form" :rules="rules" label-width="120px">
         <el-form-item v-for="field in fields" :key="field.key" :label="field.label" :prop="field.key">
           <!-- 文本输入 -->
           <el-input
@@ -58,14 +58,18 @@
             :placeholder="field.placeholder"
             style="width: 180px"
           />
-          <!-- 下拉选择（支持手动输入自定义值） -->
+          <!--
+            下拉选择（受控词表）：选项一律来自字段声明的 options，禁用 allow-create。
+            开启 allow-create 时，本分支服务的全部下拉（险种线 / 案件类型 / 案件环节 /
+            医院等级 / 协议状态 / 标的类型等）都能被手打文本覆盖，选项列表形同虚设，
+            写进配置的值也再无值域约束。故去除创建能力，只保留选项内筛选（filterable）。
+            注：全部 select 字段的 options 均为静态常量，删除后不存在「无选项可选」的字段。
+          -->
           <el-select
             v-else-if="field.type === 'select'"
             v-model="form[field.key]"
             :placeholder="field.placeholder ?? `请选择${field.label}`"
             filterable
-            allow-create
-            default-first-option
             style="width: 100%"
           >
             <el-option v-for="opt in field.options" :key="opt.value" :label="opt.label" :value="opt.value" />
@@ -76,6 +80,29 @@
             v-model="form[field.key]"
             :active-text="field.activeText ?? '启用'"
             :inactive-text="field.inactiveText ?? '停用'"
+          />
+          <!--
+            受控多选（保序）：选项一律来自字段声明的 options，禁用 allow-create。
+            用于「环节序列」这类值域固定**且顺序即业务含义**的字段——顺序决定理赔流程走向，
+            故必须保序，不能用手打 code 的 tags（那样操作员要背 REPORT/SURVEY/... 六个编码）。
+          -->
+          <el-select
+            v-else-if="field.type === 'multi-select'"
+            v-model="form[field.key]"
+            multiple
+            filterable
+            :placeholder="field.placeholder ?? `请选择${field.label}（顺序即流程顺序）`"
+            style="width: 100%"
+          >
+            <el-option v-for="opt in field.options ?? []" :key="opt.value" :label="opt.label" :value="opt.value" />
+          </el-select>
+          <!-- 字典下拉（受控）：取值来自后端业务字典，与后端枚举逐字节对齐 -->
+          <TiDictSelect
+            v-else-if="field.type === 'dict'"
+            v-model="form[field.key]"
+            :dict-type="field.dictType ?? ''"
+            :placeholder="field.placeholder ?? `请选择${field.label}`"
+            style="width: 100%"
           />
           <!-- 标签列表（逗号分隔输入 → 数组提交） -->
           <el-input
@@ -117,10 +144,11 @@ import { computed, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { showErrorIfUnhandled } from '@/api/http'
+import TiDictSelect from '@/components/TiDictSelect/index.vue'
 import TiTable from '@/components/TiTable/index.vue'
 
 /** 表单项类型 */
-type FieldType = 'input' | 'number' | 'select' | 'switch' | 'tags' | 'textarea' | 'datetime'
+type FieldType = 'input' | 'number' | 'select' | 'multi-select' | 'dict' | 'switch' | 'tags' | 'textarea' | 'datetime'
 
 /** 表单字段元数据 */
 export interface FieldDef {
@@ -129,8 +157,10 @@ export interface FieldDef {
   type: FieldType
   required?: boolean
   placeholder?: string
-  /** select 选项（allow-create 允许输入自定义值） */
+  /** select / multi-select 的受控选项（值域由声明方给定，控件不允许现场造值） */
   options?: Array<{ value: string; label: string }>
+  /** dict 类型字段的字典类型码（取值来自后端业务字典，与后端枚举对齐） */
+  dictType?: string
   /** number 边界 */
   min?: number
   max?: number
@@ -161,6 +191,14 @@ export interface ExtraAction {
   run: (id: string, row: Record<string, unknown>) => Promise<void>
   /** 确认文案 */
   confirmText?: string
+  /**
+   * 该动作是否**破坏性**：执行后既有数据/权益状态不可恢复（暂停、终止、撤销）。
+   * <p>
+   * 不能从 `type` 推断——`type` 表达的是按钮观感（如「撤销黑名单」是解禁，观感用 success），
+   * 而破坏性表达的是误点的代价。两者不是一回事，故独立声明。
+   * </p>
+   */
+  destructive?: boolean
 }
 
 const props = defineProps<{
@@ -198,12 +236,6 @@ const form = reactive<Record<string, any>>({})
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const tagsDraft = reactive<Record<string, any>>({})
 
-const operationWidth = computed(() => {
-  const extraCount = (props.extraActions ?? []).length
-  // 固定列：编辑 + 删除（各 90px），行级状态动作按数量累加
-  return `${Math.max(230, 180 + extraCount * 90)}px`
-})
-
 const rules = computed<FormRules>(() => {
   const result: FormRules = {}
   for (const field of props.fields) {
@@ -218,7 +250,9 @@ const rules = computed<FormRules>(() => {
           trigger: 'change',
         }]
       } else {
-        result[field.key] = [{ required: true, message: `请${field.type === 'select' ? '选择' : '输入'}${field.label}`, trigger: field.type === 'select' ? 'change' : 'blur' }]
+        // multi-select 与 select 同属「选择」语义：文案与触发时机都按选择处理
+        const byChoice = field.type === 'select' || field.type === 'multi-select' || field.type === 'dict'
+        result[field.key] = [{ required: true, message: `请${byChoice ? '选择' : '输入'}${field.label}`, trigger: byChoice ? 'change' : 'blur' }]
       }
     }
   }
@@ -248,6 +282,7 @@ const openCreate = () => {
   for (const field of props.fields) {
     if (field.type === 'switch') form[field.key] = true
     else if (field.type === 'number') form[field.key] = undefined
+    else if (field.type === 'multi-select') form[field.key] = []
     else form[field.key] = ''
   }
   dialogVisible.value = true
@@ -271,6 +306,9 @@ const openEdit = (row: Record<string, unknown>) => {
       form[field.key] = value ?? true
     } else if (field.type === 'number') {
       form[field.key] = typeof value === 'number' ? value : undefined
+    } else if (field.type === 'multi-select') {
+      // 后端存数组；非数组（含 null/undefined）一律回落空数组，避免 v-model 拿到 undefined
+      form[field.key] = Array.isArray(value) ? value : []
     } else {
       form[field.key] = value ?? ''
     }
@@ -341,6 +379,7 @@ const confirmDelete = async (row: Record<string, unknown>) => {
     type: 'warning',
     confirmButtonText: '确认删除',
     cancelButtonText: '取消',
+    confirmButtonClass: 'el-button--danger',
   }).catch(() => null)
   if (!confirmed) return
   try {
@@ -360,6 +399,10 @@ const runExtraAction = async (action: ExtraAction, row: Record<string, unknown>)
       type: 'warning',
       confirmButtonText: '确认',
       cancelButtonText: '取消',
+      // 🔴 破坏性动作（暂停/终止协议、撤销黑名单）的确认按钮必须标红。
+      // 不用「凡有 confirmText 就标红」的默认：那样将来给「恢复」加上一句确认文案，
+      // 恢复按钮也会变红——把红色用在非危险动作上，等于训练用户忽略红色。
+      confirmButtonClass: action.destructive ? 'el-button--danger' : '',
     }).catch(() => null)
     if (!confirmed) return
   }
@@ -382,7 +425,7 @@ const runExtraAction = async (action: ExtraAction, row: Record<string, unknown>)
 
   .panel-count {
     font-size: 13px;
-    color: #606266;
+    color: $text-regular;
   }
 }
 </style>

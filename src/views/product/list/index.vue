@@ -49,7 +49,7 @@
         </el-button>
       </div>
       <div class="ti-toolbar-right">
-        <el-button :icon="Download" @click="handleExport">导出</el-button>
+        <el-button :icon="Download" :loading="exporting" @click="handleExport">导出</el-button>
       </div>
     </div>
 
@@ -60,6 +60,7 @@
       :page-num="pagination.pageNum"
       :page-size="pagination.pageSize"
       :loading="tableLoading"
+      :max-height="'var(--ti-table-max-height-default)'"
       @page-change="onPageChange"
       @size-change="onSizeChange"
     >
@@ -97,9 +98,9 @@
           {{ row.version || '-' }}
         </template>
       </el-table-column>
-      <el-table-column prop="minPremium" label="最低保费" width="120">
+      <el-table-column prop="minPremium" label="最低保费" width="120" align="right">
         <template #default="{ row }">
-          {{ row.minPremium ? `¥${row.minPremium.toLocaleString()}` : '-' }}
+          {{ formatAmount(row.minPremium) }}
         </template>
       </el-table-column>
       <el-table-column prop="createdBy" label="创建人" width="100" />
@@ -109,8 +110,9 @@
         </template>
       </el-table-column>
       <!-- @vue-generic {ProductVO} -->
-      <el-table-column label="操作" min-width="320" fixed="right" class-name="ti-action-column">
+      <el-table-column label="操作" min-width="260" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
+          <!-- 平铺动作收敛为 3 个：详情/编辑/配置是各状态通用入口，状态流转收进「更多」 -->
           <el-button size="small" :icon="View" @click="goDetail(row.id)">详情</el-button>
           <el-button
             v-if="row.status === 'DRAFT'"
@@ -127,38 +129,50 @@
           >
             配置
           </el-button>
-          <el-button
-            v-if="row.status === 'DRAFT'"
-            size="small" type="warning"
-            v-permission="'product:submit'"
-            @click="handleSubmit(row)"
+          <el-dropdown
+            v-if="['DRAFT', 'AUDITING', 'EFFECTIVE'].includes(row.status)"
+            trigger="click"
+            @command="(command: string) => runRowCommand(row, command)"
           >
-            提交审核
-          </el-button>
-          <el-button
-            v-if="row.status === 'AUDITING'"
-            size="small" type="success"
-            v-permission="'product:activate'"
-            @click="handleApprove(row)"
-          >
-            审核通过
-          </el-button>
-          <el-button
-            v-if="row.status === 'AUDITING'"
-            size="small" type="danger"
-            v-permission="'product:submit'"
-            @click="handleReject(row)"
-          >
-            驳回
-          </el-button>
-          <el-button
-            v-if="row.status === 'EFFECTIVE'"
-            size="small" type="danger"
-            v-permission="'product:deactivate'"
-            @click="handleDeactivate(row)"
-          >
-            下架
-          </el-button>
+            <el-button size="small" :icon="MoreFilled" :loading="rowPending === actionKey(row.id, 'more')">更多</el-button>
+            <template #dropdown>
+              <!-- 下拉项用 hasPermission 而非 v-permission：el-dropdown-item 渲染根是 Fragment，
+                   指令拿到的只是片段锚点文本节点，removeChild 摘不掉真正的 <li>（会静默失效） -->
+              <!-- 🔴 权限码修正（4 处）：原写 product:submit / product:activate / product:deactivate，
+                   三者在前端被使用、却在 admin 的 t_permission/t_menu 种子里 **0 命中** ⇒ 对
+                   所有非超管永久隐藏（超管因权限集含 "*" 通配而掩盖了问题）。
+                   真源是 ProductProxyController 的 @PreAuthorize——/submit、/approve、/reject、
+                   /unpublish 四个端点**统一**写 PRODUCT_CONFIG（=product:config），故四处同码。 -->
+              <el-dropdown-menu>
+                <el-dropdown-item
+                  v-if="row.status === 'DRAFT' && hasPermission('product:config')"
+                  command="submit"
+                >
+                  提交审核
+                </el-dropdown-item>
+                <el-dropdown-item
+                  v-if="row.status === 'AUDITING' && hasPermission('product:config')"
+                  command="approve"
+                >
+                  审核通过
+                </el-dropdown-item>
+                <el-dropdown-item
+                  v-if="row.status === 'AUDITING' && hasPermission('product:config')"
+                  command="reject"
+                  class="ti-dropdown-item--danger"
+                >
+                  驳回
+                </el-dropdown-item>
+                <el-dropdown-item
+                  v-if="row.status === 'EFFECTIVE' && hasPermission('product:config')"
+                  command="deactivate"
+                  class="ti-dropdown-item--danger"
+                >
+                  下架
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </template>
       </el-table-column>
     </TiTable>
@@ -169,13 +183,16 @@
 import { reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Download, View, Edit, Setting } from '@element-plus/icons-vue'
+import { Plus, Download, View, Edit, Setting, MoreFilled } from '@element-plus/icons-vue'
 import { computed } from 'vue'
 import { getProductList, approveProduct, rejectProduct, deactivateProduct, submitProductForReview, exportProducts } from '@/api/product'
 import { useTable } from '@/composables/useTable'
+import { useRowAction, confirmAction, actionKey } from '@/composables/useRowAction'
 import { useDict } from '@/composables/useDict'
+import { usePermission } from '@/composables/usePermission'
 import { useUserStore } from '@/stores/user'
 import { formatDateTime } from '@/utils/date'
+import { formatAmount } from '@/utils/format'
 import TiTable from '@/components/TiTable/index.vue'
 import TiSearchForm from '@/components/TiSearchForm/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
@@ -185,6 +202,18 @@ import { insuranceTypesOf, insuranceTypeLabel } from '@/constants/insurance'
 import type { ProductVO } from '@/types/business.d'
 
 const router = useRouter()
+
+/** 下拉权限判定：el-dropdown-item 为多根组件，v-permission 指令在此失效，须显式判断 */
+const { hasPermission } = usePermission()
+
+/**
+ * 「导出」按钮的在途标志。
+ *
+ * <p>🔴 导出是**服务端生成 CSV**（`exportProducts` 返回 blob），行数多时是本站最慢的请求之一，
+ * 而原先按钮点下去毫无变化——用户既不知道在跑、也不知道该等多久，只会反复点，
+ * 每点一次都是一次全量导出。</p>
+ */
+const exporting = ref(false)
 
 // 查询参数
 const queryParams = reactive({
@@ -221,48 +250,83 @@ const { tableData, tableLoading, pagination, fetchData, handleSearch, handleRese
 // 初始加载
 fetchData()
 
+/** 行内状态推进（提交/通过/驳回/下架）的 pending 与错误兜底统一由 useRowAction 承担 */
+const { rowPending, run } = useRowAction(fetchData)
+
 const goCreate = () => router.push('/product/create')
 const goDetail = (id: string) => router.push(`/product/detail/${id}`)
 const goEdit = (id: string) => router.push(`/product/create?id=${id}`)
 const goConfig = (id: string) => router.push(`/product/config/${id}`)
 
 const handleSubmit = async (row: ProductVO) => {
-  await ElMessageBox.confirm(`确认提交产品"${row.name}"审核？`, '提示', { type: 'warning' })
-  await submitProductForReview(row.id)
-  ElMessage.success('提交成功')
-  fetchData()
+  if (!(await confirmAction(`确认提交产品"${row.name}"审核？`, '提示', { type: 'warning' }))) return
+  await run(actionKey(row.id, 'more'), async () => {
+    await submitProductForReview(row.id)
+    ElMessage.success('提交成功')
+  })
 }
 
 // 审核通过：产品域无独立"上架/发布"态，审核通过(AUDITING→EFFECTIVE)即生效可售
 const handleApprove = async (row: ProductVO) => {
-  await ElMessageBox.confirm(`确认审核通过产品"${row.name}"？通过后产品即生效可售。`, '提示', { type: 'warning' })
-  const user = useUserStore().userInfo
-  await approveProduct(row.id, { auditResult: 'PASS', auditOpinion: '审核通过', auditorId: user?.id, auditorName: user?.nickname })
-  ElMessage.success('审核通过，产品已生效')
-  fetchData()
+  const ok = await confirmAction(
+    `确认审核通过产品"${row.name}"？通过后产品即生效可售。`,
+    '提示',
+    { type: 'warning' },
+  )
+  if (!ok) return
+  await run(actionKey(row.id, 'more'), async () => {
+    const user = useUserStore().userInfo
+    await approveProduct(row.id, { auditResult: 'PASS', auditOpinion: '审核通过', auditorId: user?.id, auditorName: user?.nickname })
+    ElMessage.success('审核通过，产品已生效')
+  })
 }
 
 // 驳回审核：AUDITING→DRAFT，退回修改
 const handleReject = async (row: ProductVO) => {
-  const { value } = await ElMessageBox.prompt(`请输入驳回产品"${row.name}"的原因`, '驳回审核', {
-    inputType: 'textarea',
-    inputValidator: (v) => (v && v.trim() ? true : '驳回原因不能为空'),
+  let input: { value: string } | null = null
+  try {
+    input = await ElMessageBox.prompt(`请输入驳回产品"${row.name}"的原因`, '驳回审核', {
+      inputType: 'textarea',
+      inputValidator: (v) => (v && v.trim() ? true : '驳回原因不能为空'),
+    })
+  } catch {
+    return // 用户取消：prompt 同样以 reject 表达取消，必须吞掉
+  }
+  if (!input?.value) return
+  await run(actionKey(row.id, 'more'), async () => {
+    const user = useUserStore().userInfo
+    await rejectProduct(row.id, { auditResult: 'REJECT', auditOpinion: input.value, auditorId: user?.id, auditorName: user?.nickname })
+    ElMessage.success('已驳回')
   })
-  const user = useUserStore().userInfo
-  await rejectProduct(row.id, { auditResult: 'REJECT', auditOpinion: value, auditorId: user?.id, auditorName: user?.nickname })
-  ElMessage.success('已驳回')
-  fetchData()
 }
 
 // 下架：EFFECTIVE→INVALID，停止新增投保
 const handleDeactivate = async (row: ProductVO) => {
-  await ElMessageBox.confirm(`确认下架产品"${row.name}"？此操作将停止新增投保。`, '警告', { type: 'warning' })
-  await deactivateProduct(row.id)
-  ElMessage.success('下架成功')
-  fetchData()
+  const ok = await confirmAction(
+    `确认下架产品"${row.name}"？此操作将停止新增投保。`,
+    '警告',
+    { type: 'warning', confirmButtonClass: 'el-button--danger' },
+  )
+  if (!ok) return
+  await run(actionKey(row.id, 'more'), async () => {
+    await deactivateProduct(row.id)
+    ElMessage.success('下架成功')
+  })
+}
+
+/** 操作列「更多」下拉派发：命令值即动作语义，与下拉项 command 一一对应 */
+const runRowCommand = (row: ProductVO, command: string) => {
+  const handlers: Record<string, (target: ProductVO) => void> = {
+    submit: handleSubmit,
+    approve: handleApprove,
+    reject: handleReject,
+    deactivate: handleDeactivate,
+  }
+  handlers[command]?.(row)
 }
 
 const handleExport = async () => {
+  exporting.value = true
   try {
     // 服务端导出为 CSV（UTF-8 带 BOM，Excel 可直接打开），故扩展名须与响应格式一致
     const blob = await exportProducts(queryParams)
@@ -276,6 +340,8 @@ const handleExport = async () => {
   } catch {
     // 失败原因已由响应拦截器统一提示（含下游业务码语义），此处仅避免未捕获 rejection 导致「点了没反应」
     return
+  } finally {
+    exporting.value = false
   }
 }
 </script>

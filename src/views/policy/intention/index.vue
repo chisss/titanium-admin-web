@@ -46,6 +46,7 @@
       :page-num="pagination.pageNum"
       :page-size="pagination.pageSize"
       :loading="tableLoading"
+      :max-height="'var(--ti-table-max-height-default)'"
       row-key="proposalId"
       @page-change="onPageChange"
       @size-change="onSizeChange"
@@ -70,7 +71,7 @@
       </el-table-column>
       <el-table-column prop="intendedPremium" label="意向保费" width="130" align="right">
         <template #default="{ row }">
-          {{ row.intendedPremium != null ? `¥${row.intendedPremium.toLocaleString()}` : '-' }}
+          {{ formatAmount(row.intendedPremium) }}
         </template>
       </el-table-column>
       <el-table-column prop="lineCount" label="险种段" width="90" align="center" />
@@ -80,9 +81,9 @@
         </template>
       </el-table-column>
       <!-- @vue-generic {ProposalVO} -->
-      <el-table-column label="操作" width="220" fixed="right">
+      <el-table-column label="操作" min-width="100" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
-          <el-button link type="primary" :icon="View" @click="handleDetail(row)">详情</el-button>
+          <el-button size="small" :icon="View" @click="handleDetail(row)">详情</el-button>
         </template>
       </el-table-column>
     </TiTable>
@@ -94,7 +95,7 @@
       destroy-on-close
     >
       <div v-loading="detailLoading" class="detail-content">
-        <el-descriptions v-if="proposalDetail" :column="2" border>
+        <el-descriptions v-if="proposalDetail" :column="detailColumns" border>
           <el-descriptions-item label="意向单号">{{ proposalDetail.proposalNo }}</el-descriptions-item>
           <el-descriptions-item label="出单业务号">{{ proposalDetail.bizNo || '-' }}</el-descriptions-item>
           <el-descriptions-item label="意向状态">
@@ -109,10 +110,10 @@
           </el-descriptions-item>
           <el-descriptions-item label="险种分类">{{ proposalDetail.insuranceType || '-' }}</el-descriptions-item>
           <el-descriptions-item label="意向保额">
-            {{ formatMoney(proposalDetail.intendedSumInsured) }}
+            {{ formatAmount(proposalDetail.intendedSumInsured) }}
           </el-descriptions-item>
           <el-descriptions-item label="意向保费">
-            {{ formatMoney(proposalDetail.intendedPremium) }}
+            {{ formatAmount(proposalDetail.intendedPremium) }}
           </el-descriptions-item>
           <el-descriptions-item label="销售渠道">{{ getChannelLabel(proposalDetail.channel) }}</el-descriptions-item>
           <el-descriptions-item label="险种段数量">{{ proposalDetail.lineCount ?? '-' }}</el-descriptions-item>
@@ -142,7 +143,9 @@ import TiSearchForm from '@/components/TiSearchForm/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import TiCopyText from '@/components/TiCopyText/index.vue'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
+import { useDetailColumns } from '@/composables/useDetailColumns'
 import { useDict } from '@/composables/useDict'
+import { formatAmount } from '@/utils/format'
 
 /** 意向单查询参数 */
 const queryParams = reactive({
@@ -168,6 +171,9 @@ const { tableData, tableLoading, pagination, fetchData, handleSearch, handleRese
 // 初始加载
 fetchData()
 
+/** 描述区：字段中短，宽屏 2 档 */
+const detailColumns = useDetailColumns(2)
+
 const detailVisible = ref(false)
 const detailLoading = ref(false)
 const proposalDetail = ref<ProposalVO>()
@@ -186,8 +192,6 @@ const handleDetail = async (row: ProposalVO) => {
   }
 }
 
-const formatMoney = (value?: number): string => value == null ? '-' : `¥${value.toLocaleString()}`
-
 /** 导出意向单 */
 const handleExport = () => {
   ElMessage.info('导出功能开发中...')
@@ -198,10 +202,10 @@ const handleExport = () => {
 <style scoped lang="scss">
 .toolbar-stat {
   font-size: 14px;
-  color: #606266;
+  color: $text-regular;
 
   b {
-    color: #409eff;
+    color: $primary-color;
     font-size: 16px;
   }
 }

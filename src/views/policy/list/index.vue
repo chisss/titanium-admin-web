@@ -43,6 +43,7 @@
       :page-num="pagination.pageNum"
       :page-size="pagination.pageSize"
       :loading="tableLoading"
+      :max-height="'var(--ti-table-max-height-default)'"
       row-key="policyId"
       @page-change="onPageChange"
       @size-change="onSizeChange"
@@ -64,11 +65,11 @@
       <el-table-column prop="productName" label="产品名称" min-width="180" show-overflow-tooltip>
         <template #default="{ row }">{{ row.productName || row.productCode || '-' }}</template>
       </el-table-column>
-      <el-table-column prop="premium" label="保费" width="110">
-        <template #default="{ row }">¥{{ row.premium?.toLocaleString() }}</template>
+      <el-table-column prop="premium" label="保费" width="110" align="right">
+        <template #default="{ row }">{{ formatAmount(row.premium) }}</template>
       </el-table-column>
-      <el-table-column prop="sumInsured" label="保额" width="120">
-        <template #default="{ row }">¥{{ row.sumInsured?.toLocaleString() }}</template>
+      <el-table-column prop="sumInsured" label="保额" width="120" align="right">
+        <template #default="{ row }">{{ formatAmount(row.sumInsured) }}</template>
       </el-table-column>
       <el-table-column prop="status" label="状态" width="110">
         <template #default="{ row }">
@@ -103,6 +104,7 @@ import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
 import { useDict } from '@/composables/useDict'
 import { formatDate } from '@/utils/date'
+import { formatAmount } from '@/utils/format'
 import type { PolicyVO } from '@/types/business.d'
 
 const { getLabel: policyStatusLabel } = useDict('POLICY_STATUS')
@@ -144,7 +146,7 @@ const copyText = async (text: string) => {
 .copy-icon {
   margin-left: 4px;
   cursor: pointer;
-  color: #c0c4cc;
+  color: $text-disabled;
   font-size: 12px;
   vertical-align: middle;
 
@@ -153,6 +155,6 @@ const copyText = async (text: string) => {
 
 .toolbar-stat {
   font-size: 13px;
-  color: #606266;
+  color: $text-regular;
 }
 </style>

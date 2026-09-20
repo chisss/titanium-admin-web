@@ -2,12 +2,9 @@
   <!-- 条款编辑页 -->
   <div class="ti-page">
     <div class="ti-card">
-      <div class="detail-header">
-        <el-button :icon="ArrowLeft" text @click="$router.back()">返回</el-button>
-        <h3>{{ isEdit ? '编辑条款' : '新增条款' }}</h3>
-      </div>
+      <TiDetailHeader :title="isEdit ? '编辑条款' : '新增条款'" />
 
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="110px" v-loading="loading">
+      <el-form ref="formRef" :model="form" :rules="rules" label-width="120px" v-loading="loading">
         <el-row :gutter="24">
           <el-col :sm="12">
             <el-form-item label="条款编码" prop="code">
@@ -78,7 +75,7 @@
         </el-row>
       </el-form>
 
-      <div style="padding-top: 16px; border-top: 1px solid #ebeef5; display: flex; gap: 12px;">
+      <div style="padding-top: 16px; border-top: 1px solid var(--ti-border); display: flex; gap: 12px;">
         <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
         <el-button @click="$router.back()">取消</el-button>
       </div>
@@ -112,15 +109,15 @@
         <el-table-column label="赔付类型" width="100">
           <template #default="{ row }">{{ payoutTypeLabel(row.payoutType) }}</template>
         </el-table-column>
-        <el-table-column label="最高保额" width="120">
+        <el-table-column label="最高保额" width="120" align="right">
           <template #default="{ row }">{{ formatAmount(row.coverageAmount) }}</template>
         </el-table-column>
         <el-table-column label="关键参数" min-width="200" show-overflow-tooltip>
           <template #default="{ row }">{{ coverageSummary(row) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="90" fixed="right">
+        <el-table-column label="操作" width="100" fixed="right" class-name="ti-action-column">
           <template #default="{ row }">
-            <el-button size="small" type="danger" @click="handleRemoveCoverage(row)">删除</el-button>
+            <el-button size="small" type="danger" :loading="rowPending === actionKey(row.coverageId, 'remove')" @click="handleRemoveCoverage(row)">删除</el-button>
           </template>
         </el-table-column>
         <template #empty>暂无保险责任，点击「新增责任」开始配置</template>
@@ -256,8 +253,8 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Plus } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import { Plus } from '@element-plus/icons-vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import {
   createClause,
@@ -269,8 +266,11 @@ import {
   type CoverageVO,
 } from '@/api/clause'
 import { insuranceTypesOf } from '@/constants/insurance'
+import TiDetailHeader from '@/components/TiDetailHeader/index.vue'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
+import { useRowAction, confirmAction, actionKey } from '@/composables/useRowAction'
 import { useDict } from '@/composables/useDict'
+import { formatAmount } from '@/utils/format'
 import { useUserStore } from '@/stores/user'
 
 const route = useRoute()
@@ -329,7 +329,6 @@ const { getLabel: coverageTypeDictLabel } = useDict('COVERAGE_TYPE')
 const { getLabel: payoutTypeDictLabel } = useDict('PAYOUT_TYPE')
 const coverageTypeLabel = (v?: string) => v ? coverageTypeDictLabel(v) : '-'
 const payoutTypeLabel = (v?: string) => v ? payoutTypeDictLabel(v) : '-'
-const formatAmount = (v?: number) => (v == null ? '-' : `¥${Number(v).toLocaleString()}`)
 
 const coverageSummary = (row: CoverageVO): string => {
   const parts: string[] = []
@@ -337,9 +336,9 @@ const coverageSummary = (row: CoverageVO): string => {
   if (row.payoutType === 'REIMBURSEMENT') {
     if (row.reimbursementRatio != null) parts.push(`社保内${row.reimbursementRatio * 100}%`)
     if (row.outSocialRatio != null) parts.push(`社保外${row.outSocialRatio * 100}%`)
-    if (row.deductibleAmount != null) parts.push(`免赔${row.deductibleAmount}元`)
+    if (row.deductibleAmount != null) parts.push(`免赔${formatAmount(row.deductibleAmount)}`)
   } else if (row.payoutType === 'PERIODIC') {
-    if (row.dailyAmount != null) parts.push(`日津贴${row.dailyAmount}元`)
+    if (row.dailyAmount != null) parts.push(`日津贴${formatAmount(row.dailyAmount)}`)
     if (row.maxDaysPerClaim != null) parts.push(`每次${row.maxDaysPerClaim}天`)
     if (row.maxDaysTotal != null) parts.push(`累计${row.maxDaysTotal}天`)
   } else if (row.payoutType === 'PROPORTIONAL' && row.proportion != null) {
@@ -361,6 +360,16 @@ const loadCoverages = async () => {
     coverageLoading.value = false
   }
 }
+
+/**
+ * 责任子表**行内**删除的在途行键。
+ *
+ * <p>🔴 子表的「删除」是**即时落库**的（直连 `removeCoverage`，不等主表单保存），
+ * 原先点下去界面毫无变化：确认框一关、责任行还在（要等重查才消失），
+ * 这段时间用户以为没点中会再点一次，而删的是同一条责任的落库数据。
+ * 与同页责任弹窗保存（`coverageSaving` + finally）形成两套标准，此处补齐。</p>
+ */
+const { rowPending, run } = useRowAction(loadCoverages)
 
 // ===== 责任弹窗 =====
 const dialogVisible = ref(false)
@@ -402,10 +411,13 @@ const handleSaveCoverage = async () => {
 }
 
 const handleRemoveCoverage = async (row: CoverageVO) => {
-  await ElMessageBox.confirm(`确认删除责任"${row.coverageName}"？`, '提示', { type: 'warning' })
-  await removeCoverage(clauseId.value, row.coverageId as string)
-  ElMessage.success('已删除')
-  await loadCoverages()
+  if (!(await confirmAction(`确认删除责任"${row.coverageName}"？`, '提示', {
+    type: 'warning', confirmButtonClass: 'el-button--danger',
+  }))) return
+  await run(actionKey(row.coverageId as string, 'remove'), async () => {
+    await removeCoverage(clauseId.value, row.coverageId as string)
+    ElMessage.success('已删除')
+  })
 }
 
 onMounted(async () => {
@@ -450,15 +462,6 @@ const handleSave = async () => {
 </script>
 
 <style scoped lang="scss">
-.detail-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 24px;
-
-  h3 { margin: 0; font-size: 18px; }
-}
-
 .coverage-header {
   display: flex;
   align-items: center;

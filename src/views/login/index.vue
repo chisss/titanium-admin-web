@@ -43,10 +43,13 @@
           />
         </el-form-item>
         <el-form-item>
-          <div class="login-card__row">
-            <el-checkbox v-model="form.rememberMe">记住我</el-checkbox>
-            <span class="login-card__demo-hint">演示账号：admin / admin123</span>
-          </div>
+          <!-- 🔴 S-12 上线前清理：此处原有一行**明文默认凭据提示**（守卫正则在同一行命中 2 次），
+               内网演示用的便利，一旦随镜像上线就是把一套可用账号印在门上，故整行移除。
+               行内原本「记住我居左、凭据提示居右」的两栏布局随之只剩一栏，
+               包裹用的 .login-card__row 与 .login-card__demo-hint 一并删除（否则留两条死样式）。
+               ⚠️ 本条注释刻意**不复述那串账号**：S-12 数的是纯文本命中，把字面量写进注释
+               与写进模板一样会算违规（本轮实测：改完模板仍红，红的正是注释这一行）。 -->
+          <el-checkbox v-model="form.rememberMe">记住我</el-checkbox>
         </el-form-item>
         <el-form-item>
           <el-button
@@ -85,20 +88,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { User, Lock, ArrowDown } from '@element-plus/icons-vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import { useAppStore } from '@/stores/app'
-import { useI18n } from 'vue-i18n'
-import { SUPPORTED_LOCALES } from '@/i18n'
+import { SUPPORTED_LOCALES } from '@/constants/locale'
 
 const router = useRouter()
 const route = useRoute()
 const userStore = useUserStore()
 const appStore = useAppStore()
-const { locale } = useI18n()
 
 const formRef = ref<FormInstance>()
 const loading = ref(false)
@@ -122,9 +123,24 @@ const currentLocaleName = computed(
   () => supportedLocales.find((l) => l.value === appStore.locale)?.label ?? '中文',
 )
 
+// 回填「记住我」的用户名
+//
+// 🔴 此前这个勾选框是个**桩控件**：勾了只往 localStorage 写一个 `ti_remember_me`，
+//    而全仓**没有任何一处读它**（登出时还会把它删掉），用户勾与不勾看到的差别是零。
+//    补上读取端才让「记住我」名副其实——只回填用户名，密码从不落盘。
+//    读取走 store 的 action（而非 getter）的原因见 user.ts 注释：getter 是 computed，
+//    对这种非响应式来源只会求值一次并永久缓存。
+onMounted(() => {
+  const remembered = userStore.readRememberedUsername()
+  if (!remembered) return
+  form.username = remembered
+  form.rememberMe = true
+})
+
+// 切换语言：🔴 D-12 移除了同步 vue-i18n locale 的那一行。登录页与顶栏共用
+// appStore.setLocale（写 ti_locale 持久化），故此处的选择登录后立即对 useDict 生效。
 const handleLocaleChange = (localeValue: string) => {
   appStore.setLocale(localeValue)
-  locale.value = localeValue
 }
 
 const handleLogin = async () => {
@@ -154,17 +170,19 @@ const handleLogin = async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #0a1628 0%, #0f1e3d 40%, #1a3a6b 100%);
+  background: $login-bg;
   position: relative;
   overflow: hidden;
 
   // 背景装饰（抽象几何图形）
+  // 🔴 色值取自令牌：$primary-light 即品牌色第二档（原写死 rgba(45,90,160,·)），
+  //    $sidebar-active 与 $primary-color 同值（原写死 rgba(26,58,107,·)）
   &__bg {
     position: absolute;
     inset: 0;
     background-image:
-      radial-gradient(ellipse at 20% 50%, rgba(45, 90, 160, 0.3) 0%, transparent 60%),
-      radial-gradient(ellipse at 80% 20%, rgba(26, 58, 107, 0.4) 0%, transparent 50%);
+      radial-gradient(ellipse at 20% 50%, rgba($primary-light, 0.3) 0%, transparent 60%),
+      radial-gradient(ellipse at 80% 20%, rgba($sidebar-active, 0.4) 0%, transparent 50%);
   }
 
   &__locale {
@@ -216,7 +234,7 @@ const handleLogin = async () => {
 
   &__subtitle {
     font-size: 14px;
-    color: #909399;
+    color: $text-secondary;
     margin: 0;
   }
 
@@ -224,18 +242,6 @@ const handleLogin = async () => {
     .el-form-item {
       margin-bottom: 20px;
     }
-  }
-
-  &__row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    width: 100%;
-  }
-
-  &__demo-hint {
-    font-size: 12px;
-    color: #c0c4cc;
   }
 
   &__btn {

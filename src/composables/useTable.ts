@@ -14,6 +14,17 @@ export interface PageQuery {
 }
 
 /**
+ * 把 catch 到的任意值归一为 Error。
+ * 🔴 D-07：request 拦截器 reject 的不一定是 Error —— 可能是后端原始字符串、普通对象，
+ * 直接塞进 tableError 会让消费方 `error.message` 取到 undefined，错误态渲染成空白。
+ */
+function normalizeError(err: unknown): Error {
+  if (err instanceof Error) return err
+  if (typeof err === 'string' && err.trim()) return new Error(err)
+  return new Error('数据加载失败')
+}
+
+/**
  * 表格通用逻辑 Hook
  * @param fetchFn 数据获取函数，接收分页+查询参数，返回 PageResult
  * @param externalQueryParams 外部搜索表单对象（复用同一份查询条件）
@@ -28,6 +39,10 @@ export function useTable<T, P extends Record<string, unknown>>(
   // 旧的 `as { value: T[] }` 断言会让模板侧丢失 ref 自动解包的类型推断，导致 vue-tsc 报错
   const tableData: Ref<T[]> = ref<T[]>([]) as Ref<T[]>
   const tableLoading = ref(false)
+  // 🔴 D-07：加载失败状态。此前只有 try/finally 无 catch，接口 500 时 tableData 保持 []
+  // 并被渲染成「暂无数据」—— 界面向用户断言「系统里没有这类数据」，而真相是接口挂了。
+  // 二者在界面上完全同形，且无任何残留痕迹可供排查。
+  const tableError = ref<Error | null>(null)
   const { pagination, handleCurrentChange, handleSizeChange, resetPage, setTotal } = usePagination()
 
   // 当前查询参数（不含分页）
@@ -54,6 +69,9 @@ export function useTable<T, P extends Record<string, unknown>>(
         page: pagination.pageNum,
         size: pagination.pageSize,
       })
+      // 🔴 D-07：成功路径首行清错。不放在 finally 中——失败路径也会经过 finally，
+      // 那样会把刚置上的错误立刻抹掉，错误态永远不显示（这是本修复最容易写错的地方）。
+      tableError.value = null
       // 后端部分端点返回裸数组（如 /web/v1/roles 无分页信封）。
       // 归一化在此处完成，避免调用方因 result.list 为 undefined 而恒渲染「暂无数据」。
       if (Array.isArray(result)) {
@@ -65,10 +83,21 @@ export function useTable<T, P extends Record<string, unknown>>(
         // 原实现 `?? 0` 把「未知」压成「0 条」，分页区随之消失、后续页在 UI 永久不可达。
         setTotal(result?.total ?? null)
       }
+    } catch (err) {
+      // 🔴 D-07：失败必须同时清空上一次的成功数据——否则界面呈现「旧数据 + 新错误」，
+      // 用户会以为这份旧数据就是本次查询结果（比单纯不显示更危险）。
+      // total 一并置 null：失败时总数确实未知，留着旧值会在错误态上方渲染出对不上的分页条。
+      tableError.value = normalizeError(err)
+      tableData.value = []
+      setTotal(null)
     } finally {
+      // 失败路径同样要关 loading，否则重试按钮永远转圈、页面卡在加载态
       tableLoading.value = false
     }
   }
+
+  /** 重试上一次失败的加载（供错误态「重试」按钮调用） */
+  const retry = () => fetchData()
 
   /** 搜索（重置到第一页再查） */
   const handleSearch = () => {
@@ -105,9 +134,11 @@ export function useTable<T, P extends Record<string, unknown>>(
   return {
     tableData,
     tableLoading,
+    tableError,
     pagination,
     queryParams,
     fetchData,
+    retry,
     handleSearch,
     handleReset,
     onPageChange,

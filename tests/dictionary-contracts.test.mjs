@@ -47,6 +47,8 @@ test('字典管理在移动端使用上下分区而非压缩双栏', async () =>
 
   assert.match(source, /<el-col :xs="24" :sm="8">/)
   assert.match(source, /<el-col :xs="24" :sm="16">/)
-  assert.match(source, /@media \(max-width: 767px\)/)
+  // 断点改走 $breakpoint-mobile 令牌（原为字面量 767px）。本用例守的是
+  // 「移动端把双栏拆成上下分区」，断点取值本身由 layout-breakpoint-contracts.test.mjs 守护。
+  assert.match(source, /@media \(max-width: \$breakpoint-mobile\)/)
   assert.match(source, /\.dict-type-panel \{\s+height: 300px;/)
 })

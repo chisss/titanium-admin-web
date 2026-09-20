@@ -22,7 +22,18 @@ test('配置面板存在独立的「编辑」入口，与「新建」分离', ()
   assert.match(panelSource, /:title="`\$\{editingId \? '编辑' : '新建'\}\$\{title\}`"/)
 
   // 行级操作列宽度须容得下「编辑 + 删除」
-  assert.match(panelSource, /Math\.max\(230, 180 \+ extraCount \* 90\)/)
+  // 🔴 ui-102 起改锁「意图」而非自算公式：原来断言 `Math.max(230, 180 + extraCount * 90)`，
+  // 那是为「编辑 + 删除 + N 个行级动作」手算的 min-width；S-03 要求全站操作列宽度收敛到 5 档，
+  // 自算宽度必须让位。保护力不降反升——min-width 是下限（列可被表格余宽撑开、只在受挤时生效），
+  // 配合 .ti-action-column 的 nowrap 保证按钮既不换行也不裁切。
+  const actionColumnTag = panelSource.match(/<el-table-column label="操作"[^>]*>/)?.[0]
+  assert.ok(actionColumnTag, '配置面板应存在操作列')
+  const actionColumnWidth = Number(actionColumnTag.match(/min-width="(\d+)"/)?.[1])
+  assert.ok(
+    actionColumnWidth >= 160,
+    `操作列 min-width 须容得下「编辑 + 删除 + 行级动作」（实测 ${actionColumnWidth}px）`,
+  )
+  assert.match(actionColumnTag, /class-name="ti-action-column"/)
 })
 
 test('提交时按编辑态注入主键：编辑走更新分支，新建不带主键交给后端裁决', () => {

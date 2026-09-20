@@ -40,12 +40,12 @@ const goHome = () => router.push('/dashboard')
   &__title {
     font-size: 24px;
     font-weight: 600;
-    color: #303133;
+    color: $text-primary;
     margin: -20px 0 12px;
   }
 
   &__desc {
-    color: #909399;
+    color: $text-secondary;
     margin-bottom: 24px;
   }
 }
