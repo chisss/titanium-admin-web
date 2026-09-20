@@ -2,7 +2,10 @@
 
 > 验收日期：2026-09-17　　对应任务：`ui-201`
 > 上游契约：[UI-REVIEW.md](./UI-REVIEW.md) §3.7「真机渲染层实测」+ §3.7.1「新构建复测结果」
-> 基线截图：[baseline-20260917/](./baseline-20260917/)　本轮截图：[after-20260917/](./after-20260917/)
+> 基线截图：`baseline-20260917/`（42 张）　本轮截图：`after-20260917/`（41 张）
+>
+> 🔴 **两者均未入库（2026-09-20 起）**：走查截图属过程证据，已加 `.gitignore` 并从历史剥离，**仅在拍摄者本机留存**。
+> 下文的图片链接因此在本仓库中**不可点击**，保留编号仅为说明「拍过哪些页/态」。
 > 验证对象：容器 `titanium-admin-web`，镜像 `titanium-admin-web:latest`
 >
 > **结论：§3.7 的 12 项渲染层发现中，7 项撤回、1 项部分成立、4 项仍成立；其中仍成立的 1 项（768 断点）已在本轮**当场修复**。42 页走查 0 console error、0 未捕获异常、0 × 5xx。**
@@ -51,7 +54,7 @@ curl -s http://localhost:8888/ → 引用的入口 chunk  /assets/index-DpVNKIk9
 ### 1.3　走查方法
 
 - 1440×900 视口，`createWebHistory` 路由，**逐页通过应用内 `router.push` 往返**（非整页刷新），逐页采集 console / network / pageerror。
-- 覆盖 33 条普通路由 + 弹窗 + 错误页 + 空态 + 响应式档位，共 **42 页/态**，截图存 `after-20260917/`。
+- 覆盖 33 条普通路由 + 弹窗 + 错误页 + 空态 + 响应式档位，共 **42 页/态**，截图存 `after-20260917/`（未入库）。
 - 计数型结论一律由 DOM 实测得出（`scrollWidth/clientWidth`、`getBoundingClientRect()`、`getComputedStyle()`），不用肉眼判读。
 
 ---
@@ -251,7 +254,7 @@ Sidebar 200 + DataPanel 280 = 480px 固定占用  ⇒  内容区 = 768 − 480 =
 
 **内容区 288 → 768px（+480px）、完全可见列 2 → 6。** 900 / 800 / 767 三档**一字未动**——这就是「只影响一个宽度」的直接证据。
 
-修复后 768 档截图：[40-responsive-768-product-list.png](./after-20260917/40-responsive-768-product-list.png)、[41-responsive-768-policy-list.png](./after-20260917/41-responsive-768-policy-list.png)。
+修复后 768 档截图：`after-20260917/40-responsive-768-product-list.png`、`after-20260917/41-responsive-768-policy-list.png`（均未入库，见文首说明）。
 
 ### 5.4　四道门的复核
 
