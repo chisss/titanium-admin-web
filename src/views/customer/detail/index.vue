@@ -59,7 +59,7 @@
           <el-empty v-else-if="policies.length === 0" description="暂无关联保单" :image-size="80" />
           <template v-else>
             <!-- @vue-generic {CustomerPolicyVO} -->
-            <el-table :data="policies" border stripe size="small" row-key="policyId">
+            <el-table :data="policies" border stripe size="small" row-key="policyId" empty-text="暂无关联保单">
               <el-table-column prop="policyNo" label="保单号" min-width="170" show-overflow-tooltip />
               <el-table-column prop="productName" label="产品" min-width="150" show-overflow-tooltip>
                 <template #default="{ row }">{{ row.productName || row.productCode || '-' }}</template>
@@ -81,7 +81,7 @@
                   <el-icon v-else class="is-loading"><Loading /></el-icon>
                 </template>
               </el-table-column>
-              <el-table-column label="操作" min-width="100" fixed="right" class-name="ti-action-column">
+              <el-table-column label="操作" width="120" fixed="right" class-name="ti-action-column">
                 <template #default="{ row }">
                   <el-button size="small" :icon="View" @click="goPolicyDetail(row.policyId)">详情</el-button>
                 </template>
@@ -116,7 +116,7 @@
             class="state-alert"
           />
           <el-empty v-if="!beneficiaryLoading && !beneficiaryAllFailed && beneficiaryRows.length === 0" description="暂无受益人信息" :image-size="80" />
-          <el-table v-if="!beneficiaryLoading && beneficiaryRows.length > 0" :data="beneficiaryRows" border stripe size="small" row-key="rowKey">
+          <el-table v-if="!beneficiaryLoading && beneficiaryRows.length > 0" :data="beneficiaryRows" border stripe size="small" row-key="rowKey" empty-text="暂无受益人信息">
             <el-table-column prop="policyNo" label="保单号" min-width="170" show-overflow-tooltip />
             <el-table-column prop="beneficiaryName" label="受益人" width="130" />
             <el-table-column prop="beneficiaryType" label="受益类型" width="120">

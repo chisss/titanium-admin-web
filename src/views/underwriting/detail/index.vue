@@ -37,7 +37,7 @@
           <el-descriptions-item v-if="detail.rejectReason" label="拒保原因" :span="3">{{ detail.rejectReason }}</el-descriptions-item>
           <el-descriptions-item v-if="detail.reviewComments" label="复核意见" :span="3">{{ detail.reviewComments }}</el-descriptions-item>
           <el-descriptions-item v-if="detail.premiumSurchargeRate != null" label="加费比例">
-            {{ Number(detail.premiumSurchargeRate).toLocaleString() }}%
+            {{ formatRate(detail.premiumSurchargeRate) }}
           </el-descriptions-item>
           <el-descriptions-item v-if="detail.surchargeReason" label="加费原因" :span="2">{{ detail.surchargeReason }}</el-descriptions-item>
           <el-descriptions-item v-if="detail.exclusions" label="除外责任" :span="3">{{ detail.exclusions }}</el-descriptions-item>
@@ -54,10 +54,22 @@
         </el-descriptions>
       </template>
 
-      <!-- 核保决策表单 - 人工审核状态时显示 -->
-      <template v-if="detail?.status === 'MANUAL_REVIEW'">
+      <!-- 核保决策表单 —— 凡非终态均可出结论（后端 DecideUnderwritingCommand 的唯一守卫是 requireNotTerminal）。
+           🔴 不写死 MANUAL_REVIEW：超保额阈值产出的是 REVIEW，写死会让该类案件永远无决策入口。
+           🔴 且须叠加 `underwriting:decide`（`PUT /underwriting/{id}/decision` 的 @PreAuthorize）：
+           决策表单是整块写入口，无权限时连区块都不该出现——填完才被 403 拒是最差的引导。 -->
+      <template v-if="canDecide && hasPermission('underwriting:decide')">
         <el-divider />
         <div class="section-title">核保决策</div>
+        <el-alert
+          v-if="detail?.status === 'REVIEW'"
+          type="warning"
+          :closable="false"
+          show-icon
+          title="该案件因超出自动核保阈值转入复核"
+          description="请核对风险因素后出具结论；结论一经出具即为终态，不可撤销。"
+          style="margin-bottom: 16px"
+        />
         <el-form
           ref="decisionFormRef"
           :model="decisionForm"
@@ -81,7 +93,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
@@ -91,9 +103,11 @@ import TiDetailHeader from '@/components/TiDetailHeader/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import TiCopyText from '@/components/TiCopyText/index.vue'
 import { useDict } from '@/composables/useDict'
+import { usePermission } from '@/composables/usePermission'
 import { useDetailColumns } from '@/composables/useDetailColumns'
+import { canDecideUnderwriting, riskLevelLabel } from '@/constants/underwriting'
 import { formatDateTime } from '@/utils/date'
-import { formatAmount } from '@/utils/format'
+import { formatAmount, formatRate } from '@/utils/format'
 
 const { getLabel: underwritingStatusLabel } = useDict('UNDERWRITING_STATUS')
 const { getLabel: underwritingTypeLabel } = useDict('UNDERWRITING_TYPE')
@@ -104,14 +118,6 @@ const auditTypeOptions = [
   { value: 'AUTOMATIC', label: '自动核保' },
   { value: 'HYBRID', label: '混合核保' },
 ]
-
-/** 风险等级文案（对齐 metadata UnderwritingEnum.RiskLevel） */
-const riskLevelLabel = (code?: string): string => {
-  const map: Record<string, string> = {
-    STANDARD: '标准体', SUB_STANDARD: '次标准体', HIGH_RISK: '高风险体', UNINSURABLE: '不可保体',
-  }
-  return code ? map[code] ?? code : '-'
-}
 
 /** 结论类型文案（对齐 metadata UnderwritingEnum.ConclusionType） */
 const conclusionTypeLabel = (code?: string): string => {
@@ -128,6 +134,11 @@ const auditTypeLabel = (code?: string): string => {
 }
 
 /** 金额格式化 */
+
+/** 可否出具核保结论 —— 判据与后端唯一守卫 requireNotTerminal 对齐，详见 constants/underwriting.ts */
+const canDecide = computed(() => canDecideUnderwriting(detail.value?.status))
+/** 决策写权限（权威码：`UnderwritingProxyController` `PUT /{id}/decision` → UNDERWRITING_DECIDE） */
+const { hasPermission } = usePermission()
 
 /** 是否有可展示的核保结论信息 */
 const hasConclusion = (detail: UnderwritingCaseVO): boolean => {

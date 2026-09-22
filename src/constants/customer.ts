@@ -66,3 +66,15 @@ export function customerLabel(field: keyof typeof LABELS | string, value?: strin
   console.warn(`[customer] 字段 "${field}" 的值码 "${value}" 无中文映射，请核对 CustomerEnum`)
   return value
 }
+
+/**
+ * 取某字段的全部枚举选项（值域 = 后端枚举码，文案 = 本表）。
+ *
+ * <p>客户表单的证件类型/性别/客户类型下拉**必须**用本函数，不得改用 {@code TiDictSelect}：
+ * 全站字典里同名类型（如 {@code GENDER}）的值域是 {@code M/F/ALL}，与客户域的
+ * {@code CustomerEnum.CustomerGender}（{@code MALE/FEMALE/UNKNOWN}）**不是同一套码**，
+ * 下拉选项会与后端枚举错位，选中后提交必然被拒或落成非法值。</p>
+ */
+export function customerOptions(field: keyof typeof LABELS): { label: string; value: string }[] {
+  return Object.entries(LABELS[field] ?? {}).map(([value, label]) => ({ label, value }))
+}

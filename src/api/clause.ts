@@ -1,4 +1,5 @@
 // 条款相关接口
+import type { AxiosRequestConfig } from 'axios'
 import http from './http'
 import type { PageParams, PageResult } from '@/types/api.d'
 import { CATEGORY_BY_INSURANCE_TYPE } from '@/constants/insurance'
@@ -84,8 +85,8 @@ export async function getClauseList(
 }
 
 /** 获取条款详情 */
-export async function getClauseDetail(id: string): Promise<ClauseVO> {
-  const vo = await http.get<unknown, Record<string, any>>(`/web/v1/proxy/clauses/${id}`)
+export async function getClauseDetail(id: string, config?: AxiosRequestConfig): Promise<ClauseVO> {
+  const vo = await http.get<unknown, Record<string, any>>(`/web/v1/proxy/clauses/${id}`, config)
   return fromClauseVO(vo)
 }
 
@@ -178,8 +179,8 @@ export interface CoverageVO {
 }
 
 /** 查询条款下的保险责任列表（后端为 @PathVariable 子资源，返回裸数组） */
-export function getCoverages(clauseId: string): Promise<CoverageVO[]> {
-  return http.get(`/web/v1/proxy/clauses/${clauseId}/coverages`)
+export function getCoverages(clauseId: string, config?: AxiosRequestConfig): Promise<CoverageVO[]> {
+  return http.get(`/web/v1/proxy/clauses/${clauseId}/coverages`, config)
 }
 
 /** 为条款新增保险责任 */

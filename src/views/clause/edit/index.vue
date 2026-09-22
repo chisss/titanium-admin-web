@@ -76,7 +76,15 @@
       </el-form>
 
       <div style="padding-top: 16px; border-top: 1px solid var(--ti-border); display: flex; gap: 12px;">
-        <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
+        <!-- 🔴 本页新建与编辑复用同一张表单，但后端是两个端点、两个权限码：
+             `POST /clauses` → CLAUSE_CREATE，`PUT /clauses/{id}` → CLAUSE_EDIT。
+             按模式取码而非取并集——只给「新增条款」权限的运营不该能改已生效条款。 -->
+        <el-button
+          v-if="hasPermission(isEdit ? 'clause:edit' : 'clause:create')"
+          type="primary"
+          :loading="saving"
+          @click="handleSave"
+        >保存</el-button>
         <el-button @click="$router.back()">取消</el-button>
       </div>
     </div>
@@ -86,6 +94,7 @@
       <div class="coverage-header">
         <h3>保险责任配置</h3>
         <el-button
+          v-if="hasPermission('clause:edit')"
           type="primary"
           :icon="Plus"
           :disabled="!isEdit"
@@ -115,9 +124,15 @@
         <el-table-column label="关键参数" min-width="200" show-overflow-tooltip>
           <template #default="{ row }">{{ coverageSummary(row) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="100" fixed="right" class-name="ti-action-column">
+        <el-table-column label="操作" width="120" fixed="right" class-name="ti-action-column">
           <template #default="{ row }">
-            <el-button size="small" type="danger" :loading="rowPending === actionKey(row.coverageId, 'remove')" @click="handleRemoveCoverage(row)">删除</el-button>
+            <el-button
+              v-if="hasPermission('clause:edit')"
+              size="small"
+              type="danger"
+              :loading="rowPending === actionKey(row.coverageId, 'remove')"
+              @click="handleRemoveCoverage(row)"
+            >删除</el-button>
           </template>
         </el-table-column>
         <template #empty>暂无保险责任，点击「新增责任」开始配置</template>
@@ -270,6 +285,7 @@ import TiDetailHeader from '@/components/TiDetailHeader/index.vue'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
 import { useRowAction, confirmAction, actionKey } from '@/composables/useRowAction'
 import { useDict } from '@/composables/useDict'
+import { usePermission } from '@/composables/usePermission'
 import { formatAmount } from '@/utils/format'
 import { useUserStore } from '@/stores/user'
 
@@ -278,6 +294,8 @@ const router = useRouter()
 const userStore = useUserStore()
 
 const isEdit = computed(() => !!route.params.id)
+/** 写权限（权威码：`ClauseProxyController` —— POST /clauses→CLAUSE_CREATE、PUT 及责任增删→CLAUSE_EDIT） */
+const { hasPermission } = usePermission()
 const clauseId = computed(() => route.params.id as string)
 const loading = ref(false)
 const saving = ref(false)

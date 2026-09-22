@@ -43,6 +43,8 @@
       :max-height="'var(--ti-table-max-height-tabbed)'"
       @page-change="onPageChange"
       @size-change="onSizeChange"
+      :error="tableError"
+      @refresh="retry"
     >
       <el-table-column prop="schemeCode" label="方案编码" min-width="150" />
       <el-table-column prop="schemeVersion" label="版本" width="100" />
@@ -56,7 +58,7 @@
         <template #default="{ row }">{{ formatDateTime(row.effectiveFrom) }}</template>
       </el-table-column>
       <el-table-column label="状态" width="105"><template #default="{ row }"><TiStatusTag :value="row.status" :label="statusLabel(row.status)" /></template></el-table-column>
-      <el-table-column label="操作" :fixed="isNarrowScreen ? false : 'right'" min-width="160" class-name="ti-action-column">
+      <el-table-column label="操作" :fixed="isNarrowScreen ? false : 'right'" width="200" class-name="ti-action-column">
         <template #default="{ row }">
           <el-button size="small" :icon="View" @click="showDetail(row)">查看</el-button>
           <!-- :loading 按行绑定 rowPending：转圈的只会是刚点的那一行 -->
@@ -92,25 +94,25 @@
 
         <template v-if="form.calculationMethod === 'TIERED'">
           <el-divider content-position="left">阶梯佣金</el-divider>
-          <el-table :data="form.tiers" border size="small">
+          <el-table :data="form.tiers" border size="small" empty-text="暂无阶梯，点「新增阶梯」新增">
             <el-table-column label="下限（含）"><template #default="{ row }"><el-input-number v-model="row.lowerInclusive" :min="0" :precision="2" /></template></el-table-column>
             <el-table-column label="上限（不含）"><template #default="{ row }"><el-input-number v-model="row.upperExclusive" :min="0" :precision="2" placeholder="无上限" /></template></el-table-column>
             <el-table-column label="比例"><template #default="{ row }"><el-input-number v-model="row.rate" :min="0" :max="1" :precision="6" /></template></el-table-column>
             <el-table-column label="定额"><template #default="{ row }"><el-input-number v-model="row.fixedAmount" :min="0" :precision="2" /></template></el-table-column>
-            <el-table-column label="操作" width="100" class-name="ti-action-column"><template #default="{ $index }"><el-button size="small" type="danger" :icon="Delete" @click="form.tiers.splice($index, 1)">删除</el-button></template></el-table-column>
+            <el-table-column label="操作" width="120" class-name="ti-action-column"><template #default="{ $index }"><el-button size="small" type="danger" :icon="Delete" @click="form.tiers.splice($index, 1)">删除</el-button></template></el-table-column>
           </el-table>
           <el-button class="add-row" @click="form.tiers.push(newTier())">新增阶梯</el-button>
         </template>
 
         <el-divider content-position="left">分润指令</el-divider>
-        <el-table :data="form.splits" border size="small">
+        <el-table :data="form.splits" border size="small" empty-text="暂无分润方，点「新增分润方」新增">
           <el-table-column label="受益方类型" min-width="150"><template #default="{ row }"><TiDictSelect v-model="row.beneficiaryType" dict-type="COMMISSION_BENEFICIARY_TYPE" :clearable="false" /></template></el-table-column>
           <el-table-column label="受益方ID" min-width="190"><template #default="{ row }"><el-input v-model="row.beneficiaryId" /></template></el-table-column>
           <el-table-column label="分润比例" min-width="150"><template #default="{ row }"><el-input-number v-model="row.splitRate" :min="0" :max="1" :precision="6" /></template></el-table-column>
           <el-table-column label="顺序" width="110"><template #default="{ row }"><el-input-number v-model="row.sortOrder" :min="1" /></template></el-table-column>
-          <el-table-column label="操作" width="100" class-name="ti-action-column"><template #default="{ $index }"><el-button size="small" type="danger" :icon="Delete" :disabled="form.splits.length === 1" @click="form.splits.splice($index, 1)">删除</el-button></template></el-table-column>
+          <el-table-column label="操作" width="120" class-name="ti-action-column"><template #default="{ $index }"><el-button size="small" type="danger" :icon="Delete" :disabled="form.splits.length === 1" @click="form.splits.splice($index, 1)">删除</el-button></template></el-table-column>
         </el-table>
-        <div class="split-footer"><el-button @click="form.splits.push(newSplit())">新增分润方</el-button><span>当前合计 {{ rateText(splitTotal) }}</span></div>
+        <div class="split-footer"><el-button @click="form.splits.push(newSplit())">新增分润方</el-button><span>当前合计 {{ formatRate(splitTotal) }}</span></div>
       </el-form>
       <template #footer><el-button @click="createVisible = false">取消</el-button><el-button type="primary" :loading="saving" @click="submitCreate">创建草稿</el-button></template>
     </el-dialog>
@@ -127,7 +129,7 @@
         <el-descriptions-item label="内容哈希" :span="3"><span class="hash-text">{{ detail.contentHash || '-' }}</span></el-descriptions-item>
       </el-descriptions>
       <el-divider content-position="left">分润与结算</el-divider>
-      <el-table :data="detail?.splits || []" border><el-table-column prop="beneficiaryType" label="类型" width="110" /><el-table-column prop="beneficiaryId" label="受益方" min-width="180" /><el-table-column label="比例" width="120"><template #default="{ row }">{{ rateText(row.splitRate) }}</template></el-table-column><el-table-column prop="sortOrder" label="顺序" width="80" /></el-table>
+      <el-table :data="detail?.splits || []" border empty-text="暂无分润方"><el-table-column prop="beneficiaryType" label="类型" width="110" /><el-table-column prop="beneficiaryId" label="受益方" min-width="180" /><el-table-column label="比例" width="120"><template #default="{ row }">{{ formatRate(row.splitRate) }}</template></el-table-column><el-table-column prop="sortOrder" label="顺序" width="80" /></el-table>
     </el-drawer>
   </div>
 </template>
@@ -153,7 +155,7 @@ import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
 import { useDetailColumns } from '@/composables/useDetailColumns'
 import { useDict } from '@/composables/useDict'
-import { formatAmount } from '@/utils/format'
+import { formatAmount, formatRate } from '@/utils/format'
 import { formatDateTime } from '@/utils/date'
 import { MEDIA_MAX_MOBILE } from '@/constants/layout'
 
@@ -163,12 +165,11 @@ const queryParams = reactive({ channelId: '', productId: '', status: undefined a
 const isNarrowScreen = useMediaQuery(MEDIA_MAX_MOBILE)
 const { dictOptions: methodOptions, getLabel: methodLabel } = useDict('COMMISSION_METHOD')
 const { getLabel: statusLabel } = useDict('CONFIG_LIFECYCLE_STATUS')
-const rateText = (value?: number) => value === undefined ? '-' : `${(value * 100).toFixed(4).replace(/0+$/, '').replace(/\.$/, '')}%`
 const amountText = (value?: number, currency?: string) => value === undefined || value === null ? '-' : formatAmount(value, currency)
-const calculationLabel = (value: unknown) => { const row = value as CommissionScheme; return row.calculationMethod === 'PERCENTAGE' ? rateText(row.rate) : row.calculationMethod === 'FIXED' ? amountText(row.fixedAmount, row.currency) : `${row.tiers.length} 个阶梯` }
+const calculationLabel = (value: unknown) => { const row = value as CommissionScheme; return row.calculationMethod === 'PERCENTAGE' ? formatRate(row.rate) : row.calculationMethod === 'FIXED' ? amountText(row.fixedAmount, row.currency) : `${row.tiers.length} 个阶梯` }
 
 const emptyPage = (): PageResult<CommissionScheme> => ({ list: [], total: 0, pageNum: 1, pageSize: 20 })
-const { tableData, tableLoading, pagination, fetchData, handleSearch, handleReset, onPageChange, onSizeChange } = useTable<CommissionScheme, typeof queryParams>(
+const { tableData, tableLoading, tableError, pagination, fetchData, handleSearch, handleReset, onPageChange, onSizeChange, retry } = useTable<CommissionScheme, typeof queryParams>(
   (params) => params.channelId && params.productId ? getCommissionSchemeList(params) : Promise.resolve(emptyPage()), queryParams,
   // 本页首屏须先取渠道/产品下拉数据并回填查询条件（见 onMounted），故不由 useTable 自动加载
   { immediate: false },

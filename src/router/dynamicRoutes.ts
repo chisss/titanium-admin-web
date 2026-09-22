@@ -1,4 +1,18 @@
 // 动态路由定义 - 需要权限控制的业务路由
+//
+// 🔴 meta.permission 的双重身份（改之前务必读懂）：
+//   ① 它是**路由级门禁**的唯一输入 —— router/index.ts 的 beforeEach 会逐条比对它，
+//      不匹配即跳 /403（round6 批次 4 落地）。此前后端有 hasAuthority、前端只有按钮级
+//      v-permission/hasPermission，**整页级零门禁**：直接敲 URL 就能进只读账号本不该进的页面。
+//   ② 它必须与「该页面的菜单种子 t_menu.perm_code」同码，否则菜单给了入口、路由却拦人
+//      （或反之），两条路都进不去一个能用的页面。
+//
+// 🔴 两个码选取规约（tests/route-permission-contracts.test.mjs 机械固化）：
+//   · **详情页/工作台继承所属列表的码**：`*:detail`、`*:view` 这类细分码从未登记进
+//     t_permission，任何人都授不了它 ⇒ 一旦用作门禁，连超管之外的全部角色都打不开详情页。
+//     详情页本来就是列表行的下钻，可见性应当由列表码决定（有列表权限即能看详情）。
+//   · **一码到底**：页面若整页都是写操作（如理赔配置中心，其 controller 连 GET 都要求
+//     claim:config:edit），页面码就取那个写码，不另造页面级码制造「看得见读不了」的死胡同。
 import type { RouteRecordRaw } from 'vue-router'
 import AppLayout from '@/layouts/AppLayout.vue'
 
@@ -36,7 +50,7 @@ export const dynamicRoutes: RouteRecordRaw[] = [
             path: 'detail/:id',
             name: 'ProductDetail',
             component: () => import('@/views/product/detail/index.vue'),
-            meta: { title: '产品详情', permission: 'product:detail', hidden: true },
+            meta: { title: '产品详情', permission: 'product:list', hidden: true },
           },
           {
             path: 'revise/:id',
@@ -86,7 +100,7 @@ export const dynamicRoutes: RouteRecordRaw[] = [
             path: 'detail/:id',
             name: 'PolicyDetail',
             component: () => import('@/views/policy/detail/index.vue'),
-            meta: { title: '保单详情', permission: 'policy:detail', hidden: true },
+            meta: { title: '保单详情', permission: 'policy:list', hidden: true },
           },
           {
             path: 'application',
@@ -124,7 +138,7 @@ export const dynamicRoutes: RouteRecordRaw[] = [
             path: 'detail/:id',
             name: 'ClauseDetail',
             component: () => import('@/views/clause/detail/index.vue'),
-            meta: { title: '条款详情', permission: 'clause:detail', hidden: true },
+            meta: { title: '条款详情', permission: 'clause:list', hidden: true },
           },
         ],
       },
@@ -156,7 +170,7 @@ export const dynamicRoutes: RouteRecordRaw[] = [
             path: 'detail/:id',
             name: 'BillingDetail',
             component: () => import('@/views/billing/detail/index.vue'),
-            meta: { title: '账单详情', permission: 'billing:detail', hidden: true },
+            meta: { title: '账单详情', permission: 'billing:list', hidden: true },
           },
         ],
       },
@@ -196,7 +210,7 @@ export const dynamicRoutes: RouteRecordRaw[] = [
             path: 'workbench/:id',
             name: 'MaintenanceWorkbench',
             component: () => import('@/views/maintenance/workbench/index.vue'),
-            meta: { title: '保全工作台', permission: 'maintenance:view', hidden: true },
+            meta: { title: '保全工作台', permission: 'maintenance:list', hidden: true },
           },
           {
             path: 'configuration',
@@ -222,13 +236,13 @@ export const dynamicRoutes: RouteRecordRaw[] = [
             path: 'detail/:id',
             name: 'ClaimDetail',
             component: () => import('@/views/claim/detail/index.vue'),
-            meta: { title: '理赔详情', permission: 'claim:detail', hidden: true },
+            meta: { title: '理赔详情', permission: 'claim:list', hidden: true },
           },
           {
             path: 'config',
             name: 'ClaimConfig',
             component: () => import('@/views/claim/config/index.vue'),
-            meta: { title: '理赔配置中心', permission: 'claim:config' },
+            meta: { title: '理赔配置中心', permission: 'claim:config:edit' },
           },
         ],
       },
@@ -248,7 +262,7 @@ export const dynamicRoutes: RouteRecordRaw[] = [
             path: 'detail/:id',
             name: 'UnderwritingDetail',
             component: () => import('@/views/underwriting/detail/index.vue'),
-            meta: { title: '核保详情', permission: 'underwriting:detail', hidden: true },
+            meta: { title: '核保详情', permission: 'underwriting:list', hidden: true },
           },
         ],
       },
@@ -268,7 +282,7 @@ export const dynamicRoutes: RouteRecordRaw[] = [
             path: 'detail/:id',
             name: 'CustomerDetail',
             component: () => import('@/views/customer/detail/index.vue'),
-            meta: { title: '客户详情', permission: 'customer:detail', hidden: true },
+            meta: { title: '客户详情', permission: 'customer:list', hidden: true },
           },
         ],
       },

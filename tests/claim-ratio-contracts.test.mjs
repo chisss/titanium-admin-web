@@ -35,7 +35,11 @@ test('核赔结算预填以定损核定额为权威来源', () => {
     /settleForm\.settledAmount = claim\.value\?\.assessedPayableAmount \?\? claim\.value\?\.claimAmount \?\? 0/,
   )
 
-  // 详情页须向核赔员展示该权威金额，并在结算对话框中给出不可调提示
+  // 详情页须向核赔员展示该权威金额，并在结算对话框中**锁死**不可调。
+  // 🔴 本断言由「须有不可调提示」收紧为「输入框必须被禁用」——后端对非等值入参一律拒绝，
+  // 只写提示仍会放用户填进一个必然被拒的数（round6 批次 2，详见 claim-settlement-contracts.test.mjs）
   assert.match(claimDetailSource, /v-if="claim\.assessedPayableAmount != null" label="定损核定"/)
-  assert.match(claimDetailSource, /核定赔付金额须等于定损核定额/)
+  assert.match(claimDetailSource, /const settledAmountLocked = computed\(\(\) => claim\.value\?\.assessedPayableAmount != null\)/)
+  assert.match(claimDetailSource, /:disabled="settledAmountLocked"/)
+  assert.match(claimDetailSource, /已按定损核定额锁定，不可调整/)
 })

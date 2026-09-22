@@ -27,6 +27,8 @@
       :data="plans"
       :loading="loading"
       :max-height="'var(--ti-table-max-height-default)'"
+      :error="tableError"
+      @refresh="loadPlans"
     >
       <el-table-column prop="planVersion" label="定价包版本" width="120" />
       <el-table-column prop="productVersion" label="产品版本" width="110" />
@@ -39,7 +41,7 @@
       <el-table-column label="费用模型" min-width="190"><template #default="{ row }">{{ calculationModelLabel(row) }}</template></el-table-column>
       <el-table-column label="状态" width="110"><template #default="{ row }"><TiStatusTag :value="row.status" :label="statusLabel(row.status)" /></template></el-table-column>
       <el-table-column label="测试用例" width="100"><template #default="{ row }">{{ row.testCases?.length || 0 }}</template></el-table-column>
-      <el-table-column label="操作" :fixed="isNarrowScreen ? false : 'right'" min-width="260" class-name="ti-action-column">
+      <el-table-column label="操作" :fixed="isNarrowScreen ? false : 'right'" width="320" class-name="ti-action-column">
         <template #default="{ row }">
           <!-- 平铺动作收敛为 3 个：查看 + 草稿期两个；审批结果后的动作（运行测试/发布/退役）进「更多」 -->
           <el-button size="small" :icon="View" @click="showDetail(row)">查看</el-button>
@@ -154,7 +156,7 @@
 
     <el-dialog v-model="testCaseVisible" title="维护保费计算测试用例" width="min(1100px, calc(100vw - 24px))">
       <el-alert title="审批前至少维护一条测试用例；发布时系统会重新执行全部用例并要求全部通过。" type="info" :closable="false" class="test-alert" />
-      <el-table :data="editingTestCases" stripe>
+      <el-table :data="editingTestCases" stripe empty-text="暂无测试用例，点「新增用例」新增">
         <el-table-column label="编码" min-width="130"><template #default="{ row }"><el-input v-model="row.caseCode" /></template></el-table-column>
         <el-table-column label="业务时间" width="190"><template #default="{ row }"><el-date-picker v-model="row.businessTime" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" /></template></el-table-column>
         <el-table-column label="保额" width="140"><template #default="{ row }"><el-input-number v-model="row.sumInsured" :min="0" :precision="2" controls-position="right" /></template></el-table-column>
@@ -167,7 +169,7 @@
         <el-table-column label="保单年度" width="105"><template #default="{ row }"><el-input-number v-model="row.policyYear" :min="1" controls-position="right" /></template></el-table-column>
         <el-table-column label="预期保费" width="140"><template #default="{ row }"><el-input-number v-model="row.expectedPremium" :min="0" :precision="2" controls-position="right" /></template></el-table-column>
         <el-table-column label="容差" width="120"><template #default="{ row }"><el-input-number v-model="row.tolerance" :min="0" :precision="2" controls-position="right" /></template></el-table-column>
-        <el-table-column label="操作" width="100" class-name="ti-action-column"><template #default="{ $index }"><el-button size="small" type="danger" :icon="Delete" @click="editingTestCases.splice($index, 1)">删除</el-button></template></el-table-column>
+        <el-table-column label="操作" width="120" class-name="ti-action-column"><template #default="{ $index }"><el-button size="small" type="danger" :icon="Delete" @click="editingTestCases.splice($index, 1)">删除</el-button></template></el-table-column>
       </el-table>
       <el-button class="add-row" @click="editingTestCases.push(newTestCase())">新增用例</el-button>
       <template #footer><el-button @click="testCaseVisible = false">取消</el-button><el-button type="primary" :loading="saving" @click="saveTestCases">保存测试用例</el-button></template>
@@ -181,7 +183,7 @@
         :closable="false"
         class="test-alert"
       />
-      <el-table :data="testResult?.caseResults || []" stripe max-height="420">
+      <el-table :data="testResult?.caseResults || []" stripe max-height="420" empty-text="无用例执行结果">
         <el-table-column prop="caseCode" label="用例编码" min-width="140" />
         <el-table-column label="结果" width="90"><template #default="{ row }"><el-tag :type="row.passed ? 'success' : 'danger'" effect="light">{{ row.passed ? '通过' : '失败' }}</el-tag></template></el-table-column>
         <el-table-column label="预期保费" width="130" align="right"><template #default="{ row }">{{ formatAmount(row.expectedPremium) }}</template></el-table-column>
@@ -234,7 +236,7 @@
         <el-descriptions-item v-if="detail?.artifactHash" label="工件哈希" :span="3"><span class="hash-text">{{ detail.artifactHash }}</span></el-descriptions-item>
       </el-descriptions>
       <el-divider content-position="left">回归测试用例</el-divider>
-      <el-table :data="detail?.testCases || []" stripe>
+      <el-table :data="detail?.testCases || []" stripe empty-text="暂无测试用例">
         <el-table-column prop="caseCode" label="编码" min-width="130" /><el-table-column prop="description" label="说明" min-width="180" /><el-table-column prop="sumInsured" label="保额" width="120" /><el-table-column prop="age" label="年龄" width="75" /><el-table-column label="性别" width="75"><template #default="{ row }">{{ genderLabel(row.gender) }}</template></el-table-column><el-table-column prop="expectedPremium" label="预期保费" width="120" /><el-table-column prop="tolerance" label="容差" width="90" />
       </el-table>
     </el-drawer>
@@ -254,6 +256,7 @@ import { useDetailColumns } from '@/composables/useDetailColumns'
 import { useDict } from '@/composables/useDict'
 import { usePermission } from '@/composables/usePermission'
 import { useRowAction, confirmAction, actionKey } from '@/composables/useRowAction'
+import { useTableError } from '@/composables/useTable'
 import { getProductList } from '@/api/product'
 import { getRuleSet, listRuleSets, type RuleSet } from '@/api/rule-engine'
 import { listCalculationModels, listDynamicFactors, listTaxPolicies, type CalculationModel, type DynamicFactor, type TaxPolicy } from '@/api/actuarial'
@@ -269,6 +272,8 @@ type EditablePricingTestCase = PricingTestCase & { channelId?: string; policyYea
 // toRefs 让下面几十处 `productId.value` / `status.value` 零改动。
 const queryParams = reactive({ productId: '', status: '' }); const { productId, status } = toRefs(queryParams)
 const products = ref<ProductVO[]>([]); const plans = ref<PricingPlan[]>([]); const rateTables = ref<RateTable[]>([]); const ruleSets = ref<RuleSet[]>([]); const calculationModels = ref<CalculationModel[]>([]); const taxPolicies = ref<TaxPolicy[]>([]); const dynamicFactors = ref<DynamicFactor[]>([]); const channels = ref<ChannelVO[]>([]); const commissionSchemes = ref<CommissionScheme[]>([]); const loading = ref(false)
+// 失败态：接口挂了不得渲染成「暂无数据」（🔴 R7-13）
+const { tableError, clearTableError, setTableError } = useTableError()
 const createVisible = ref(false); const testCaseVisible = ref(false); /** 详情抽屉的描述区：字段短，宽屏 3 档（窄屏列数由组合式函数统一降为 1） */
 const detailColumns = useDetailColumns(3)
 
@@ -317,7 +322,7 @@ const dynamicFactorLabel = (row: unknown) => { const plan = row as PricingPlan; 
 const channelName = (channelId: string) => channels.value.find((item) => item.channelId === channelId)?.channelName || channelId
 
 async function loadProducts() { const result = await getProductList({ pageNum: 1, pageSize: 100 }); products.value = result.list; if (!productId.value && products.value.length) productId.value = products.value[0].id; await loadProductContext() }
-async function loadPlans() { if (!productId.value) { plans.value = []; return }; loading.value = true; try { plans.value = await listPricingPlans(productId.value, status.value || undefined) } finally { loading.value = false } }
+async function loadPlans() { if (!productId.value) { plans.value = []; return }; loading.value = true; try { plans.value = await listPricingPlans(productId.value, status.value || undefined); clearTableError() } catch (err) { plans.value = []; setTableError(err) } finally { loading.value = false } }
 /**
  * 重置检索条件。
  *

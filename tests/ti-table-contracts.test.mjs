@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readdir, readFile } from 'node:fs/promises'
 import test from 'node:test'
 import { h } from 'vue'
 
@@ -57,6 +58,29 @@ const render = (props = {}, slots = {}) =>
     slots: { default: () => [], ...slots },
     stubs: STUBS,
   })
+
+/**
+ * 剥注释后再扫描（🔴 用户级 lessons：扫源码的断言不剥注释 ⇒ 注释掉的代码被当成存在）。
+ * 三种注释都要剥，且 `//` 只剥**行首**的：模板属性里可能有 `href="http://…"`，
+ * 按 `//` 截行会把该行后半段整段吃掉（本仓其他契约测试踩过同一个坑）。
+ */
+const stripComments = (s) =>
+  s
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/^[ \t]*\/\/[^\n]*/gm, '')
+
+/** 递归收集 src 下全部 .vue */
+async function collectVue(dir) {
+  const entries = await readdir(dir, { withFileTypes: true })
+  const files = []
+  for (const entry of entries) {
+    const full = new URL(`${entry.name}${entry.isDirectory() ? '/' : ''}`, dir)
+    if (entry.isDirectory()) files.push(...(await collectVue(full)))
+    else if (entry.name.endsWith('.vue')) files.push(full)
+  }
+  return files
+}
 
 test('① 默认渲染 = 存量实例的形态：stripe 开、border 关、无工具栏、无失败态', async () => {
   const tree = await render()
@@ -179,4 +203,113 @@ test('⑦ 内置文案是中文常量而非 i18n 键（🔴 D-12）', async () =
   // 原样显示出来（common.prevPage），此时上面对「上一页」的断言会失败、而只把键名当文案
   // 的回归则只有这条能抓住。
   assert.doesNotMatch(flat, /common\.(noData|totalUnknown|prevPage|nextPage)/, '界面出现了 i18n 键名')
+})
+
+test('⑧ 全量模式 paged:false：一个分页控件都不渲染（R9-F07）', async () => {
+  // 现场（F-07）：`claim/config` 的调用方传 `:page-size="9999"` 表达「一次拉全量、不分页」，
+  // 而本组件的 page-sizes 是硬编码档位 [10,20,50,100]，9999 不在档位内 ⇒ EP 的
+  // sizes 选择器 selectedLabel 匹配失败后回落显示**裸值**，页面上于是出现
+  // 「共 1 条 | 9999 | ‹1› | 前往 页」（9999 后面没有「条/页」）。
+  // 修法是**不再渲染分页器**，而不是「传一个超大的 pageSize」——后者只是把档位表当摆设。
+  //
+  // 两个分页分支都要覆盖：常规分页器（total 已知）与「总数未知」翻页块（total=null）。
+  // 只测前者会漏掉后者——`v-else-if` 链上漏加 `paged` 判定时，全量模式里仍会冒出一对
+  // 「上一页/下一页」按钮。
+
+  // 控制组：不传 paged（默认 true）时两个分支都必须照常渲染，否则下面的 assertNoNode
+  // 会因为「分页本来就没实现」而恒绿——这正是 R8-01 的教训（守卫可为真却守在不可达路径上）。
+  const known = await render({ total: 3 })
+  assert.ok(
+    findNode(known, (n) => n.tag === '<el-pagination>'),
+    '控制组失败：默认形态下 total>0 必须渲染 el-pagination（否则本用例的分页断言全部恒绿）',
+  )
+  const unknown = await render({ total: null })
+  assert.ok(
+    findNode(unknown, (n) => n.props.class === 'ti-pagination'),
+    '控制组失败：默认形态下 total=null 且有数据必须渲染「总数未知」翻页块',
+  )
+
+  // 正题：全量模式（两种 total 都要断言）
+  for (const [label, props] of [['总数已知', { total: 3 }], ['总数未知', { total: null }]]) {
+    const tree = await render({ ...props, paged: false })
+    assert.ok(
+      findNode(tree, (n) => n.tag === '<el-table>'),
+      `全量模式（${label}）仍须渲染表格本身`,
+    )
+    assertNoNode(tree, (n) => n.tag === '<el-pagination>', `全量模式（${label}）不得渲染分页器`)
+    const flat = dumpTree(tree).join('')
+    assert.doesNotMatch(
+      flat,
+      /总数未知|上一页|下一页|前往/,
+      `全量模式（${label}）不得残留任何分页文案（含 prev/next 兜底块）`,
+    )
+  }
+
+  // paged 是本组件自己的 prop，不得透传成 el-table 的 DOM 属性（同 ③ 的泄漏检查）
+  const full = await render({ paged: false })
+  const table = findNode(full, (n) => n.tag === '<el-table>')
+  assert.ok(!('paged' in table.props), 'paged 不应落到 el-table 上')
+
+  // 显式传 true 与默认形态等价（避免把「未传」误当成唯一通路）
+  assert.ok(
+    findNode(await render({ total: 3, paged: true }), (n) => n.tag === '<el-pagination>'),
+    'paged:true 应显式保持分页器',
+  )
+})
+
+test('⑨ 全站调用方不得以「超大 page-size」表达不分页，也不得拿 data 自己算 total', async () => {
+  // ⑧ 保住了 TiTable 侧的能力，本用例保住**调用方侧**不再写出 F-07 那种形态——
+  // 否则同一个 bug 换个页面就会复发（⑧ 只测组件，测不到调用方传了什么）。
+  //
+  // 两条规则都是**机械可判**的，故不留豁免：
+  //   ① `:page-size="<纯数字>"`：字面量要么落在档位表内（复述了组件的档位，档位一变就漂移），
+  //      要么落在档位表外（EP 回落显示裸值 = F-07）。两种都不是调用方该表达的意图：
+  //      要分页就传 pageSize 变量，不分页就 `:paged="false"`。
+  //   ② `:total="X.length"`：total 与 data 同源时两种可能都是错的——X 未被切片则分页器
+  //      点了不换内容（装饰性控件）；X 已被切片则 total 只等于**本页**条数，总数低报、
+  //      第 2 页永远不可达。真实 total 只能来自后端的 `pagination.total`。
+  const files = await collectVue(new URL('../src/', import.meta.url))
+  const offenders = []
+  let pageSizeBindings = 0
+
+  for (const file of files) {
+    const rel = file.pathname.replace(/^.*\/src\//, 'src/')
+    // 🔴 必须剥注释：F-07 的现场说明就写在调用方与组件的注释里（`此前是 :page-size="9999"`），
+    // 不剥注释则这条断言**必然恒红**，且红的是注释而非代码。
+    const source = stripComments(await readFile(file, 'utf8'))
+    pageSizeBindings += (source.match(/:page-size="/g) ?? []).length
+    for (const m of source.matchAll(/:page-size="\s*(\d+)\s*"/g)) {
+      offenders.push(`${rel}：:page-size="${m[1]}"`)
+    }
+    for (const m of source.matchAll(/:total="([^"]*\.length)"/g)) {
+      offenders.push(`${rel}：:total="${m[1]}"`)
+    }
+  }
+
+  // 覆盖量下限：全站 25 处 TiTable 实例传 page-size，扫到个位数说明收集口径已失效（空集恒绿）
+  assert.ok(
+    pageSizeBindings >= 20,
+    `只扫到 ${pageSizeBindings} 处 :page-size 绑定，收集口径疑似失效（空集恒绿）`,
+  )
+  assert.deepEqual(
+    offenders,
+    [],
+    '调用方的分页绑定写成了字面量或自算 total：\n'
+      + `  ${offenders.join('\n  ')}\n`
+      + '不分页请用 :paged="false"；分页请传后端的 pagination.total 与 pageSize 变量'
+      + '（page-sizes 档位表由 TiTable 统一持有，调用方复述字面量必漂移）',
+  )
+
+  // 正题：F-07 的调用方已改用全量模式（无分页绑定、无自算 total），
+  // 且**页面自身的条数展示另有其处**（面板工具栏「共 N 条配置」）——去掉分页器不丢信息
+  const panel = stripComments(
+    await readFile(new URL('../src/views/claim/config/ConfigPanel.vue', import.meta.url), 'utf8'),
+  )
+  assert.match(
+    panel,
+    /<TiTable[^>]*:paged="false"/,
+    'claim/config 的面板应以 :paged="false" 表达「一次拉全量」',
+  )
+  assert.doesNotMatch(panel, /:page-size=/, 'claim/config 不应再传 page-size')
+  assert.match(panel, /共 <b>\{\{ list\.length \}\}<\/b> 条配置/, '条数展示须保留在面板工具栏')
 })

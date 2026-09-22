@@ -268,16 +268,30 @@ export interface CreateMaintenanceCaseRequest {
   clientRequestKey: string
 }
 
+/**
+ * 保全项字段规则（后端 `MaintenanceConfigurationVO.FieldRuleVO`）。
+ *
+ * <p>🔴 `conditionRuleCode` / `expectedValueType` / `validationType` / `validationPattern` /
+ * `validationMessage` 五项在**查看者无敏感明细权限**时会被后端整组抹为 null，并置
+ * `detailsRedacted = true`（见 `MaintenanceConfigurationWebMapper.toFieldRuleVO`）。
+ * 消费方必须按「字段缺失 ≠ 无此配置」处理：例如 `conditionRuleCode` 为空既可能是「无条件规则」，
+ * 也可能是「被抹掉」，此时**不得**把 `required` 当成无条件必填。
+ * `required` / `visible` / `editable` / `allowClear` 不在抹除之列，始终可信。</p>
+ */
 export interface MaintenanceConfigurationFieldRule {
   fieldCode: string
   required: boolean
   visible: boolean
   editable: boolean
   allowClear: boolean
+  /** 非空即表示必填性由条件规则动态决定；被抹除时同为 null/undefined */
+  conditionRuleCode?: string
   expectedValueType?: string
   validationType?: MaintenanceFieldValidationType
   validationPattern?: string
   validationMessage?: string
+  /** 非敏感明细已被抹除的标记 */
+  detailsRedacted?: boolean
 }
 
 export type MaintenanceFieldValidationType =

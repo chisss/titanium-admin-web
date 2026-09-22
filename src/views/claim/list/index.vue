@@ -32,7 +32,10 @@
         </span>
       </div>
       <div class="ti-toolbar-right">
-        <el-button type="primary" :icon="Plus" @click="dialogVisible = true">新建案件</el-button>
+        <!-- 报案落 `POST /claims` → `CLAIM_CREATE`：无该权限时入口不渲染，避免填完整张报表单才被拒 -->
+        <el-button v-if="hasPermission('claim:create')" type="primary" :icon="Plus" @click="dialogVisible = true">
+          新建案件
+        </el-button>
       </div>
     </div>
 
@@ -47,8 +50,12 @@
       row-key="claimId"
       @page-change="onPageChange"
       @size-change="onSizeChange"
+      :error="tableError"
+      @refresh="retry"
     >
-      <el-table-column prop="claimNumber" label="报案号" width="190" fixed="left" class-name="ti-code-column" />
+      <!-- 🔴 本表唯一的 flex 列（只写 min-width）：EP 无 flex 列时把表格宽设为「各列宽之和」
+           （table-layout.mjs:123-131），整表会比容器窄、右侧留白。选报案号承接——内容是长度不定的编码 -->
+      <el-table-column prop="claimNumber" label="报案号" min-width="190" fixed="left" class-name="ti-code-column" />
       <el-table-column label="理赔类型" width="100">
         <template #default="{ row }">{{ claimTypeLabel(row.claimType) }}</template>
       </el-table-column>
@@ -70,7 +77,7 @@
       <el-table-column prop="createdAt" label="报案时间" width="160">
         <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
       </el-table-column>
-      <el-table-column label="操作" min-width="100" fixed="right" class-name="ti-action-column">
+      <el-table-column label="操作" width="120" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
           <el-button size="small" :icon="View" @click="goDetail(row.claimId)">详情</el-button>
         </template>
@@ -129,6 +136,7 @@ import {
 import type { ClaimCaseVO, CreateClaimRequest } from '@/api/claim'
 import { useTable } from '@/composables/useTable'
 import { useDict } from '@/composables/useDict'
+import { usePermission } from '@/composables/usePermission'
 import { formatAmount } from '@/utils/format'
 // 日期格式化统一走全局工具：本文件此前自带 `split('T')[0]` / `replace('T',' ')` 两份本地实现，
 // 与 claim/detail 各存一份（全站 29 个文件用全局工具，仅理赔域两处重复）。
@@ -144,9 +152,11 @@ const router = useRouter()
 
 /** 理赔类型字典（后端字典驱动，支持国际化） */
 const { dictOptions: claimTypeOptions, getLabel: claimTypeLabel } = useDict('CLAIM_TYPE')
-
 /** 理赔状态字典（后端字典驱动，支持国际化） */
 const { dictOptions: claimStatusOptions, getLabel: claimStatusLabel } = useDict('CLAIM_STATUS')
+
+/** 报案入口的权限判据（权威码见 `ClaimProxyController` `POST /claims` 的 @PreAuthorize） */
+const { hasPermission } = usePermission()
 
 const queryParams = reactive({
   claimNo: '',
@@ -155,7 +165,7 @@ const queryParams = reactive({
   status: undefined as string | undefined,
 })
 
-const { tableData, tableLoading, pagination, fetchData, handleSearch, handleReset, onPageChange, onSizeChange } =
+const { tableData, tableLoading, tableError, pagination, fetchData, handleSearch, handleReset, onPageChange, onSizeChange, retry } =
   useTable<ClaimCaseVO, typeof queryParams>((params) => getClaimList(params), queryParams)
 
 fetchData()

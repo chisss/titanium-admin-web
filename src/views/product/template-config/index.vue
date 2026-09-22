@@ -253,7 +253,9 @@
         </el-tab-pane>
 
         <!-- 保额管理 / 寿险规格（寿险线专属，独立 life-config 端点） -->
-        <el-tab-pane v-if="isLifeLine" label="保额管理(寿险规格)" name="lifeSpec">
+        <!-- 🔴 须同时满足「寿险线」与 `product:config`：本页签的字段保存时走独立端点，
+             没有该权限时让页签可见＝让用户填一份永远发不出去的配置 -->
+        <el-tab-pane v-if="isLifeLine && canConfigureLife" label="保额管理(寿险规格)" name="lifeSpec">
           <el-alert
             title="寿险规格独立保存至产品的 life-config：定义投保年龄区间、基本保额区间及缴费期/保障期选项。"
             type="info"
@@ -279,7 +281,7 @@
             </el-form-item>
 
             <el-divider content-position="left">缴费期选项</el-divider>
-            <el-table :data="lifeForm.premiumTermOptions" size="small" border style="width: 100%">
+            <el-table :data="lifeForm.premiumTermOptions" size="small" border style="width: 100%" empty-text="暂无缴费期选项，点「添加缴费期」新增">
               <el-table-column label="缴费年数" width="140">
                 <template #default="{ row }">
                   <el-input-number v-model="row.years" :min="0" size="small" controls-position="right" style="width: 110px" />
@@ -295,7 +297,7 @@
                   <el-input v-model="row.description" placeholder="如 趸缴/20年缴/缴至60岁" size="small" />
                 </template>
               </el-table-column>
-              <el-table-column label="操作" width="100" align="center" class-name="ti-action-column">
+              <el-table-column label="操作" width="120" align="center" class-name="ti-action-column">
                 <template #default="{ $index }">
                   <el-button size="small" type="danger" :icon="Delete" @click="lifeForm.premiumTermOptions.splice($index, 1)">删除</el-button>
                 </template>
@@ -304,7 +306,7 @@
             <el-button link type="primary" style="margin-top: 8px" @click="addPremiumTerm">+ 添加缴费期</el-button>
 
             <el-divider content-position="left">保障期选项</el-divider>
-            <el-table :data="lifeForm.coverageTermOptions" size="small" border style="width: 100%">
+            <el-table :data="lifeForm.coverageTermOptions" size="small" border style="width: 100%" empty-text="暂无保障期选项，点「添加保障期」新增">
               <el-table-column label="保障年数" width="140">
                 <template #default="{ row }">
                   <el-input-number v-model="row.years" :min="0" size="small" controls-position="right" style="width: 110px" />
@@ -325,7 +327,7 @@
                   <el-input v-model="row.description" placeholder="如 保20年/保至70岁/终身" size="small" />
                 </template>
               </el-table-column>
-              <el-table-column label="操作" width="100" align="center" class-name="ti-action-column">
+              <el-table-column label="操作" width="120" align="center" class-name="ti-action-column">
                 <template #default="{ $index }">
                   <el-button size="small" type="danger" :icon="Delete" @click="lifeForm.coverageTermOptions.splice($index, 1)">删除</el-button>
                 </template>
@@ -337,7 +339,9 @@
       </el-tabs>
 
       <div v-if="templateId" class="config-footer">
-        <el-button type="primary" :loading="saving" @click="handleSave">保存配置</el-button>
+        <!-- 保存落 `PUT /templates/{id}` → PRODUCT_EDIT（寿险规格另行落 life-config → PRODUCT_CONFIG，
+             见脚本内的条件调用：无 product:config 时该页签不渲染，用户改不到，故不发这一路） -->
+        <el-button v-if="canEditTemplate" type="primary" :loading="saving" @click="handleSave">保存配置</el-button>
         <el-button @click="$router.back()">取消</el-button>
       </div>
     </div>
@@ -364,6 +368,22 @@ import { listRuleSets, type RuleSet } from '@/api/rule-engine'
 import type { ProductDetailVO } from '@/types/business.d'
 import TiDetailHeader from '@/components/TiDetailHeader/index.vue'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
+import { usePermission } from '@/composables/usePermission'
+
+/**
+ * 本页一次保存分叉到两个后端端点、两个权限码（取自 `ProductProxyController` 的 @PreAuthorize）：
+ * <ul>
+ *   <li>{@code PUT /{id}/templates/{templateId}} → {@code PRODUCT_EDIT} = {@code product:edit}
+ *       —— 保存按钮的**必经**调用，故按钮判据取它；</li>
+ *   <li>{@code POST /{id}/life-config} → {@code PRODUCT_CONFIG} = {@code product:config}
+ *       —— 寿险规格页签的独立保存，故页签与那一次调用都取它。</li>
+ * </ul>
+ * 两者是不同权限，不能合并成一个判据：取并集会让只有 product:edit 的人看到改不了的页签，
+ * 取交集会让只有 product:config 的精算连模板行为配置都存不了。
+ */
+const { hasPermission } = usePermission()
+const canEditTemplate = computed(() => hasPermission('product:edit'))
+const canConfigureLife = computed(() => hasPermission('product:config'))
 
 const route = useRoute()
 const router = useRouter()
@@ -489,7 +509,8 @@ function addCoverageTerm() {
 
 // ===== 预填：加载模板当前配置 =====
 async function prefillFromTemplate(id: string) {
-  const tpl = await getTemplate(id).catch(() => null)
+  // 🔴 已就地 catch 兜底 ⇒ 必须 silentError，避免「安静降级 + 全局红条」并存
+  const tpl = await getTemplate(id, { silentError: true }).catch(() => null)
   if (!tpl) return
   templateForm.templateName = tpl.templateName
   templateForm.issuanceMode = tpl.issuanceMode
@@ -527,7 +548,8 @@ async function prefillFromTemplate(id: string) {
 
 // ===== 预填：加载寿险规格（按产品维度） =====
 async function prefillLifeSpec(productId: string) {
-  const spec = await getLifeProductConfig(productId).catch(() => null)
+  // 寿险规格同属预填附属数据，失败即跳过预填（silentError 同上）
+  const spec = await getLifeProductConfig(productId, { silentError: true }).catch(() => null)
   if (!spec) return
   lifeForm.productType = spec.productType
   lifeForm.minAge = spec.entryAgeRange?.minAge
@@ -629,7 +651,10 @@ async function handleSave() {
     activeTab.value = 'dividend'
     return
   }
-  if (isLifeLine.value && !(await lifeFormRef.value?.validate().then(() => true).catch(() => false))) {
+  // 🔴 必须与「页签是否渲染」用同一判据（canConfigureLife）：页签不渲染时 lifeFormRef 为空，
+  // `?.` 短路后返回 undefined，`!undefined` 为真 —— 不判权限就会把「表单不存在」误读成
+  // 「校验不通过」，于是一次点击只是切页签并 return，保存静默不执行。
+  if (canConfigureLife.value && isLifeLine.value && !(await lifeFormRef.value?.validate().then(() => true).catch(() => false))) {
     activeTab.value = 'lifeSpec'
     return
   }
@@ -676,8 +701,10 @@ async function handleSave() {
 
     await updateTemplate(templateId.value, payload)
 
-    // 寿险规格独立保存（仅寿险线且填写了年龄/保额区间时）
-    if (isLifeLine.value && lifeSpecFilled()) {
+    // 寿险规格独立保存（仅寿险线、填写了年龄/保额区间、**且具备 product:config** 时）。
+    // 无该权限时 lifeSpec 页签根本不渲染，用户无从修改这些字段，故跳过不是「吞掉用户的编辑」，
+    // 而是不去发一个必然 403 的请求（后端 life-config 端点只认 PRODUCT_CONFIG）。
+    if (isLifeLine.value && canConfigureLife.value && lifeSpecFilled()) {
       await configureLifeProduct(route.params.id as string, {
         productType: lifeForm.productType,
         entryAgeRange: { minAge: lifeForm.minAge!, maxAge: lifeForm.maxAge! },

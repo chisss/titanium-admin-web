@@ -18,10 +18,39 @@ export interface PageQuery {
  * 🔴 D-07：request 拦截器 reject 的不一定是 Error —— 可能是后端原始字符串、普通对象，
  * 直接塞进 tableError 会让消费方 `error.message` 取到 undefined，错误态渲染成空白。
  */
-function normalizeError(err: unknown): Error {
+export function normalizeError(err: unknown): Error {
   if (err instanceof Error) return err
   if (typeof err === 'string' && err.trim()) return new Error(err)
   return new Error('数据加载失败')
+}
+
+/**
+ * 非分页列表页的失败态（🔴 R7-13）。
+ *
+ * <p>不走 `useTable` 的自定义加载页（一屏取多张表、或自带分页的页）此前普遍只有
+ * `try/finally`：接口失败时 loading 正常关闭、全局 toast 一闪而过，而表格永久停在
+ * 「暂无数据」——向用户断言「系统里没有这类数据」，与「接口挂了」在界面上完全同形。
+ * toast 是瞬时的，这条断言却是持久的，所以「反正有全局提示」并不构成兜底。</p>
+ *
+ * <p>此处把 `useTable` 内联的三条失败语义抽出来供其复用，避免各页自行推导：
+ * ① 成功路径清错；② 失败路径置错**并清空上一次的数据**（否则界面呈现「旧数据 + 新错误」，
+ * 用户会以为这份旧数据就是本次查询结果，比单纯不显示更危险）；③ 失败同样要关 loading，
+ * 否则重试按钮永远转圈、页面卡在加载态。</p>
+ *
+ * <p>🔴 清错必须写在 `try` 的成功分支里，**不能**写进 `finally` —— 失败路径也经过 `finally`，
+ * 会把刚置上的错误立刻抹掉，失败态永远不显示。这是本修复最容易写错的地方。</p>
+ */
+export function useTableError() {
+  const tableError = ref<Error | null>(null)
+  /** 成功路径调用：清掉上一次的失败态 */
+  const clearTableError = () => {
+    tableError.value = null
+  }
+  /** 失败路径调用：置上失败态（调用方同时负责清空自己的数据） */
+  const setTableError = (err: unknown) => {
+    tableError.value = normalizeError(err)
+  }
+  return { tableError, clearTableError, setTableError }
 }
 
 /**

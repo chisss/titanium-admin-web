@@ -1,9 +1,19 @@
 <template>
-  <!-- 新建/编辑产品 - 分步向导 -->
+  <!-- 新建产品 / 修订产品（生成新版本草稿）- 分步向导 -->
   <div class="ti-page">
-    <div class="ti-card">
+    <div class="ti-card" v-loading="detailLoading">
       <div class="product-create__header">
-        <h3>{{ isEdit ? '编辑产品' : '新建产品' }}</h3>
+        <h3>{{ isRollback ? '按历史版本回滚' : reviseFromId ? '修订产品' : '新建产品' }}</h3>
+        <!-- 🔴 修订的语义必须在页头讲清：它**不改写当前生效版本**，而是生成新版本草稿。
+             原先把这里标成「编辑产品」，用户以为在改，实际每次保存都新建了一份产品。 -->
+        <p v-if="isRollback" class="product-create__hint">
+          以历史版本「{{ prefillVersionLabel }}」的配置为底稿，提交到当前生效版本上生成**新版本草稿**。
+          已发布的历史版本永远原样保留，不会被改写或重新生效 —— 回滚同样是一次新变更，留痕可查。
+        </p>
+        <p v-else-if="reviseFromId" class="product-create__hint">
+          基于当前生效版本修订。提交后生成**新版本草稿**（版本号递增），当前生效版本保持不变；
+          未在本向导中修改的配置项将沿用原版本。
+        </p>
       </div>
 
       <!-- 步骤条 -->
@@ -139,7 +149,7 @@
 
           <!-- 保障责任预览：所选条款下的 Coverage -->
           <el-form-item v-if="coverages.length" label="保障责任">
-            <el-table :data="coverages" size="small" border style="width: 640px" :max-height="260">
+            <el-table :data="coverages" size="small" border style="width: 640px" :max-height="260" empty-text="该条款未配置保障责任">
               <el-table-column prop="coverageName" label="责任名称" min-width="140" />
               <el-table-column prop="coverageType" label="类型" width="130" />
               <el-table-column label="保额/限额" width="130" align="right">
@@ -330,7 +340,7 @@
           scroll-to-error
         >
           <el-divider content-position="left">所需投保材料</el-divider>
-          <el-table :data="form.documentConfig.requiredMaterials" size="small" border style="width: 100%">
+          <el-table :data="form.documentConfig.requiredMaterials" size="small" border style="width: 100%" empty-text="暂无投保材料，点「添加材料」新增">
             <el-table-column label="材料编码" width="220">
               <template #default="{ row, $index }">
                 <el-form-item
@@ -375,7 +385,7 @@
                 <el-input v-model="row.description" placeholder="提交要求" size="small" />
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="100" align="center" class-name="ti-action-column">
+            <el-table-column label="操作" width="120" align="center" class-name="ti-action-column">
               <template #default="{ $index }">
                 <el-button size="small" type="danger" :icon="Delete" @click="removeMaterial($index)">删除</el-button>
               </template>
@@ -384,7 +394,7 @@
           <el-button link type="primary" style="margin-top: 8px" @click="addMaterial">+ 添加材料</el-button>
 
           <el-divider content-position="left">生成文档模板</el-divider>
-          <el-table :data="form.documentConfig.documentTemplates" size="small" border style="width: 100%">
+          <el-table :data="form.documentConfig.documentTemplates" size="small" border style="width: 100%" empty-text="暂无文档模板，点「添加文档模板」新增">
             <el-table-column label="文档类型" width="180">
               <template #default="{ row, $index }">
                 <el-form-item
@@ -425,7 +435,7 @@
                 <el-switch v-model="row.autoGenerate" />
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="100" align="center" class-name="ti-action-column">
+            <el-table-column label="操作" width="120" align="center" class-name="ti-action-column">
               <template #default="{ $index }">
                 <el-button size="small" type="danger" :icon="Delete" @click="removeDocTemplate($index)">删除</el-button>
               </template>
@@ -470,8 +480,17 @@
       <div class="product-create__footer">
         <el-button v-if="currentStep > 0" @click="currentStep--">上一步</el-button>
         <el-button v-if="currentStep < 4" type="primary" @click="nextStep">下一步</el-button>
-        <el-button v-if="currentStep === 4" type="primary" :loading="saving" @click="handleSave">
-          {{ isEdit ? '保存修改' : '创建产品' }}
+        <!-- 🔴 本页是「新建」与「修订」复用同一张向导，但 handleSave 分叉到两个端点、两个权限码：
+             `POST /products` → PRODUCT_CREATE，`POST /{id}/revise` → PRODUCT_EDIT。
+             按分叉取码而非取并集——只给「新建产品」权限的运营不该能改已生效产品。 -->
+        <el-button
+          v-if="currentStep === 4 && hasPermission(reviseFromId ? 'product:edit' : 'product:create')"
+          type="primary"
+          :loading="saving"
+          :disabled="!!reviseFromId && !rawDetail"
+          @click="handleSave"
+        >
+          {{ isRollback ? '提交回滚（生成新版本草稿）' : reviseFromId ? '提交修订（生成新版本草稿）' : '创建产品' }}
         </el-button>
         <el-button @click="$router.back()">取消</el-button>
       </div>
@@ -492,14 +511,20 @@
       </el-form>
       <template #footer>
         <el-button @click="showTemplateDialog = false">取消</el-button>
-        <el-button type="primary" :loading="templateSaving" @click="handleCreateTemplate">创建</el-button>
+        <!-- 建模板落 `POST /templates` → PRODUCT_CREATE（非 PRODUCT_EDIT：确为新建语义） -->
+        <el-button
+          v-if="hasPermission('product:create')"
+          type="primary"
+          :loading="templateSaving"
+          @click="handleCreateTemplate"
+        >创建</el-button>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, nextTick } from 'vue'
+import { ref, reactive, computed, nextTick, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDetailColumns } from '@/composables/useDetailColumns'
 import { ElMessage } from 'element-plus'
@@ -507,6 +532,10 @@ import type { FormInstance, FormItemRule, FormRules } from 'element-plus'
 import { Delete } from '@element-plus/icons-vue'
 import {
   createProduct,
+  reviseProduct,
+  toReviseProductPayload,
+  getProductDetailRaw,
+  getProductClauses,
   getTemplatesByCategory,
   createTemplate,
   toTemplateInsuranceType,
@@ -518,9 +547,10 @@ import { getClauseList, getCoverages, type ClauseVO, type CoverageVO } from '@/a
 import { listRuleSets, type RuleSet } from '@/api/rule-engine'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
 import { formatAmount } from '@/utils/format'
-import { insuranceTypesOf, insuranceTypeLabel } from '@/constants/insurance'
+import { insuranceTypesOf, insuranceTypeLabel, CATEGORY_BY_INSURANCE_TYPE } from '@/constants/insurance'
 import { MATERIAL_OPTIONS, materialLabel } from '@/constants/material'
 import { useUserStore } from '@/stores/user'
+import { usePermission } from '@/composables/usePermission'
 
 /** 描述区：字段中短，宽屏 2 档 */
 const detailColumns = useDetailColumns(2)
@@ -532,7 +562,57 @@ const userStore = useUserStore()
 // 二级险种选项：随一级险种大类联动
 const insuranceTypeOptions = computed(() => insuranceTypesOf(form.category))
 
-const isEdit = computed(() => !!route.query.id)
+/**
+ * 被修订的生效产品ID（`?id=` 传入）；为空 = 新建。
+ *
+ * <p>🔴 命名是「修订」而非「编辑」：本页原先标着「编辑产品 / 保存修改」，判据也是
+ * `!!route.query.id`，但 `handleSave` **恒调 `createProduct`** —— 用户以为在改，
+ * 实际每次保存都凭空产生一份**重复产品**（后端 `reviseProduct` 才是变更既有产品的唯一入口）。</p>
+ *
+ * <p>为什么不能就地改草稿：后端 admin BFF 的产品写接口只有 `POST`（新建）与
+ * `POST /{id}/revise`（版本化修订），`ProductProxyController.java:172-174` 明写
+ * 「原 `PUT /{id}`『更新产品』端点已删除 —— 下游无裸 PUT，产品是版本化实体，
+ * 变更一律走本修订端点生成新版本，**不存在原地更新语义**」。
+ * 而修订要求 `InsuranceProduct.java:286` 的 `status == EFFECTIVE`，
+ * 故 DRAFT 产品在后端**没有任何可写入口**（列表页入口据此同步收紧）。</p>
+ */
+const reviseFromId = computed(() => (route.query.id as string) || '')
+
+/**
+ * 预填来源版本ID（`?from=` 传入）。
+ *
+ * <p>缺省时等于 {@link reviseFromId}（常规修订：以被修订的那一版为底稿）。两者不同即
+ * **回滚模式**：底稿取自某个**历史版本**，而提交仍落到当前生效版本上（见 {@link isRollback}）。</p>
+ */
+const prefillFromId = computed(() => (route.query.from as string) || reviseFromId.value)
+
+/**
+ * 是否处于「按历史版本回滚」模式。
+ *
+ * <p>🔴 产品回滚**不能**直接把历史版本当修订源：后端 `InsuranceProduct.handle(ReviseProductCommand)`
+ * 要求源版本为 `EFFECTIVE`（`InsuranceProduct.java:286`），而历史版本多为已失效/已下架，会被直接拒。
+ * 故唯一可行的形态是「以当前生效版本为修订源 + 用历史版本的配置预填向导」——
+ * 产出的是一个**新版本**，而不是让旧版本复活。这也正是审计期望的形状。</p>
+ */
+const isRollback = computed(() => !!reviseFromId.value && !!route.query.from && route.query.from !== reviseFromId.value)
+
+/** 回滚模式页头显示的来源版本号：取回填载荷里的 version，未加载完时先说「历史版本」不猜 */
+const prefillVersionLabel = computed(() => {
+  const version = rawDetail.value?.version
+  return typeof version === 'string' && version ? version : '历史版本'
+})
+
+/** 写权限（权威码：`ProductProxyController` —— POST /products→PRODUCT_CREATE、POST /{id}/revise 及模板 PUT→PRODUCT_EDIT、POST /templates→PRODUCT_CREATE） */
+const { hasPermission } = usePermission()
+
+/**
+ * 被修订产品的详情原始载荷。
+ *
+ * <p>修订必须「原样带出表单未覆盖的字段」，该载荷就是这些字段的来源；未加载成功前不允许提交，
+ * 否则合并基准为空，新版本会把保障期间/缴费/出单等配置整片清空。</p>
+ */
+const rawDetail = ref<Record<string, unknown> | null>(null)
+const detailLoading = ref(false)
 const currentStep = ref(0)
 const saving = ref(false)
 const step1Ref = ref<FormInstance>()
@@ -853,6 +933,70 @@ async function handleCreateTemplate() {
   }
 }
 
+/**
+ * 修订模式：加载**底稿版本**的详情原始载荷与已绑条款，并回填向导。
+ *
+ * <p>底稿取自 {@link prefillFromId}（常规修订即被修订的那一版；回滚模式为所选历史版本），
+ * 而提交目标恒为 {@link reviseFromId}（当前生效版本）—— 二者在回滚模式下不是同一个产品。</p>
+ * <p>回填字段与 `toCreateProductPayload` 的映射**逐条互逆**；两处名称交叉是陷阱，见行内注释。
+ * 无法从载荷逆推的展示态保持表单默认值，其真实值由 {@link rawDetail} 在提交时原样带出。</p>
+ */
+const loadReviseSource = async () => {
+  const id = prefillFromId.value
+  detailLoading.value = true
+  try {
+    const raw = await getProductDetailRaw(id)
+    rawDetail.value = raw
+    /** 载荷中取字符串字段（非字符串/缺失一律回退 undefined，避免把对象塞进 v-model） */
+    const text = (key: string) => (typeof raw[key] === 'string' ? (raw[key] as string) : undefined)
+
+    form.productName = text('productName') ?? ''
+    form.productCode = text('productCode') ?? ''
+    form.productDesc = text('productDesc') ?? ''
+    form.templateId = text('templateId')
+    form.form = (text('form') as CreateProductForm['form']) ?? 'INDIVIDUAL'
+    form.pricingMode = (text('pricingMode') as CreateProductForm['pricingMode']) ?? 'RATE_TABLE'
+    form.insuranceType = text('insuranceType')
+    // 🔴 陷阱：后端 `category` 是**产品类别 MAIN/RIDER**（对应表单 productCategory），
+    //    而表单 `category` 是**险种大类** LIFE/HEALTH/…，须由 insuranceType 反查得出。
+    //    二者同名不同义，写反会让险种大类静默错位、二级险种下拉全空。
+    form.productCategory = (text('category') as CreateProductForm['productCategory']) ?? 'MAIN'
+    form.category = CATEGORY_BY_INSURANCE_TYPE[form.insuranceType ?? ''] ?? undefined
+
+    // 嵌套值对象：载荷形状与表单一致，整体覆盖（表单已初始化的键不会被清掉）
+    for (const key of ['insureCondition', 'pricingBasicRule', 'underwritingConfig', 'documentConfig'] as const) {
+      const value = raw[key]
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        Object.assign(form[key], value)
+      }
+    }
+
+    // 条款绑定取专用端点：详情原始载荷不含 clauseIds
+    try {
+      const rels = await getProductClauses(id)
+      form.clauseIds = rels.map((r) => r.clauseId)
+      form.mainClauseId = rels.find((r) => r.mainClause)?.clauseId ?? rels[0]?.clauseId
+    } catch {
+      // 条款取不到不阻断进入修订：clauseIds 为空会被表单必填校验拦下并就地提示
+      form.clauseIds = []
+    }
+
+    // 模板与条款下拉的数据源须跟上已回填的险种大类，否则标签位只会显示原始 ID
+    await Promise.all([loadTemplates(), loadClauses()])
+  } catch (e) {
+    // 🔴 载荷取不到就绝不能放行提交：合并基准为空会让新版本清空保障期间/缴费/出单等配置
+    rawDetail.value = null
+    ElMessage.error('原版本产品详情加载失败，无法进入修订，请返回列表重试')
+    console.error('[product/create] 修订源加载失败', id, e)
+  } finally {
+    detailLoading.value = false
+  }
+}
+
+onMounted(() => {
+  if (reviseFromId.value) void loadReviseSource()
+})
+
 const handleSave = async () => {
   // 🔴 提交前逐步骤校验（P0-3 核心修复，原先这里零校验直接落库）。
   // 校验放在 saving 置位之前：失败即 return，不能把提交按钮卡在 loading 态。
@@ -868,9 +1012,25 @@ const handleSave = async () => {
   }
   saving.value = true
   try {
-    // 落库当前登录用户为创建人（后端无用户上下文，沿用 customer 域约定：由前端随请求体传入 createdBy）
-    await createProduct({ ...form, createdBy: userStore.displayName })
-    ElMessage.success('创建成功')
+    if (reviseFromId.value) {
+      // 修订：不改写当前生效版本，生成新版本 DRAFT（后端 ReviseProductCommand 要求原产品为 EFFECTIVE）
+      if (!rawDetail.value) {
+        ElMessage.error('原版本配置尚未加载完成，无法提交修订')
+        return
+      }
+      // 🔴 绝不可退回 createProduct：那会凭空产生一份重复产品（本页原缺陷）
+      const newProductId = await reviseProduct(
+        reviseFromId.value,
+        toReviseProductPayload(form, rawDetail.value),
+      )
+      // 回滚与修订走的是同一个端点、同一种产物（新版本草稿），差别只在底稿取自哪一版；
+      // 提示语必须如实说清是哪一种，否则用户会把「按历史版本回滚」当成普通修订（或反之）
+      ElMessage.success(`${isRollback.value ? '回滚' : '修订'}成功，已生成新版本草稿${newProductId ? `（${newProductId}）` : ''}`)
+    } else {
+      // 落库当前登录用户为创建人（后端无用户上下文，沿用 customer 域约定：由前端随请求体传入 createdBy）
+      await createProduct({ ...form, createdBy: userStore.displayName })
+      ElMessage.success('创建成功')
+    }
     router.push('/product/list')
   } finally {
     saving.value = false
@@ -888,6 +1048,14 @@ const handleSave = async () => {
       font-size: 18px;
       color: $text-primary;
     }
+  }
+
+  /* 修订语义说明：次要文字，讲清「生成新版本、不改生效版本」 */
+  &__hint {
+    margin: $space-2 0 0;
+    font-size: $font-size-sm;
+    line-height: 1.6;
+    color: $text-secondary;
   }
 
   &__steps {

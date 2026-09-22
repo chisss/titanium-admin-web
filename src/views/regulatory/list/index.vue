@@ -38,6 +38,8 @@
       :max-height="'var(--ti-table-max-height-default)'"
       @page-change="onPageChange"
       @size-change="onSizeChange"
+      :error="tableError"
+      @refresh="retry"
     >
       <!-- 🔴 主键是 reportId：下游响应无 id / reportNo（D-501-59） -->
       <el-table-column prop="reportId" label="报告编号" width="220" class-name="ti-code-column">
@@ -65,7 +67,7 @@
         <template #default="{ row }">{{ formatDateTime(row.submittedAt) }}</template>
       </el-table-column>
       <!-- @vue-generic {RegulatoryReportVO} -->
-      <el-table-column label="操作" min-width="200" fixed="right" class-name="ti-action-column">
+      <el-table-column label="操作" width="280" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
           <el-button size="small" :icon="View" @click="handleView(row)">查看</el-button>
           <!-- 状态机实际取值只有 PENDING/SUBMITTED/APPROVED/REJECTED，字典中的 DRAFT 从不产生 -->
@@ -191,7 +193,7 @@ const dateRange = computed<string[] | undefined>({
   },
 })
 
-const { tableData, tableLoading, pagination, fetchData, handleSearch, handleReset, onPageChange, onSizeChange } =
+const { tableData, tableLoading, tableError, pagination, fetchData, handleSearch, handleReset, onPageChange, onSizeChange, retry } =
   useTable<RegulatoryReportVO, typeof queryParams>((params) => getRegulatoryReportList(params), queryParams)
 
 fetchData()

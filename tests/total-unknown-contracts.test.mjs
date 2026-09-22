@@ -52,8 +52,11 @@ test('useTable 把未知总数原样透传，不压成 0', () => {
 })
 
 test('总数未知时表格渲染无总数的翻页控件，而不是消失', () => {
-  // 未知分支必须存在：既有的 `total > 0` 判断在 total 为 null 时会让整个分页区消失
-  assert.match(tiTable, /v-else-if="total === null && data\.length > 0"/)
+  // 未知分支必须存在：既有的 `total > 0` 判断在 total 为 null 时会让整个分页区消失。
+  // 🔴 R10-08 在该条件前加了 `paged &&`（F-07 全量模式：调用方一次取全量时连这个兜底块
+  // 也不该出现）。这里只同步这个**既存分支的形态**；`paged` 两个分支各自的渲染行为由
+  // ti-table-contracts ⑧ 用真渲染守护——本文件不重复一份判定，否则两处必漂移。
+  assert.match(tiTable, /v-else-if="paged && total === null && data\.length > 0"/)
   // 🔴 原断言钉的是 `t('common.prevPage')` / `t('common.nextPage')`——那是**当时的实现写法**。
   // D-12 移除前端 i18n 后文案改为中文字面量，本用例要守的是「未知总数分支仍给出上一页/下一页
   // 两个翻页出口」，不是那两行代码长什么样；文案本身由 ti-table-contracts ⑦ 按渲染结果守护。

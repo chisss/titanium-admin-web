@@ -19,15 +19,19 @@
 
       <!-- 缴费计划 -->
       <div class="section-title">缴费计划</div>
-      <el-table :data="scheduleList" v-loading="scheduleLoading" size="small" stripe>
-        <el-table-column prop="period" label="期次" width="80" />
-        <el-table-column prop="dueDate" label="到期日" width="130" />
-        <el-table-column prop="amount" label="金额" width="120" align="right">
+      <el-table :data="scheduleList" v-loading="scheduleLoading" size="small" stripe empty-text="无缴费计划">
+        <!-- 🔴 整表 4 列都是定长数据，无「内容长度不定」的承接列可用 ⇒ **全列 min-width** 让 EP 按
+             minWidth 比例分摊剩余宽（table-layout.mjs:100-108）。不可只挑一列改 min-width：EP 会把
+             全部剩余宽砸给那一列（同型的 policy/detail 缴费计划实测状态列 990px、内里只有一个标签）。
+             原全列数字 width 时表格只有 430px、右侧白 900+px。 -->
+        <el-table-column prop="period" label="期次" min-width="80" />
+        <el-table-column prop="dueDate" label="到期日" min-width="130" />
+        <el-table-column prop="amount" label="金额" min-width="120" align="right">
           <template #default="{ row }">
             {{ formatAmount(row.amount, row.currency) }}
           </template>
         </el-table-column>
-        <el-table-column prop="status" label="状态" width="100">
+        <el-table-column prop="status" label="状态" min-width="100">
           <template #default="{ row }">
             <!-- 缴费计划状态：PENDING/PAID/OVERDUE（无专用字典，走组件兜底文案 + 本页域内语义） -->
             <TiStatusTag :value="row.status" :label="SCHEDULE_STATUS_TEXT[row.status]" />
@@ -50,14 +54,14 @@
         <div class="subsection-title">客户应收明细</div>
         <el-table :data="pricingFacts.receivableLines" v-loading="pricingFactLoading" border size="small">
           <el-table-column prop="componentCode" label="费用项" min-width="150" /><el-table-column prop="category" label="分类" width="145" /><el-table-column prop="accountingClass" label="账务分类" min-width="130" />
-          <el-table-column label="计费基数" width="120" align="right"><template #default="{ row }">{{ amountText(row.baseAmount, row.currency) }}</template></el-table-column><el-table-column label="费率" width="100"><template #default="{ row }">{{ rateText(row.rate) }}</template></el-table-column><el-table-column label="应收金额" width="130" align="right"><template #default="{ row }">{{ amountText(row.amount, row.currency) }}</template></el-table-column>
+          <el-table-column label="计费基数" width="120" align="right"><template #default="{ row }">{{ amountText(row.baseAmount, row.currency) }}</template></el-table-column><el-table-column label="费率" width="100"><template #default="{ row }">{{ formatRate(row.rate) }}</template></el-table-column><el-table-column label="应收金额" width="130" align="right"><template #default="{ row }">{{ amountText(row.amount, row.currency) }}</template></el-table-column>
           <el-table-column label="客户应付" width="100"><template #default="{ row }"><el-tag :type="row.affectsCustomerPayable ? 'primary' : 'info'" effect="plain">{{ row.affectsCustomerPayable ? '计入' : '不计入' }}</el-tag></template></el-table-column>
           <template #empty><el-empty description="无应收费用明细" :image-size="64" /></template>
         </el-table>
         <div class="subsection-title">税务台账</div>
         <el-table :data="pricingFacts.taxLedgerLines" border size="small">
           <el-table-column prop="componentCode" label="税费项" min-width="145" /><el-table-column prop="jurisdictionCode" label="司法辖区" width="105" />
-          <el-table-column label="税基" width="120" align="right"><template #default="{ row }">{{ amountText(row.taxableBase, row.currency) }}</template></el-table-column><el-table-column label="税率" width="100"><template #default="{ row }">{{ rateText(row.taxRate) }}</template></el-table-column><el-table-column label="税额" width="120" align="right"><template #default="{ row }">{{ amountText(row.taxAmount, row.currency) }}</template></el-table-column>
+          <el-table-column label="税基" width="120" align="right"><template #default="{ row }">{{ amountText(row.taxableBase, row.currency) }}</template></el-table-column><el-table-column label="税率" width="100"><template #default="{ row }">{{ formatRate(row.taxRate) }}</template></el-table-column><el-table-column label="税额" width="120" align="right"><template #default="{ row }">{{ amountText(row.taxAmount, row.currency) }}</template></el-table-column>
           <el-table-column label="价内外" width="90"><template #default="{ row }">{{ row.taxPriceMode === 'INCLUSIVE' ? '价内税' : '价外税' }}</template></el-table-column><el-table-column prop="regulatoryReferenceId" label="法规依据" min-width="150" /><el-table-column label="免税" width="80"><template #default="{ row }">{{ row.taxExempt ? '是' : '否' }}</template></el-table-column>
           <el-table-column label="策略哈希" min-width="180"><template #default="{ row }"><span class="hash-text">{{ row.taxPolicyHash }}</span></template></el-table-column>
           <template #empty><el-empty description="无税务台账明细" :image-size="64" /></template>
@@ -88,7 +92,7 @@ import TiDetailHeader from '@/components/TiDetailHeader/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import { useDict } from '@/composables/useDict'
 import { formatDate, formatDateTime } from '@/utils/date'
-import { formatAmount } from '@/utils/format'
+import { formatAmount, formatRate } from '@/utils/format'
 import { useDetailColumns } from '@/composables/useDetailColumns'
 
 /** 账单状态/佣金应付状态取后端字典；缴费计划无专用字典，域内语义就近定义（D-501-42） */
@@ -113,9 +117,8 @@ const reconciliationTagTypes: Record<string, 'success' | 'danger' | 'warning' | 
 const reconciliationLabel = computed(() => reconciliationLabels[pricingFacts.value?.invoiceReconciliation.status || ''] || '-')
 const reconciliationTagType = computed(() => reconciliationTagTypes[pricingFacts.value?.invoiceReconciliation.status || ''])
 const amountText = (value?: number, currency?: string) => value === undefined || value === null ? '-' : formatAmount(value, currency)
-const rateText = (value?: number) => value === undefined || value === null ? '-' : `${(value * 100).toFixed(4).replace(/0+$/, '').replace(/\.$/, '')}%`
 const internalAmountText = (value?: number, currency?: string) => value === undefined || value === null ? '***' : formatAmount(value, currency)
-const internalRateText = (value?: number) => value === undefined || value === null ? '***' : rateText(value)
+const internalRateText = (value?: number) => formatRate(value, '***')
 
 onMounted(async () => {
   const id = route.params.id as string

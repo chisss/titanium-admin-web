@@ -32,6 +32,8 @@
       :max-height="'var(--ti-table-max-height-default)'"
       @page-change="onPageChange"
       @size-change="onSizeChange"
+      :error="tableError"
+      @refresh="retry"
     >
       <el-table-column prop="code" label="角色编码" width="160" class-name="ti-code-column">
         <template #default="{ row }">
@@ -42,17 +44,32 @@
       <el-table-column prop="description" label="描述" min-width="200" show-overflow-tooltip />
       <el-table-column prop="status" label="状态" width="90">
         <template #default="{ row }">
-          <TiStatusTag :value="row.status" />
+          <!-- 🔴 显式传 label：角色启停同属 COMMON_STATUS 字典，字典文案是权威中文 -->
+          <TiStatusTag :value="row.status" :label="commonStatusLabel(row.status)" />
         </template>
       </el-table-column>
       <!-- @vue-generic {RoleVO} -->
-      <el-table-column label="操作" min-width="160" fixed="right" class-name="ti-action-column">
+      <el-table-column label="操作" width="280" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
           <el-button size="small" :icon="Edit" v-permission="'system:role:edit'" @click="openDialog(row)">编辑</el-button>
           <!-- 「分配权限」是进入配置界面的中性入口，与「编辑」同类，故不着色。
                此前用 type="warning" 是**在中性动作上套警示色**——与 ConfigPanel 的
                destructive 判据同源：红色/警示色用在非危险动作上，等于训练用户忽略它。 -->
           <el-button size="small" v-permission="'system:role:assign'" @click="openPermDialog(row)">分配权限</el-button>
+          <!-- 删除是**破坏性**动作，故用 danger 实心按钮与左侧两个中性按钮区分：
+               此前该权限点（system:role:delete）只有种子、没有按钮，属于「可勾选但点了没用」的悬空权限。
+               `:loading` 按「行主键 + 动作名」绑定（本行并排三个动作按钮，只用行主键会让它们一起转圈）：
+               删除要等两次往返（删角色 + 重拉列表），确认框关闭后按钮不转圈就等于零反馈。 -->
+          <el-button
+            size="small"
+            type="danger"
+            :icon="Delete"
+            v-permission="'system:role:delete'"
+            :loading="rowPending === actionKey(row.id, 'delete')"
+            @click="handleDelete(row)"
+          >
+            删除
+          </el-button>
         </template>
       </el-table-column>
     </TiTable>
@@ -97,18 +114,23 @@
 <script setup lang="ts">
 import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Plus, Edit } from '@element-plus/icons-vue'
+import { Plus, Edit, Delete } from '@element-plus/icons-vue'
 import type { FormInstance, FormRules } from 'element-plus'
-import { getRoleList, createRole, updateRole, assignPermissions, getRolePermissions } from '@/api/role'
+import { getRoleList, createRole, updateRole, assignPermissions, getRolePermissions, deleteRole } from '@/api/role'
 import type { RoleVO } from '@/api/role'
 import { getPermissionTree, type PermissionTreeNode } from '@/api/permission'
 import { useTable } from '@/composables/useTable'
+import { useRowAction, confirmAction, actionKey } from '@/composables/useRowAction'
 import TiTable from '@/components/TiTable/index.vue'
 import TiSearchForm from '@/components/TiSearchForm/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import TiCopyText from '@/components/TiCopyText/index.vue'
+import { useDict } from '@/composables/useDict'
 
 const queryParams = reactive({ name: '', code: '' })
+
+// 状态列文案：角色启停同属 COMMON_STATUS 字典（ACTIVE 启用 / INACTIVE 停用）
+const { getLabel: commonStatusLabel } = useDict('COMMON_STATUS')
 
 /**
  * 角色列表 + 前端过滤。
@@ -120,7 +142,7 @@ const queryParams = reactive({ name: '', code: '' })
  *
  * <p>🔴 本页的切片必须自己算，且必须返回 PageResult 信封（见下方 return）。</p>
  */
-const { tableData, tableLoading, pagination, fetchData, handleSearch, handleReset, onPageChange, onSizeChange } =
+const { tableData, tableLoading, tableError, pagination, fetchData, handleSearch, handleReset, onPageChange, onSizeChange, retry } =
   useTable<RoleVO, typeof queryParams>(async (params) => {
     // params 的键在重置后可能被整体删除（useTable.handleReset 会 delete 掉全部键再赋默认值），
     // 故按 undefined 兜底，不能直接 .trim()
@@ -147,6 +169,13 @@ const { tableData, tableLoading, pagination, fetchData, handleSearch, handleRese
   }, queryParams)
 
 fetchData()
+
+/**
+ * 行内「删除」的 pending 与错误兜底（见 {@link useRowAction}）。
+ * <p>pending 挂在「行主键 + 动作名」而不是一个全局布尔：本行并排「编辑 / 分配权限 / 删除」三个按钮，
+ * 用布尔量会让删 A 行时每行按钮一起转圈，用户会以为误触。</p>
+ */
+const { rowPending, run: runRowAction } = useRowAction(fetchData)
 
 const dialogVisible = ref(false)
 const editId = ref<string | null>(null)
@@ -211,5 +240,30 @@ const handleAssignPerms = async () => {
   } finally {
     saving.value = false
   }
+}
+
+/**
+ * 删除角色。
+ *
+ * <p>内置角色（SUPER_ADMIN）与仍被用户绑定的角色由后端拒绝并返回业务错误码 —— 前端**不重复判定**：
+ * 判定依据（角色是否被绑定）在服务端，前端拿列表快照猜一次只会与服务端漂移，还会把真实原因
+ * 换成一个猜出来的文案。此处只负责「确认 + 展示服务端理由」。</p>
+ */
+const handleDelete = async (row: RoleVO) => {
+  const confirmed = await confirmAction(
+    `确认删除角色「${row.name}」？该角色的权限配置将一并清除，且不可恢复。`,
+    '删除确认',
+    {
+      type: 'warning',
+      confirmButtonText: '确认删除',
+      cancelButtonText: '取消',
+      confirmButtonClass: 'el-button--danger',
+    },
+  )
+  if (!confirmed) return
+  await runRowAction(actionKey(row.id, 'delete'), async () => {
+    await deleteRole(row.id)
+    ElMessage.success('删除成功')
+  })
 }
 </script>

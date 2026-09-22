@@ -28,6 +28,8 @@
       :max-height="'var(--ti-table-max-height-default)'"
       @page-change="onPageChange"
       @size-change="onSizeChange"
+      :error="tableError"
+      @refresh="retry"
     >
       <el-table-column prop="maintenanceNo" label="保全号" min-width="170" />
       <el-table-column prop="policyNumber" label="保单号" min-width="150" />
@@ -36,7 +38,7 @@
       <el-table-column prop="status" label="案件状态" width="125"><template #default="{ row }"><TiStatusTag :value="row.status" :label="maintenanceStatusLabel(row.status)" /></template></el-table-column>
       <el-table-column prop="effectStatus" label="生效状态" width="125"><template #default="{ row }"><TiStatusTag :value="row.effectStatus || 'NOT_STARTED'" :label="effectStatusLabel(row.effectStatus || 'NOT_STARTED')" /></template></el-table-column>
       <el-table-column prop="createdAt" label="创建时间" width="170"><template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template></el-table-column>
-      <el-table-column label="操作" min-width="100" fixed="right" class-name="ti-action-column">
+      <el-table-column label="操作" width="120" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
           <el-button size="small" :icon="View" @click="router.push(`/maintenance/workbench/${row.caseId}`)">工作台</el-button>
         </template>
@@ -98,7 +100,7 @@ const queryParams = reactive({ caseId: '', policyNumber: '', customerId: '', ite
 const { getLabel: maintenanceChannelLabel } = useDict('MAINTENANCE_CHANNEL')
 const { getLabel: maintenanceStatusLabel } = useDict('MAINTENANCE_CASE_STATUS')
 const { getLabel: effectStatusLabel } = useDict('MAINTENANCE_EFFECT_STATUS')
-const { tableData, tableLoading, pagination, fetchData, handleSearch, handleReset, onPageChange, onSizeChange } =
+const { tableData, tableLoading, tableError, pagination, fetchData, handleSearch, handleReset, onPageChange, onSizeChange, retry } =
   useTable<MaintenanceCaseSummary, typeof queryParams>((params) => getMaintenanceCaseList(params) as unknown as Promise<PageResult<MaintenanceCaseSummary>>, queryParams)
 
 /**

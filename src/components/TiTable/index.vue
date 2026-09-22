@@ -24,7 +24,11 @@
       <slot name="error" :error="error" :retry="emitRefresh">
         <el-icon class="ti-table-error__icon"><WarningFilled /></el-icon>
         <p class="ti-table-error__text">{{ error.message }}</p>
-        <el-button size="small" type="primary" plain @click="emitRefresh">{{ retryText }}</el-button>
+        <!-- 🔴 `:loading` 不能省：失败态与表格是互斥渲染的（v-if/v-else），
+             重试期间错误块仍占屏，若不在此给出在途反馈，用户点完「重试」界面纹丝不动
+             （调用方多在**成功时**才清错，见 useTable 的成功分支），无从判断是否点上了，
+             会连点出多次并发请求。 -->
+        <el-button size="small" type="primary" plain :loading="loading" @click="emitRefresh">{{ retryText }}</el-button>
       </slot>
     </div>
 
@@ -46,7 +50,7 @@
         </template>
       </el-table>
       <!-- 总数已知：常规分页器 -->
-      <div v-if="total !== null && total > 0" class="ti-pagination">
+      <div v-if="paged && total !== null && total > 0" class="ti-pagination">
         <el-pagination
           v-model:current-page="currentPage"
           v-model:page-size="currentPageSize"
@@ -61,7 +65,7 @@
       <!-- 总数未知（🔴 D-501-57）：不渲染页码与总数，只给「上一页/下一页」+ 本页条数。
            下游只返回裸数组时代理层无从推断全量条数，此时把「未知」如实表达为未知——
            原实现以当前页条数冒充总数，用户看到「共 20 条」（实际 34 条），第 2 页永远不可达。 -->
-      <div v-else-if="total === null && data.length > 0" class="ti-pagination">
+      <div v-else-if="paged && total === null && data.length > 0" class="ti-pagination">
         <span class="ti-total-unknown">当前页 {{ data.length }} 条，总数未知</span>
         <el-button size="small" :disabled="pageNum <= 1" @click="onPrevPage">
           上一页
@@ -103,6 +107,18 @@ interface Props {
   maxHeight?: string | number
   /** 是否显示内置刷新按钮（点击 emit `refresh`） */
   showRefresh?: boolean
+  /**
+   * 是否分页。`false` = **全量模式**：调用方一次取全量、不分页（如
+   * `claim/config` 的配置面板），此时不渲染任何分页控件。
+   *
+   * <p>🔴 为什么要这个开关（R9-F07）：本组件的 `page-sizes` 是**硬编码档位**
+   * `[10, 20, 50, 100]`，而调用方曾传 `:page-size="9999"` 来表达「不分页」——
+   * 9999 不在档位内，EP 的 sizes 选择器 `selectedLabel` 匹配失败后**回落显示裸值**，
+   * 页面上于是出现「共 1 条 | 9999 | ‹1› | 前往 页」这种文案（`9999` 无「条/页」后缀）。
+   * 更要紧的是：一个「只能选 9999 的分页器」本身没有任何意义。故不分页应表达为
+   * **不渲染分页器**，而不是「传一个超大的 pageSize」。</p>
+   */
+  paged?: boolean
   /** 是否高亮当前行 */
   highlightCurrentRow?: boolean
   /**
@@ -125,6 +141,7 @@ const props = withDefaults(defineProps<Props>(), {
   height: undefined,
   maxHeight: undefined,
   showRefresh: false,
+  paged: true,
   highlightCurrentRow: true,
   error: null,
   retryText: '重试',

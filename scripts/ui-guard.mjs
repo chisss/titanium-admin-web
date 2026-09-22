@@ -230,6 +230,149 @@ const lineAt = (text, index) => text.slice(0, index).split('\n').length
  */
 const openTagRe = (tags) => new RegExp(`<(${tags})(?=[\\s>])(?:"[^"]*"|'[^']*'|[^>"'])*>`, 'g')
 
+// ── 表格列解析（S-01c / S-03 / S-15 / S-16 / S-17 / S-19 / S-20 共用）────
+//
+// 🔴 为什么不能按行 grep：操作列的**属性可以跨行**（核保工单的开标签横跨 66-88 行），
+//    按行匹配只能看到 `label="操作"` 那一行，拿不到同一标签内的 width，会静默量成「未声明」。
+const NUM_W = /(?<![\w-])width="(\d+)"/
+const DYN_W = /:(?:min-)?width="/ // 动态绑定在静态期无法求值，两条规则都跳过
+
+/** 逐个 <el-table>/<TiTable> 元素切块（配平嵌套，容忍自闭合），返回 {file, line, block} */
+function vueTables() {
+  const out = []
+  for (const f of VUE()) {
+    const src = lines(f).join('\n')
+    for (const m of src.matchAll(/<(el-table|TiTable)(?![\w-])/g)) {
+      const tag = m[1]
+      const tagRe = new RegExp(`</?${tag}(?![\\w-])`, 'g')
+      let depth = 0
+      let i = m.index
+      let end = src.length
+      while (i < src.length) {
+        tagRe.lastIndex = i
+        const t = tagRe.exec(src)
+        if (!t) break
+        const isClose = src[t.index + 1] === '/'
+        const gt = src.indexOf('>', t.index)
+        if (gt < 0) break
+        const selfClose = src[gt - 1] === '/'
+        if (!isClose && !selfClose) depth++
+        else if (isClose) depth--
+        i = gt + 1
+        if (depth === 0) {
+          end = i
+          break
+        }
+      }
+      out.push({
+        file: relative(ROOT, f),
+        line: src.slice(0, m.index).split('\n').length,
+        block: src.slice(m.index, end),
+      })
+    }
+  }
+  return out
+}
+
+/**
+ * 块内每个列：开标签 `tag`、行号 `line`、**列体** `body`（开标签之后到配平闭合标签之前）。
+ *
+ * <p>🔴 列体切片**必须配平**：自闭合列（`… />`，如内联编辑表里的「基准值」「必填」）没有闭合
+ * 标签，用 `indexOf('</el-table-column>')` 会一路串到**后面某个列**的闭合标签，把后续列的内容
+ * 算进本列 —— 实测让裸的「基准值」列被误判为「列内含按钮」，进而被误纳为操作列（S-20）。
+ * 自闭合列直接判为空体。</p>
+ */
+function blockColumns(t) {
+  return [...t.block.matchAll(openTagRe('el-table-column'))].map((c) => {
+    const tag = c[0]
+    const start = c.index + tag.length
+    const end = t.block.indexOf('</el-table-column>', start)
+    const body = /\/>\s*$/.test(tag) || end < 0 ? '' : t.block.slice(start, end)
+    return { tag, body, line: t.line + t.block.slice(0, c.index).split('\n').length - 1 }
+  })
+}
+
+/**
+ * **操作列**识别口径（S-20，2026-09-21 放宽）。
+ *
+ * <p>旧口径是 `label="操作"|"动作"` 或带 `ti-action-column` 类，漏掉了两类真实操作列：
+ * ① `label="查看"` —— 详情页窄表里的「详情 / 工作台」跳转列（policy/detail 两处）；
+ * ② `label="冲突处理"` —— 保全工作台按需建列的三按钮决策列。二者此前**完全不在任何守卫射程内**。</p>
+ *
+ * <p>新口径 = `label ∈ {操作, 查看, 动作, 处理}` ∪「列内含**固定文案**的动作按钮」。
+ * 🔴 后一支必须带两个排除条件，否则会大面积误报——两者都是实测反例，不是预防性设计：</p>
+ * <ul>
+ *   <li><b>排除「按钮文案是插值」</b>：`<el-button link @click="goDetail(row.id)">{{ row.name }}</el-button>`
+ *       是**名称即入口**（clause/list 条款名称、product/list 产品名称与版本共 3 处），
+ *       列宽由内容决定、走 `min-width` 承接，与「动作承载列」是两种载体。
+ *       把它们纳进来会让 S-16 要求它们写死档位宽度，直接压坏表格布局。</li>
+ *   <li><b>排除「列内含录入控件」</b>：保全工作台「拟变更值」列内有 el-input/el-select，
+ *       附带一个「清除」按钮（清空该格），是**行内编辑列**而非操作列。
+ *       （同页的「冲突处理」列只有按钮，故仍被正确纳入。）</li>
+ * </ul>
+ * <p>另：`maintenance/configuration` 内联编辑表的两列纯图标删除按钮（自闭合、无文案）
+ * 亦被「固定文案」条件排除——这类列是行内增删行，S-15 刻意保留其 link/text 形态。</p>
+ */
+const ACTION_LABELS = /label="(操作|查看|动作|处理)"/
+const INLINE_EDITOR =
+  /<(el-input|el-input-number|el-select|el-checkbox|el-radio|el-switch|el-date-picker|el-time-picker|el-textarea|TiDictSelect|TiDictTreeSelect)\b/
+
+/** 列内是否存在**固定文案**的动作按钮（文案非空且不含插值 `{{`） */
+function hasFixedTextButton(body) {
+  for (const m of body.matchAll(openTagRe('el-button'))) {
+    if (/\/>\s*$/.test(m[0])) continue // 纯图标按钮（自闭合）—— 行内编辑表的行删除按钮即此形态
+    const after = body.slice(m.index + m[0].length)
+    const end = after.indexOf('</el-button>')
+    const text = (end < 0 ? after.slice(0, 60) : after.slice(0, end)).replace(/\s+/g, ' ').trim()
+    if (text && !text.includes('{{')) return true
+  }
+  return false
+}
+
+function isActionCol(tag, body = '') {
+  if (/ti-action-column/.test(tag)) return true
+  if (ACTION_LABELS.test(tag)) return true
+  if (!/<el-(button|dropdown)\b/.test(body)) return false
+  if (INLINE_EDITOR.test(body)) return false
+  return hasFixedTextButton(body)
+}
+
+/**
+ * 在**操作列**内扫描按钮形态（S-15 查 link、S-19 查 text 共用）。
+ *
+ * <p>同一判据写两遍必漂移（§一），故「锚点 + 列体切片」只此一份，两条规则仅传入不同的形态正则。
+ * 分开计量是为了让失败信息能直接指出是哪一种形态，而不是笼统的「按钮不合规」。</p>
+ */
+function scanActionButtons(formRe, formName) {
+  const offenders = []
+  let total = 0
+  for (const t of vueTables()) {
+    for (const { tag, body, line } of blockColumns(t)) {
+      if (!isActionCol(tag, body)) continue
+      for (const btn of body.matchAll(openTagRe('el-button'))) {
+        total += 1
+        if (formRe.test(btn[0])) {
+          offenders.push(`${t.file}:${line} ${btn[0].replace(/\s+/g, ' ').slice(0, 90)}`)
+        }
+      }
+    }
+  }
+  return {
+    value: offenders.length,
+    detail: `操作列内按钮 ${total} 个，其中 ${formName} ${offenders.length} 个`,
+    offenders,
+  }
+}
+
+/** 从 TS 真源解析档位（guard 侧不得再抄一份数字，见 S-16 上方说明） */
+function actionWidthTiers() {
+  const src = readFileSync(join(SRC, 'constants/table.ts'), 'utf8')
+  const rec = src.match(/ACTION_COL_WIDTH[^=]*=\s*\{([\s\S]*?)\}/)
+  const tiers = rec ? [...rec[1].matchAll(/\d+\s*:\s*(\d+)/g)].map((m) => Number(m[1])) : []
+  const xl = src.match(/ACTION_COL_WIDTH_XL\s*=\s*(\d+)/)
+  return { tiers, xl: xl ? Number(xl[1]) : NaN }
+}
+
 const RULES = {
   // ── 第一阶段：底盘 ──────────────────────────────────────────
 
@@ -604,37 +747,47 @@ const RULES = {
     title: '操作列宽度取值收敛 ≤ 5 档',
     op: 'lte',
     run() {
-      // 🔴 真实标记顺序是 label 在前、class-name="ti-action-column" 在后，
-      // 故不能假设 class 先出现；先取整行 <el-table-column> 再从中提宽度。
-      const cols = grep(VUE(), /<el-table-column[^>]*label="操作"[^>]*>/)
+      // 🔴 锚点走 S-20 的 isActionCol，不再自带 `label="操作"` 正则：同一判断写两处必然漂移
+      //    （D-15/D-17 曾各写一套正则，同一份代码报出 226 与 272 两个总数）。
       const dist = new Map()
-      for (const c of cols) {
-        const m = c.match.match(/(?:min-)?width="(\d+)"/)
-        const k = m ? `${m[1]}px` : '(未设宽度)'
-        dist.set(k, (dist.get(k) ?? 0) + 1)
+      let n = 0
+      for (const t of vueTables()) {
+        for (const { tag, body } of blockColumns(t)) {
+          if (!isActionCol(tag, body)) continue
+          n += 1
+          const m = tag.match(/(?:min-)?width="(\d+)"/)
+          const k = m ? `${m[1]}px` : '(未设宽度)'
+          dist.set(k, (dist.get(k) ?? 0) + 1)
+        }
       }
       const vals = [...dist.entries()].sort((a, b) => b[1] - a[1])
       return {
         value: vals.length,
-        detail: `共 ${cols.length} 个操作列 / ${vals.length} 种宽度`,
-        offenders: vals.map(([v, n]) => `${v} × ${n}`),
+        detail: `共 ${n} 个操作列 / ${vals.length} 种宽度`,
+        offenders: vals.map(([v, c]) => `${v} × ${c}`),
       }
     },
   },
 
   'S-01c': {
     title: '操作列统一使用 .ti-action-column（间距与换行保护）',
-    op: 'eq',
+    op: 'lte',
     run() {
-      const cols = grep(VUE(), /<el-table-column[^>]*label="操作"[^>]*>/)
-      const ok = cols.filter((c) => c.match.includes('ti-action-column'))
-      return {
-        value: ok.length,
-        detail: `${ok.length}/${cols.length} 操作列已采用`,
-        offenders: cols
-          .filter((c) => !c.match.includes('ti-action-column'))
-          .map((c) => `${c.file}:${c.line}`),
+      const bad = []
+      let total = 0
+      for (const t of vueTables()) {
+        for (const { tag, body, line } of blockColumns(t)) {
+          if (!isActionCol(tag, body)) continue
+          total += 1
+          if (!/ti-action-column/.test(tag)) bad.push(`${t.file}:${line}`)
+        }
       }
+      // 🔴 量的是**违规数**而非「已采用数」，且目标定为 0：本规则要求 100% 覆盖。
+      //    原实现（配 config 的 `eq 46`）把「全部合规」表达成一个**绝对数字**——那是 S-20 放宽
+      //    口径前的操作列总数。放宽后总数变为 49，仍返回「已采用数 46」⇒ 恰好等于旧目标 ⇒
+      //    **3 个真正缺类的列被静默放过**（假绿）。判据：凡「全部 X」的语义都写成 `lte 0` 的
+      //    违规计数，不写成 `eq 总数`——后者把「覆盖率」偷换成「绝对数」，总量一变就失守。
+      return { value: bad.length, detail: `${total - bad.length}/${total} 操作列已采用`, offenders: bad }
     },
   },
 
@@ -642,32 +795,247 @@ const RULES = {
     title: '操作列内一律常规按钮（禁止 el-button link）',
     op: 'lte',
     run() {
-      // 🔴 判据形状：**先配对「操作列」区间，再在区间内找 el-button**。
+      // 🔴 判据形状：**先按 S-20 口径配出操作列，再在列体内找 el-button**。
       //    全文件 grep `el-button … link` 会把**对话框/抽屉内联可编辑表**里的「删除」
       //    「+ 新增一行」也计进来 —— 那是另一类载体（无 `label="操作"` 列），本仓刻意保留 link。
       // 🔴 必须用 `openTagRe`（引号感知）：`[^>]*` 会在 `@click="() => …"` 的 `>` 处**提前截断标签**，
       //    其后的 `link` 属性一并消失 —— 实测该写法会让 48 个 dropdown 只认出 1 个（见 I-01 同名教训）。
-      const offenders = []
-      let total = 0
-      for (const f of VUE()) {
-        const src = lines(f).join('\n')
-        for (const col of src.matchAll(openTagRe('el-table-column'))) {
-          if (!/label="操作"/.test(col[0])) continue
-          const inner = src.slice(col.index + col[0].length)
-          const end = inner.indexOf('</el-table-column>')
-          if (end < 0) continue
-          const line0 = lineAt(src, col.index)
-          for (const btn of inner.slice(0, end).matchAll(openTagRe('el-button'))) {
-            total += 1
-            if (/(?<![\w-])link(?![\w-])/.test(btn[0])) {
-              offenders.push(`${relative(ROOT, f)}:${line0} ${btn[0].replace(/\s+/g, ' ').slice(0, 90)}`)
-            }
+      const FORM = /(?<![\w-])link(?![\w-])/
+      return scanActionButtons(FORM, 'link')
+    },
+  },
+
+  // ── 第五阶段：守卫盲区补漏（R7-15 / 2026-09-21）──────────────────────
+  //
+  // 🔴 本轮四条规则的共同来历：**四条既有守卫全部拦不住用户当轮点名的缺陷**。
+  //    核保工单操作列「审核」写成文字按钮（S-15 只禁 link 不禁 text）、
+  //    policy/detail 的 label="查看" 列不在任何规则射程内（S-01c/S-03/S-15 全部锚定 label="操作"）、
+  //    支付运营状态列靠兜底表把字典文案说错（无「必须传 label」约束）、
+  //    产品详情条款面板已就地兜底却仍弹全局红条（无「自行 catch 就必须 silentError」约束）。
+  //    教训同 §一：**规则的射程由它的锚点决定，锚点窄一格，缺陷就从那一格漏过去**。
+
+  'S-19': {
+    title: '操作列内禁止 el-button text（与 link 同为零边框形态，S-15 只覆盖 link）',
+    op: 'lte',
+    run() {
+      // 核保工单「审核」曾带 text ⇒ 同列「详情」带边框、「审核」为纯文字，是全站唯一
+      // 「一列内混用两种形态」的反例。S-15 当时只禁 link，该形态从缺口漏过。
+      // 与 S-15 同口径同锚点，仅判据词不同；两条各自计量，便于分别定位。
+      const FORM = /(?<![\w-])text(?![\w-])/
+      return scanActionButtons(FORM, 'text')
+    },
+  },
+
+  'S-20': {
+    title: '操作列识别口径覆盖度：新口径识别数 ≥ 旧窄口径，且总数不得塌陷（防口径写坏后静默空转）',
+    op: 'eq',
+    run() {
+      const NARROW = (tag) => /label="(操作|动作)"/.test(tag) || /ti-action-column/.test(tag)
+      let wide = 0
+      let narrow = 0
+      const widened = []
+      for (const t of vueTables()) {
+        for (const { tag, body, line } of blockColumns(t)) {
+          if (NARROW(tag)) narrow += 1
+          if (isActionCol(tag, body)) {
+            wide += 1
+            if (!NARROW(tag)) widened.push(`${t.file}:${line}`)
           }
         }
       }
+      // 🔴 判据一：放宽只能「多认」，绝不能比窄口径少 —— 少了就是新口径的正则写坏，
+      //    而写坏的表现是 offenders 变少、门禁更容易变绿，属**静默放宽**。
+      // 🔴 两条判据的分工是**实测出来的**，不是设计时想当然（负向对照各跑一轮）：
+      //    判据一「wide ≥ narrow」要同时写坏两处正则才可能触发（isActionCol 首行认 ti-action-column、
+      //    ACTION_LABELS 认「操作/动作」）——它是「新口径必须 ⊇ 旧口径」的明文声明，属兜底而非主力；
+      //    判据二的下限才是**唯一能发现「所有下游规则集体空转」的哨兵**：把 blockColumns 注入成
+      //    `return []` 后实测 wide=0、narrow=0，判据一因 0 < 0 为假而放行，**只有判据二变红**，
+      //    同时 S-01c/S-03/S-15/S-16/S-19 全部假绿（它们各自的违规数都成了 0）。
+      //    另注：单点漏认（如把 ACTION_LABELS 里的「查看」删掉）**不会**触发任何判据——
+      //    那两个列内是固定文案按钮，仍被第三条判据（hasFixedTextButton）兜住。故本规则管的是
+      //    「底盘整体塌陷」，不声称能发现个别 label 关键字的缺失。
+      // 🔴 总数下限 48（当前实测 49，余量 1）—— 操作列识别数是 S-01c/S-03/S-15/S-16/S-19
+      //    共同的**统计底盘**：底盘少认几列，这几条规则会**一起**静默放宽。下限取「实测 − 1」
+      //    而不是随手留宽：漏认 2 列即红，强制人工判一次「是解析器退化，还是真删了列」。
+      const MIN_ACTION_COLS = 48
+      const bad = []
+      if (wide < narrow) bad.push(`新口径识别 ${wide} < 窄口径 ${narrow} —— 口径正则写坏，属静默放宽`)
+      if (wide < MIN_ACTION_COLS) bad.push(`操作列识别数 ${wide} < 下限 ${MIN_ACTION_COLS} —— 解析器疑似失效或口径漏认，请核对 blockColumns/isActionCol/ACTION_LABELS`)
+      return {
+        value: bad.length,
+        detail: `新口径 ${wide} 个 / 窄口径 ${narrow} 个 / 新纳入 ${widened.length} 个（${widened.join('、') || '无'}）`,
+        offenders: bad,
+      }
+    },
+  },
+
+  'S-21': {
+    title: 'TiStatusTag 必须显式传 label；且 COLOR_MAP 与 STATUS_TEXT 键集合须双向对账',
+    op: 'lte',
+    run() {
+      // 🔴 两半合一的理由：它们描述的是**同一条缺陷的两个方向**——
+      //    ① 调 用 点 不传 label ⇒ 组件回落到兜底表，而兜底表对同码不同义的码只能猜一个
+      //       （实测支付运营「待缴费」被说成「待处理」）；
+      //    ② 色板与文案表的键集合不齐 ⇒ 补了颜色没补文案的码**彩色标签配英文码**，
+      //       或补了文案没补颜色的码**中文标签配灰底**（用户点名「状态没做颜色」）。
+      //    只做 ① 挡不住 ②，只做 ② 挡不住 ①，故并作一条。
+      //
+      // 豁免：调用点用「文件:行」锚定（形态上与合规调用无法区分），并校验**豁免不得腐烂**
+      // ——登记的位置若已不再缺失 label，即判为僵尸豁免并计入 offenders。
+      // 🔴 行号会随同文件上下文增删行而漂移（实测：给 workbench 的「冲突处理」列补注释后 193→195，
+      //    僵尸校验立刻把过期键顶成 offender）——**这是有意保留的耦合**：行号对不上时必须人工
+      //    回读该处确认「仍是同一个无从取 label 的调用点」，而不是靠模糊匹配静默跟随。
+      const NO_LABEL_EXEMPT = new Map([
+        [
+          'src/views/maintenance/workbench/index.vue:193',
+          '保全**任务级**状态（MaintenanceWorkflowTaskStatus，10 值域）在 t_dict_type 中无对应字典，调用点无从取 label；文案由组件兜底表承载（其中 6 码 READY/IN_PROGRESS/SKIPPED/WAITING_CONDITION/WAITING_EXTERNAL/QUOTED 为本枚举专属，另 4 码 PENDING/COMPLETED/REJECTED/FAILED 是跨域通用码，同表覆盖 ⇒ 10/10 全有中文）'
+            + '。R10-06 新增：流程任务时间轴的节点行（与下方表格同一份数据、同一码域）',
+        ],
+        [
+          'src/views/maintenance/workbench/index.vue:213',
+          '保全**任务级**状态（MaintenanceWorkflowTaskStatus，10 值域）在 t_dict_type 中无对应字典，调用点无从取 label；文案由组件兜底表承载（其中 6 码 READY/IN_PROGRESS/SKIPPED/WAITING_CONDITION/WAITING_EXTERNAL/QUOTED 为本枚举专属，另 4 码 PENDING/COMPLETED/REJECTED/FAILED 是跨域通用码，同表覆盖 ⇒ 10/10 全有中文）'
+            + '。流程任务表的「状态」列',
+        ],
+      ])
+      // 有颜色无文案的码：一码双义，必须由调用点传 label 指定域内语义，故**不收进**兜底表
+      const COLOR_ONLY_EXEMPT = new Map([
+        ['ISSUED', '账单域=「待缴费」、单证域=「已签发」，取任一个都会在另一域说错话'],
+        ['APPLIED', 'MAINTENANCE_EFFECT_STATUS=「已生效」、PAYMENT_CALLBACK_STATUS=「已应用」'],
+        ['SUB_STANDARD', '风险等级「次标准体」，与核保结论 STANDARD「标准承保」同码不同义'],
+        ['HIGH_RISK', '风险等级「高风险体」，同上'],
+        ['UNINSURABLE', '风险等级「不可保体」，同上'],
+      ])
+
+      const offenders = []
+      // ── ① 调用点必须显式传 label ──
+      let callSites = 0
+      const stillMissing = new Set()
+      for (const f of VUE()) {
+        const src = readFileSync(f, 'utf8')
+        const rel = relative(ROOT, f)
+        for (const m of src.matchAll(openTagRe('TiStatusTag'))) {
+          callSites += 1
+          if (/[:@]label=/.test(m[0])) continue
+          const key = `${rel}:${lineAt(src, m.index)}`
+          stillMissing.add(key)
+          if (!NO_LABEL_EXEMPT.has(key)) {
+            offenders.push(`${key} TiStatusTag 未传 :label —— 兜底表按下标猜文案，域内语义须由调用方指定`)
+          }
+        }
+      }
+      for (const key of NO_LABEL_EXEMPT.keys()) {
+        if (!stillMissing.has(key)) offenders.push(`${key} 僵尸豁免：该处已不再缺失 label，请从 NO_LABEL_EXEMPT 删除`)
+      }
+
+      // ── ② COLOR_MAP 与 STATUS_TEXT 键集合双向对账 ──
+      const tagSrc = readFileSync(join(SRC, 'components/TiStatusTag/index.vue'), 'utf8')
+      const keysOf = (name) => {
+        const m = tagSrc.match(new RegExp(`const ${name}: Record<string, [^>]+> = \\{([\\s\\S]*?)\\n\\}`))
+        // 🔴 解析失败必须抛错而非返回空集：空集与空集相比恒绿，规则会静默失去射程
+        if (!m) throw new Error(`S-21 未能从 TiStatusTag/index.vue 解析出 ${name} —— 声明形态已变，请同步更新本正则`)
+        return [...m[1].matchAll(/^ {2}([A-Za-z_]\w*)\s*:/gm)].map((x) => x[1])
+      }
+      // COLOR_MAP 里的 5 个「颜色关键字」（success/warning/danger/info/primary）是给调用方
+      // 直接传颜色用的，不是业务码，不参与对账
+      const KEYWORDS = new Set(['success', 'warning', 'danger', 'info', 'primary'])
+      const colorCodes = keysOf('COLOR_MAP').filter((k) => !KEYWORDS.has(k))
+      const textCodes = keysOf('STATUS_TEXT')
+      for (const code of textCodes) {
+        if (!colorCodes.includes(code)) {
+          offenders.push(`STATUS_TEXT 有「${code}」但 COLOR_MAP 无 —— 该状态中文标签配灰底，等于没做颜色`)
+        }
+      }
+      for (const code of colorCodes) {
+        if (!textCodes.includes(code) && !COLOR_ONLY_EXEMPT.has(code)) {
+          offenders.push(`COLOR_MAP 有「${code}」但 STATUS_TEXT 无且未登记豁免 —— 不传 label 即裸显英文码`)
+        }
+      }
+
       return {
         value: offenders.length,
-        detail: `操作列内按钮 ${total} 个，其中 link ${offenders.length} 个`,
+        detail: `调用点 ${callSites} 个（缺 label ${stillMissing.size} 个，其中豁免 ${NO_LABEL_EXEMPT.size} 个）/ 色板 ${colorCodes.length} 码 · 文案 ${textCodes.length} 码`,
+        offenders,
+      }
+    },
+  },
+
+  'S-22': {
+    title: '作者已就地 catch 的 API 调用必须传 silentError:true（否则拦截器仍弹全局红条）',
+    op: 'lte',
+    run() {
+      // 🔴 缺陷机理（R7-01 实测）：产品详情页的条款面板早已 `.catch(() => null)` 并就地显示
+      //    「条款信息缺失」，但**拦截器在 reject 之前就已经把红条弹了** —— 用户读作「整页加载失败」，
+      //    而局部那个小提示根本没人看见。`.catch()` 拦得住 Promise，拦不住 toast。
+      //
+      // 🔴 判据的识别方式：**从 `@/api/*` 导出的函数名取真源**，不靠命名约定猜（getXxx 之类）。
+      //    按前缀猜会在下一个 `fetchXxx`/`loadXxx` 出现时失效（同 G-03 的 N 变体教训）。
+      // 🔴 覆盖 `apiFn(...).then(...).catch(` 形态：作者一样是就地兜底，只是中间过了一手。
+      const apiNames = new Set()
+      for (const f of walk(join(SRC, 'api'), ['.ts'])) {
+        for (const m of readFileSync(f, 'utf8').matchAll(/export (?:async )?(?:const|function) (\w+)/g)) {
+          apiNames.add(m[1])
+        }
+      }
+      // 🔴 解析不到任何 API 名 ⇒ 后续 offenders 必为空 ⇒ 恒绿。必须显式失败。
+      if (apiNames.size === 0) throw new Error('S-22 未能从 src/api 解析出任何导出函数名 —— 解析器失效')
+
+      const offenders = []
+      let scanned = 0
+      for (const f of VUE()) {
+        const src = readFileSync(f, 'utf8')
+        const rel = relative(ROOT, f)
+        for (const m of src.matchAll(/(\w+)\s*\(((?:[^()]|\([^()]*\))*)\)\s*([^;\n]*?)\.catch\s*\(/g)) {
+          const [, fn, args, chain] = m
+          if (!apiNames.has(fn)) continue
+          scanned += 1
+          if (/silentError/.test(args) || /silentError/.test(chain)) continue
+          offenders.push(
+            `${rel}:${lineAt(src, m.index)} ${fn}() 链上已 .catch( 就地兜底，但未传 silentError:true —— 拦截器仍会弹全局红条`,
+          )
+        }
+      }
+      return { value: offenders.length, detail: `扫描 ${scanned} 处「API 调用 + .catch」，缺 silentError ${offenders.length} 处`, offenders }
+    },
+  },
+
+  'S-23': {
+    title: '每张裸 el-table 必须显式声明业务化空态（否则内置「暂无数据」直达用户）',
+    op: 'lte',
+    run() {
+      // 🔴 缺陷机理（R9 O-04/O-07 实测）：el-table 空数据时回落 Element Plus 内置「暂无数据」。
+      //    同一页里三张表写了业务文案、第四张没写（billing/detail 的「缴费计划」），
+      //    读者看到的是「暂无数据」——既没说清是什么没有，也没告诉他下一步能做什么
+      //    （编辑态表尤其：空表恰是需要「点新增」的那一刻）。
+      //
+      // 🔴 射程只覆盖**裸 el-table**：TiTable 的空态由组件统一兜底（内置 `#empty` 插槽 + 调用方可覆盖），
+      //    列表页按 S-01b 已强制收编 TiTable，其空态是「这一个列表为空」的既定语义 ⇒ 不在此规则内。
+      //    否则要把 29 个列表页一起改，且无证据说明那种空态不好（规则只应覆盖它建模的那一种形态）。
+      //
+      // 🔴 逃生舱：表本身有 v-if 保证「空时不渲染」的（如 customer/detail 的保单表、
+      //    product/create 的 `v-if="coverages.length"` 预览表），补 empty-text 是**死代码**——
+      //    在那行加 `ui-guard-ignore` 豁免，豁免因此是显式且可审计的。
+      const bare = []
+      let tiTables = 0
+      for (const t of vueTables()) {
+        if (/^<TiTable/.test(t.block)) {
+          tiTables += 1
+          continue
+        }
+        bare.push(t)
+      }
+      // 🔴 解析不到任何裸 el-table ⇒ offenders 必为空 ⇒ 恒绿。必须显式失败（同 S-21/S-22）。
+      if (bare.length === 0) throw new Error('S-23 未扫到任何裸 el-table —— 表格解析口径已失效，请同步更新本规则')
+
+      const offenders = []
+      for (const t of bare) {
+        // 开标签必须用引号感知的 openTagRe：`[^>]*` 会在 `@click="() => …"` 的 `>` 处提前截断标签
+        const openTag = t.block.match(openTagRe('el-table'))?.[0] ?? ''
+        if (/empty-text=/.test(openTag) || /#empty/.test(t.block)) continue
+        offenders.push(`${t.file}:${t.line} 裸 el-table 未声明空态 ⇒ 空数据时直达用户的是内置「暂无数据」`)
+      }
+      return {
+        value: offenders.length,
+        detail: `裸 el-table ${bare.length} 张（须显式声明空态）/ TiTable ${tiTables} 张（组件统一兜底）`,
         offenders,
       }
     },
@@ -735,6 +1103,81 @@ const RULES = {
     run() {
       const hits = grep(VUE(), /admin123|演示账号/)
       return { value: hits.length, detail: `${hits.length} 处`, offenders: hits.map((h) => `${h.file}:${h.line}`) }
+    },
+  },
+
+  // ── 表格列宽（2026-09-21 新增，源自 R7-11「全站操作列列宽收敛」）─────────
+  //
+  // 🔴 为什么必须机械化：46 个操作列此前用了 21 种宽度（70→380），其中 33 个只写 min-width。
+  //    手工修一遍只能管到当下——**同一缺陷在 R7-10 修核保工单时就已暴露**（操作列 368px，
+  //    列内按钮实需 128px），换一个页面又出现。故把判据固化成规则。
+  //
+  // 🔴 两条规则的「档位集合」必须**从 TS 真源读出**，guard 侧不得再抄一份数字：
+  //    同一组值写两处必然漂移（D-15/D-17 当初各写一套正则，同一份代码报出 226 与 272 两个总数）。
+
+  // ── S-16 / S-17 / S-18 的解析助手见文件上方「表格列解析」段 ──────────────
+
+  'S-16': {
+    title: '操作列必须写数字 width，且取值落在 src/constants/table.ts 的档位集合内',
+    op: 'lte',
+    run() {
+      const { tiers, xl } = actionWidthTiers()
+      const allowed = [...tiers, xl]
+      const bad = []
+      for (const t of vueTables()) {
+        for (const { tag, line } of blockColumns(t)) {
+          if (!isActionCol(tag)) continue
+          const w = tag.match(NUM_W)
+          if (!w) {
+            const why = DYN_W.test(tag) ? '动态绑定 :width' : /min-width="/.test(tag) ? '只写 min-width（EP 判为 flex 列，会吸走表格剩余宽）' : '未声明宽度'
+            bad.push(`${t.file}:${line} ${why}`)
+          } else if (!allowed.includes(Number(w[1]))) {
+            bad.push(`${t.file}:${line} width=${w[1]} 不在档位集合 [${allowed.join(', ')}]`)
+          }
+        }
+      }
+      return { value: bad.length, detail: `${bad.length} 个操作列越档`, offenders: bad }
+    },
+  },
+
+  'S-17': {
+    title: '每张表必须保留至少 1 个只写 min-width 的列承接剩余宽（选法见 src/constants/table.ts），否则表格宽=列宽和、右侧留白',
+    op: 'lte',
+    run() {
+      const bad = []
+      for (const t of vueTables()) {
+        const cols = blockColumns(t)
+        if (cols.length < 2) continue // 单列表格无「剩余宽」可言
+        // flex 列 = 无数字 width 的列（EP table-layout 的 flexColumns 判定）；动态绑定同样算 flex
+        const hasFlex = cols.some(({ tag }) => DYN_W.test(tag) || !NUM_W.test(tag))
+        if (!hasFlex) {
+          bad.push(`${t.file}:${t.line} 整表 ${cols.length} 列全为数字 width —— EP 走 else 分支把表格宽设为列宽和（table-layout.mjs:123-131），表格比容器窄、右侧留白`)
+        }
+      }
+      return { value: bad.length, detail: `${bad.length} 张表无承接列`, offenders: bad }
+    },
+  },
+
+  'S-18': {
+    title: '操作列档位：SCSS 令牌 $table-action-width-* 必须与 TS 真源逐一相等',
+    op: 'lte',
+    run() {
+      const { tiers, xl } = actionWidthTiers()
+      const scss = readFileSync(join(SRC, 'assets/styles/variables.scss'), 'utf8')
+      const read = (name) => {
+        const m = scss.match(new RegExp(`\\$${name}\\s*:\\s*(\\d+)px`))
+        return m ? Number(m[1]) : null
+      }
+      // 🔴 名字不带 `$`：read() 的正则里已含 `\$`，两处各写一个会变成「要求两个美元符」而永远 null
+      const pairs = [
+        ['table-action-width-1', tiers[0]],
+        ['table-action-width-2', tiers[1]],
+        ['table-action-width-3', tiers[2]],
+        ['table-action-width-4', tiers[3]],
+        ['table-action-width-xl', xl],
+      ].map(([name, ts]) => ({ name, ts, scss: read(name) }))
+      const bad = pairs.filter((p) => p.ts !== p.scss).map((p) => `$${p.name}: SCSS=${p.scss} ≠ TS=${p.ts}`)
+      return { value: bad.length, detail: `${pairs.length} 条比对，${bad.length} 条不一致`, offenders: bad }
     },
   },
 
@@ -1227,6 +1670,96 @@ const RULES = {
       return {
         value: offenders.length,
         detail: `写操作载体 ${checked} 个按钮/开关 + ${dropdowns} 个下拉触发器，其中无在途反馈 ${offenders.length} 个`,
+        offenders,
+      }
+    },
+  },
+
+  'I-02': {
+    title: '可达写接口的视图必须有权限门（不得靠后端 403 兜底）',
+    op: 'lte',
+    run() {
+      const writes = apiWriteFns()
+      const offenders = []
+      let scanned = 0
+
+      // 🔴 判据的**看得见什么**（与 I-01 同一套闭包机器，故意的：两条规则对「什么是写动作」
+      //    必须同口径，否则会出现「I-01 认为在写、I-02 认不出来」的缝）。
+      //
+      // 🔴 为什么判**文件级**而非**元素级**：本轮实测 8 个零门页（理赔配置中心整页、
+      //    理赔详情 8 个动作、核保决策、条款编辑、产品创建/修订/模板配置）**共同特征就是
+      //    「整个文件一处权限门都没有」**；而「五个按钮里漏了一个」这类缺陷，由
+      //    tests/permission-gate-contracts.test.mjs 按端点逐个钉死（那里有后端 @PreAuthorize
+      //    作权威可比对，能分清 claim:survey 与 claim:settle，本文件级的正则分不清）。
+      //    元素级门禁判据在本仓有**三种合法形状**——`v-permission`、带 `hasPermission()` 的
+      //    `v-if`、以及动作清单按权限过滤（claim/policy 详情页用 `filter(a => hasPermission(...))`）
+      //    ——第三种在正则里无法与「恰好遍历一个列表」区分，硬判会大量误报。
+      //    一条被假阳性淹没的守卫会立刻失去信任（I-01 的教训），故此处刻意取窄而准。
+      for (const p of VUE()) {
+        const src = readFileSync(p, 'utf8')
+        const range = templateRange(src)
+        if (!range) continue
+        const tpl = src.slice(range[0], range[1])
+
+        // 局部函数 → 是否（传递地）调用写接口；与 I-01 同款引用式闭包（下拉分派表里
+        // 的函数是裸引用、没有括号，只认 `name(` 会让整条分派链断在表上）
+        const localFns = new Set(
+          [...src.matchAll(/(?:\bconst|\blet|\bfunction)\s+([A-Za-z_$][\w$]*)\s*[:=(]/g)].map((m) => m[1]),
+        )
+        const stripComments = (t) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+        const refsName = (body, n) => new RegExp(`(?<![.\\w$])${n}(?![\\w$])`).test(body)
+
+        const memo = new Map()
+        const isWrite = (name, depth = 0) => {
+          if (depth > 3) return false
+          if (memo.has(name)) return memo.get(name)
+          memo.set(name, false)
+          const body = bodyOf(src, name)
+          let hit = body !== null && callsAny(body, writes)
+          if (!hit && body) {
+            const code = stripComments(body)
+            for (const local of localFns) {
+              if (local === name || writes.has(local) || !refsName(code, local)) continue
+              if (isWrite(local, depth + 1)) {
+                hit = true
+                break
+              }
+            }
+          }
+          memo.set(name, hit)
+          return hit
+        }
+
+        const handlerOf = (tag, attr) => {
+          const m = tag.match(new RegExp(`@${attr}(?:\\.\\w+)*\\s*=\\s*"([^"]*)"`))
+          if (!m) return null
+          const expr = m[1]
+          const direct = expr.match(/^\s*([A-Za-z_$][\w$]*)\s*\(/) ?? expr.match(/^\s*([A-Za-z_$][\w$]*)\s*$/)
+          if (direct) return direct[1]
+          const arrow = expr.match(/=>\s*(?:\{\s*)?([A-Za-z_$][\w$]*)\s*\(/)
+          return arrow?.[1] ?? null
+        }
+
+        let reachesWrite = false
+        for (const m of tpl.matchAll(openTagRe('el-button|el-switch|el-dropdown|el-menu-item|el-upload'))) {
+          const fn =
+            handlerOf(m[0], 'click') ?? handlerOf(m[0], 'change') ?? handlerOf(m[0], 'command')
+          if (fn && isWrite(fn)) {
+            reachesWrite = true
+            break
+          }
+        }
+        if (!reachesWrite) continue
+
+        scanned++
+        if (!/\bv-permission\b|hasPermission\(/.test(src)) {
+          offenders.push(`${relative(ROOT, p)} 可达写接口但整文件无权限门`)
+        }
+      }
+
+      return {
+        value: offenders.length,
+        detail: `可达写接口的视图 ${scanned} 个，其中无任何权限门 ${offenders.length} 个`,
         offenders,
       }
     },

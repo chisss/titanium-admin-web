@@ -7,7 +7,14 @@
         <el-input v-model="queryParams.insuranceNo" placeholder="精确查询" clearable style="width: 180px" />
       </el-form-item>
       <el-form-item label="投保状态">
-        <TiDictSelect v-model="queryParams.status" dict-type="POLICY_APPLICATION_STATUS" placeholder="请选择" style="width: 140px" />
+        <!-- 🔴 剔除字典中的历史死码（读侧 ProposalStatus 独有、投影从不写入）：选中它们只会得到 0 条 -->
+        <TiDictSelect
+          v-model="queryParams.status"
+          dict-type="POLICY_APPLICATION_STATUS"
+          :exclude-values="POLICY_APPLICATION_STATUS_DEAD_CODES"
+          placeholder="请选择"
+          style="width: 140px"
+        />
       </el-form-item>
       <el-form-item label="投保日期">
         <el-date-picker
@@ -47,6 +54,8 @@
       row-key="insuranceId"
       @page-change="onPageChange"
       @size-change="onSizeChange"
+      :error="tableError"
+      @refresh="retry"
     >
       <el-table-column type="index" label="序号" width="60" align="center" fixed="left" />
       <el-table-column prop="insuranceNo" label="投保单号" width="180" fixed="left">
@@ -72,9 +81,9 @@
         </template>
       </el-table-column>
       <!-- @vue-generic {InsuranceVO} -->
-      <el-table-column label="操作" min-width="100" fixed="right" class-name="ti-action-column">
+      <el-table-column label="操作" width="120" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
-          <el-button size="small" :icon="View" @click="handleDetail(row)">详情</el-button>
+          <el-button size="small" :icon="View" @click="openDetail(row.insuranceId)">详情</el-button>
         </template>
       </el-table-column>
     </TiTable>
@@ -124,15 +133,30 @@
           </el-descriptions-item>
         </el-descriptions>
       </div>
+
+      <!-- 🔴 footer 为新增：跳转入口需要落点，且关闭按钮此前只能靠右上角 ×。
+           按钮**仅在真有下游保单时**出现（见 canGoToPolicy）。 -->
+      <template #footer>
+        <el-button @click="detailVisible = false">关闭</el-button>
+        <el-button
+          v-if="canGoToPolicy"
+          type="primary"
+          :icon="Right"
+          @click="goToPolicy"
+        >
+          查看保单
+        </el-button>
+      </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Download, View } from '@element-plus/icons-vue'
-import { getInsuranceDetail, getInsuranceList, type InsuranceVO } from '@/api/insurance'
+import { Download, Right, View } from '@element-plus/icons-vue'
+import { getInsuranceDetail, getInsuranceList, getIssuanceProgress, type InsuranceVO } from '@/api/insurance'
 import { useTable } from '@/composables/useTable'
 import { formatDateTime } from '@/utils/date'
 import TiTable from '@/components/TiTable/index.vue'
@@ -142,7 +166,11 @@ import TiCopyText from '@/components/TiCopyText/index.vue'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
 import { useDetailColumns } from '@/composables/useDetailColumns'
 import { useDict } from '@/composables/useDict'
+import { INSURANCE_STATUS_ISSUED, POLICY_APPLICATION_STATUS_DEAD_CODES } from '@/constants/policy'
 import { formatAmount } from '@/utils/format'
+
+const router = useRouter()
+const route = useRoute()
 
 /** 投保单查询参数 */
 const queryParams = reactive({
@@ -156,7 +184,7 @@ const queryParams = reactive({
 const { getLabel: getStatusLabel } = useDict('POLICY_APPLICATION_STATUS')
 
 /** 表格数据 */
-const { tableData, tableLoading, pagination, fetchData, handleSearch, handleReset, onPageChange, onSizeChange } =
+const { tableData, tableLoading, tableError, pagination, fetchData, handleSearch, handleReset, onPageChange, onSizeChange, retry } =
   useTable<InsuranceVO, typeof queryParams>((params) => {
     const { dateRange, ...rest } = params
     // 注意：后端暂不支持日期范围查询，先去掉 dateRange
@@ -173,19 +201,76 @@ const detailVisible = ref(false)
 const detailLoading = ref(false)
 const insuranceDetail = ref<InsuranceVO>()
 
-/** 查看详情 */
-const handleDetail = async (row: InsuranceVO) => {
+/**
+ * 下游保单 ID（跳转入口的落点）。
+ *
+ * <p>🔴 **不能只靠状态判定入口是否显示**：投保单视图 `t_insurance_view` 无 `policy_id` 列
+ * （投保单与保单之间在读模型里没有任何外键），保单 ID 只能经 `bizNo` 桥从出单进度取
+ * （`getIssuanceProgress`）。状态为「已承保」但桥没给出 ID 时**不显示按钮** ——
+ * 否则是「点进去无目标」的死入口。</p>
+ */
+const linkedPolicyId = ref<string>()
+
+/**
+ * 取下游保单 ID；拿不到一律返回 undefined 而非抛出（辅助请求，失败不影响主视图）。
+ *
+ * <p>取首张保单：出单进度表的 `policy_ids` 列只在**拆分出单策略**下非空
+ * （live 实测 2026-09-21：107 行中 0 行，全部为合并策略的单张保单），
+ * 故当前不存在需要展示多张的场景；若将来启用拆分策略，此处应改为列表让用户选择。</p>
+ */
+const loadLinkedPolicyId = async (bizNo?: string): Promise<string | undefined> => {
+  if (!bizNo) return undefined
+  try {
+    return (await getIssuanceProgress(bizNo))?.policies?.[0]?.policyId || undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** 跳转入口可见性：状态「已承保」**且**桥返回了目标 ID —— 两者缺一不可 */
+const canGoToPolicy = computed(
+  () => insuranceDetail.value?.status === INSURANCE_STATUS_ISSUED && !!linkedPolicyId.value,
+)
+
+/**
+ * 打开投保单详情（🔴 单一入口）。
+ * 列表行点击与「从意向单带 insuranceId 跳入」共用同一路径 —— 两套打开逻辑必然漂移。
+ */
+const openDetail = async (insuranceId: string) => {
+  if (!insuranceId) return
   detailVisible.value = true
   detailLoading.value = true
   insuranceDetail.value = undefined
+  linkedPolicyId.value = undefined
   try {
-    insuranceDetail.value = await getInsuranceDetail(row.insuranceId)
+    insuranceDetail.value = await getInsuranceDetail(insuranceId)
   } catch {
+    // 详情自身失败：拦截器已弹业务消息，关闭空对话框即可（与改动前口径一致）
     detailVisible.value = false
-  } finally {
     detailLoading.value = false
+    return
   }
+  detailLoading.value = false
+  linkedPolicyId.value = await loadLinkedPolicyId(insuranceDetail.value.bizNo)
 }
+
+/** 跳保单详情页（保单详情有独立路由，直接跳） */
+const goToPolicy = () => {
+  detailVisible.value = false
+  router.push(`/policy/detail/${linkedPolicyId.value}`)
+}
+
+/**
+ * 从意向单带 `?insuranceId=` 跳进来时直接打开详情
+ * （投保单详情是对话框、无独立路由，故经 query 驱动）。
+ */
+watch(
+  () => route.query.insuranceId,
+  async (insuranceId) => {
+    if (typeof insuranceId === 'string' && insuranceId) await openDetail(insuranceId)
+  },
+  { immediate: true },
+)
 
 /** 导出投保单 */
 const handleExport = () => {

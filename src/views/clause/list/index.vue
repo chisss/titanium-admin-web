@@ -33,6 +33,8 @@
       :max-height="'var(--ti-table-max-height-default)'"
       @page-change="onPageChange"
       @size-change="onSizeChange"
+      :error="tableError"
+      @refresh="retry"
     >
       <el-table-column type="index" label="序号" width="60" align="center" fixed="left" />
       <el-table-column prop="clauseNo" label="条款号" width="180" />
@@ -58,7 +60,7 @@
       <el-table-column prop="effectiveDate" label="生效日期" width="110" />
       <el-table-column prop="createdAt" label="创建时间" width="160" />
       <!-- @vue-generic {ClauseVO} -->
-      <el-table-column label="操作" min-width="200" fixed="right" class-name="ti-action-column">
+      <el-table-column label="操作" width="200" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
           <!-- 平铺动作收敛为 2 个：草稿期的编辑与提交审批；审批决策对（通过/驳回）整体进「更多」，不拆散 -->
           <el-button
@@ -205,7 +207,7 @@ const queryParams = reactive({
   status: undefined as string | undefined,
 })
 
-const { tableData, tableLoading, pagination, fetchData, handleSearch, handleReset, onPageChange, onSizeChange } =
+const { tableData, tableLoading, tableError, pagination, fetchData, handleSearch, handleReset, onPageChange, onSizeChange, retry } =
   useTable<ClauseVO, typeof queryParams>((params) => getClauseList(params), queryParams)
 
 fetchData()

@@ -9,34 +9,71 @@
             <span class="dict-type-panel__title">字典类型</span>
             <el-button type="primary" :icon="Plus" size="small" v-permission="'system:dict:create'" @click="openTypeDialog()">新增</el-button>
           </div>
+          <!--
+            刷新缓存（system:dict:refresh）。权限点此前只有种子、无任何执行点。
+            🔴 作用域如实写清：admin 服务端**没有字典缓存**（无 @Cacheable/Caffeine/Redis 缓存），
+               这里的「缓存」指**浏览器内**的字典缓存（useDictStore.cache）——它按类型码把字典数据
+               常驻内存，供全站 TiDictSelect 复用；数据被改动后旧值会一直留在下拉框里。
+               本按钮清空该缓存并重取当前类型，给「改了字典但下拉框没变」一个手动解法。
+          -->
+          <el-button
+            :icon="Refresh"
+            size="small"
+            v-permission="'system:dict:refresh'"
+            :loading="refreshingCache"
+            style="width: 100%; margin-bottom: 12px"
+            @click="handleRefreshCache"
+          >
+            刷新缓存
+          </el-button>
           <el-input v-model="typeSearch" placeholder="搜索字典类型" :prefix-icon="Search" clearable style="margin-bottom: 12px" />
           <el-scrollbar>
-            <div
-              v-for="type in filteredTypes"
-              :key="type.id"
-              class="dict-type-item"
-              :class="{
-                'dict-type-item--active': selectedType?.id === type.id,
-                'dict-type-item--busy': typeRowPending === actionKey(type.id, 'delete'),
-              }"
-              @click="selectType(type)"
+            <!-- 🔴 失败态必须先于空态判定（同 maintenance/workbench 的 R7-13 结论）：接口挂掉时
+                 filteredTypes 同样为空，只判空会让界面断言「没有字典类型」——而真相是这次没查成。 -->
+            <el-alert
+              v-if="typeListError"
+              class="load-error"
+              type="error"
+              show-icon
+              :closable="false"
+              :title="`字典类型加载失败：${typeListError.message}`"
             >
-              <div class="dict-type-item__main">
-                <span class="dict-type-item__name">{{ type.name }}</span>
-                <span class="dict-type-item__code">{{ type.code }}</span>
+              <el-button text type="primary" size="small" @click="loadTypes">重试</el-button>
+            </el-alert>
+            <!-- 空态同样要与失败态可区分，且两种「空」语义不同：搜不到 vs 一个都没有 -->
+            <el-empty
+              v-else-if="!filteredTypes.length"
+              :image-size="60"
+              :description="typeSearch ? '无匹配的字典类型' : '暂无字典类型'"
+            />
+            <template v-else>
+              <div
+                v-for="type in filteredTypes"
+                :key="type.id"
+                class="dict-type-item"
+                :class="{
+                  'dict-type-item--active': selectedType?.id === type.id,
+                  'dict-type-item--busy': typeRowPending === actionKey(type.id, 'delete'),
+                }"
+                @click="selectType(type)"
+              >
+                <div class="dict-type-item__main">
+                  <span class="dict-type-item__name">{{ type.name }}</span>
+                  <span class="dict-type-item__code">{{ type.code }}</span>
+                </div>
+                <div class="dict-type-item__actions">
+                  <el-button size="small" :icon="Edit" v-permission="'system:dict:edit'" @click.stop="openTypeDialog(type)" />
+                  <el-button
+                    size="small"
+                    type="danger"
+                    :icon="Delete"
+                    v-permission="'system:dict:delete'"
+                    :loading="typeRowPending === actionKey(type.id, 'delete')"
+                    @click.stop="handleDeleteType(type)"
+                  />
+                </div>
               </div>
-              <div class="dict-type-item__actions">
-                <el-button size="small" :icon="Edit" v-permission="'system:dict:edit'" @click.stop="openTypeDialog(type)" />
-                <el-button
-                  size="small"
-                  type="danger"
-                  :icon="Delete"
-                  v-permission="'system:dict:delete'"
-                  :loading="typeRowPending === actionKey(type.id, 'delete')"
-                  @click.stop="handleDeleteType(type)"
-                />
-              </div>
-            </div>
+            </template>
           </el-scrollbar>
         </div>
       </el-col>
@@ -72,6 +109,8 @@
             :data="dictDataList"
             :loading="dataLoading"
             :max-height="'var(--ti-table-max-height-split)'"
+            :error="tableError"
+            @refresh="reloadDictData"
           >
             <el-table-column prop="value" label="字典值" width="160" />
             <el-table-column prop="label" label="默认标签" width="140" />
@@ -94,11 +133,13 @@
             <el-table-column prop="sort" label="排序" width="70" />
             <el-table-column prop="status" label="状态" width="80">
               <template #default="{ row }">
-                <TiStatusTag :value="row.status" />
+                <!-- 🔴 显式传 label：状态码来自 COMMON_STATUS 字典（该页写入的正是 ACTIVE/INACTIVE），
+                     字典文案是权威中文；不传会让 TiStatusTag 走兜底表按下标猜 -->
+                <TiStatusTag :value="row.status" :label="commonStatusLabel(row.status)" />
               </template>
             </el-table-column>
             <!-- @vue-generic {DictData} -->
-            <el-table-column label="操作" min-width="160" fixed="right" class-name="ti-action-column">
+            <el-table-column label="操作" width="200" fixed="right" class-name="ti-action-column">
               <template #default="{ row }">
                 <el-button size="small" :icon="Edit" v-permission="'system:dict:edit'" @click="openDataDialog(row)">编辑</el-button>
                 <el-button
@@ -195,7 +236,7 @@
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRowAction, confirmAction, actionKey } from '@/composables/useRowAction'
-import { Plus, Edit, Delete, Search } from '@element-plus/icons-vue'
+import { Plus, Edit, Delete, Search, Refresh } from '@element-plus/icons-vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import {
   getDictTypeList,
@@ -207,10 +248,16 @@ import TiTable from '@/components/TiTable/index.vue'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
 import { useDictStore } from '@/stores/dict'
 import { usePermission } from '@/composables/usePermission'
+import { useDict } from '@/composables/useDict'
+import { useTableError } from '@/composables/useTable'
+import { showErrorIfUnhandled } from '@/api/http'
 import type { DictType, DictData } from '@/types/business.d'
 
 /** 字典类型/字典项的新增按钮权限判定（判在 v-if 表达式里，见模板注释） */
 const { hasPermission } = usePermission()
+
+// 状态列文案：走 COMMON_STATUS 字典（ACTIVE 启用 / INACTIVE 停用 / TRIAL 试用）
+const { getLabel: commonStatusLabel } = useDict('COMMON_STATUS')
 
 // 字典类型列表
 const typeList = ref<DictType[]>([])
@@ -223,34 +270,65 @@ const filteredTypes = computed(() =>
   ),
 )
 
+/**
+ * 左栏（字典类型列表）的失败态。
+ *
+ * <p>🔴 本页有**两条互相独立的加载链**：左栏 `loadTypes()` 取字典类型，右栏 `selectType()`
+ * 按类型码取字典项。R7-13 的扫查口径是「每个 TiTable 实例」，而左栏是自定义的
+ * `el-scrollbar` + `v-for` 列表、根本没有 TiTable ⇒ 它被整套失败态扫查漏在外面：
+ * 接口挂掉时 `typeList` 保持 `[]`，左栏渲染成**空白面板**，与「系统里一个字典类型都没有」
+ * 在屏幕上完全同形（正是 R7-13 要消灭的那类断言）。此处按 R7-13 的页面级范式补上
+ * （el-alert + 重试，同 dashboard / maintenance-workbench / claim-config）。</p>
+ */
+const {
+  tableError: typeListError,
+  clearTableError: clearTypeListError,
+  setTableError: setTypeListError,
+} = useTableError()
+
 const loadTypes = async () => {
   // 🔴 原写法 `getDictTypeList({ pageNum: 1, pageSize: 200 })` 单次只拉 200 条：
   //    字典类型超过 200 个时，第 201 条起**既不在左栏列表里、也搜不到**——因为搜索框走的是
   //    前端过滤（filteredTypes 过滤 typeList），而且**没有任何提示**，属静默截断。
   //    本列表的设计意图是全量（el-scrollbar 滚动浏览 + 前端搜索），故改为按页取完，
   //    不改变交互形态（加分页器会让「搜索」只搜到已加载的那一页，语义反而更差）。
-  const PAGE_SIZE = 200
-  const MAX_PAGES = 50 // 兜底 10000 条：真实字典类型远达不到，触顶只可能是后端分页异常（防死循环）
-  const all: DictType[] = []
-  for (let pageNum = 1; pageNum <= MAX_PAGES; pageNum++) {
-    const page = await getDictTypeList({ pageNum, pageSize: PAGE_SIZE })
-    all.push(...page.list)
-    // 🔴 到底的判据用「本页未取满」，**不用 total**：代理层在下游只返回裸数组且本页已满时
-    //    会如实返回 total=null（总数未知，见 types/api.d 的 PageResult 注释），拿 null 比大小必错。
-    if (page.list.length < PAGE_SIZE) break
+  try {
+    const PAGE_SIZE = 200
+    const MAX_PAGES = 50 // 兜底 10000 条：真实字典类型远达不到，触顶只可能是后端分页异常（防死循环）
+    const all: DictType[] = []
+    for (let pageNum = 1; pageNum <= MAX_PAGES; pageNum++) {
+      const page = await getDictTypeList({ pageNum, pageSize: PAGE_SIZE })
+      all.push(...page.list)
+      // 🔴 到底的判据用「本页未取满」，**不用 total**：代理层在下游只返回裸数组且本页已满时
+      //    会如实返回 total=null（总数未知，见 types/api.d 的 PageResult 注释），拿 null 比大小必错。
+      if (page.list.length < PAGE_SIZE) break
+    }
+    typeList.value = all
+    clearTypeListError()
+  } catch (err) {
+    // 失败与「确实一个字典类型都没有」必须可区分：清空列表并置失败态，左栏才会说「加载失败」
+    // 而不是渲染成空白面板——二者在屏幕上完全同形（R7-13 的同一缺陷类）。
+    typeList.value = []
+    setTypeListError(err)
   }
-  typeList.value = all
 }
 
 // 字典数据
 const dictDataList = ref<DictData[]>([])
 const dataLoading = ref(false)
+// 右栏（字典项表格）的失败态：接口挂了不得渲染成「暂无数据」（🔴 R7-13）
+const { tableError, clearTableError, setTableError } = useTableError()
 
 const selectType = async (type: DictType) => {
   selectedType.value = type
   dataLoading.value = true
   try {
     dictDataList.value = await getDictDataByType(type.code, true)
+    clearTableError()
+  } catch (err) {
+    // 失败与「该类型下确实没有字典项」必须可区分：清空数据并置错误，界面才会说「加载失败」
+    dictDataList.value = []
+    setTableError(err)
   } finally {
     dataLoading.value = false
   }
@@ -262,6 +340,28 @@ onMounted(loadTypes)
 const reloadDictData = async () => {
   const current = selectedType.value
   if (current) await selectType(current)
+}
+
+/** 刷新缓存的在途标志（写-清类动作同样要有反馈，否则用户会连点） */
+const refreshingCache = ref(false)
+
+/**
+ * 刷新字典缓存。
+ *
+ * <p>清空**浏览器内**的字典缓存并重取当前类型：清空解决「别处改了字典、本会话下拉框仍是旧值」，
+ * 重取当前类型顺带验证下游可达，并让右栏内容与刚清掉的缓存口径一致（否则用户会以为刷新没生效）。</p>
+ */
+const handleRefreshCache = async () => {
+  refreshingCache.value = true
+  try {
+    dictStore.clearAll()
+    await reloadDictData()
+    ElMessage.success('字典缓存已刷新')
+  } catch (e: unknown) {
+    showErrorIfUnhandled(e, '刷新缓存失败')
+  } finally {
+    refreshingCache.value = false
+  }
 }
 
 /**

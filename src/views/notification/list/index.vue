@@ -45,6 +45,8 @@
       @page-change="onPageChange"
       @size-change="onSizeChange"
       @selection-change="onSelectionChange"
+      :error="tableError"
+      @refresh="retry"
     >
       <el-table-column type="selection" width="48" />
       <!-- D-501-63：字段名对齐下游（recipient / notificationType），此前读 customerName/channel 恒空 -->
@@ -72,7 +74,7 @@
         <template #default="{ row }">{{ formatDateTime(row.sentAt) }}</template>
       </el-table-column>
       <!-- @vue-generic {NotificationVO} -->
-      <el-table-column label="操作" min-width="100" fixed="right" class-name="ti-action-column">
+      <el-table-column label="操作" width="120" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
           <el-button size="small" :icon="View" @click="handleView(row)">详情</el-button>
         </template>
@@ -144,7 +146,7 @@ const queryParams = reactive({
   status: undefined as string | undefined,
 })
 
-const { tableData, tableLoading, pagination, fetchData, handleSearch, handleReset, onPageChange, onSizeChange } =
+const { tableData, tableLoading, tableError, pagination, fetchData, handleSearch, handleReset, onPageChange, onSizeChange, retry } =
   useTable<NotificationVO, typeof queryParams>((params) => getNotificationList(params), queryParams)
 
 fetchData()

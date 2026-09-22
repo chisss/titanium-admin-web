@@ -25,6 +25,8 @@
       row-key="id"
       :tree-props="{ children: 'children' }"
       default-expand-all
+      :error="tableError"
+      @refresh="loadMenu"
     >
       <el-table-column prop="title" label="菜单名称" min-width="180">
         <template #default="{ row }">
@@ -54,7 +56,7 @@
         </template>
       </el-table-column>
       <!-- @vue-generic {MenuNode} -->
-      <el-table-column label="操作" min-width="160" fixed="right" class-name="ti-action-column">
+      <el-table-column label="操作" width="200" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
           <el-button size="small" :icon="Edit" v-permission="'system:menu:edit'" @click="openDialog(row)">编辑</el-button>
           <el-button
@@ -125,6 +127,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRowAction, confirmAction, actionKey } from '@/composables/useRowAction'
+import { useTableError } from '@/composables/useTable'
 import { Plus, Edit } from '@element-plus/icons-vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import { getMenuTree, createMenu, updateMenu, deleteMenu } from '@/api/menu'
@@ -134,6 +137,8 @@ import TiSearchForm from '@/components/TiSearchForm/index.vue'
 import TiTable from '@/components/TiTable/index.vue'
 
 const loading = ref(false)
+// 失败态：接口挂了不得渲染成「暂无数据」（🔴 R7-13）
+const { tableError, clearTableError, setTableError } = useTableError()
 const menuTree = ref<MenuNode[]>([])
 const queryParams = reactive({ name: '' })
 
@@ -171,6 +176,11 @@ const loadMenu = async () => {
   loading.value = true
   try {
     menuTree.value = await getMenuTree()
+    clearTableError()
+  } catch (err) {
+    // 失败与「确实没有菜单」必须可区分：清空数据并置错误，界面才会说「加载失败」
+    menuTree.value = []
+    setTableError(err)
   } finally {
     loading.value = false
   }

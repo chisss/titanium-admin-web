@@ -4,11 +4,16 @@
     <!-- 工具栏 -->
     <div class="panel-toolbar">
       <span class="panel-count">共 <b>{{ list.length }}</b> 条配置</span>
-      <el-button type="primary" :icon="Plus" @click="openCreate">新建{{ title }}</el-button>
+      <!-- 🔴 无 claim:config:edit 时整块写入口不渲染：可见即会填，填完才被后端 403 拒
+           —— 与设计契约「禁用当前状态下无效的命令，而不是依赖后端拒绝」相悖 -->
+      <el-button v-if="canEdit" type="primary" :icon="Plus" @click="openCreate">新建{{ title }}</el-button>
     </div>
 
-    <!-- 表格 -->
-    <TiTable :data="list" :total="list.length" :page-size="9999" :loading="loading" :row-key="idKey">
+    <!-- 表格：🔴 `:paged="false"` = 全量模式（本面板一次取全量、不分页）。
+         此前是 `:total="list.length" :page-size="9999"`——9999 不在 TiTable 的档位表
+         [10,20,50,100] 内，EP 的 sizes 选择器匹配不到档位就回落显示裸值，页面上出现
+         「共 N 条 | 9999 | ‹1› | 前往 页」（R9-F07）。条数已由上方「共 N 条配置」表达。 -->
+    <TiTable :data="list" :paged="false" :loading="loading" :row-key="idKey" :error="tableError" @refresh="loadList">
       <el-table-column
         v-for="col in columns"
         :key="col.prop"
@@ -23,7 +28,8 @@
           <template v-else>{{ row[col.prop] ?? '-' }}</template>
         </template>
       </el-table-column>
-      <el-table-column label="操作" fixed="right" min-width="200" class-name="ti-action-column">
+      <!-- 只读账号整列不渲染：留一个空「操作」表头，用户会以为是页面坏了 -->
+      <el-table-column v-if="canEdit" label="操作" fixed="right" width="200" class-name="ti-action-column">
         <template #default="{ row }">
           <template v-for="action in visibleActions(row)" :key="action.key">
             <el-button size="small" :type="action.type" @click="runExtraAction(action, row)">
@@ -144,6 +150,8 @@ import { computed, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { showErrorIfUnhandled } from '@/api/http'
+import { usePermission } from '@/composables/usePermission'
+import { useTableError } from '@/composables/useTable'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
 import TiTable from '@/components/TiTable/index.vue'
 
@@ -224,6 +232,18 @@ const props = defineProps<{
 
 const list = ref<Record<string, unknown>[]>([])
 const loading = ref(false)
+// 失败态：接口挂了不得渲染成「暂无数据」（🔴 R7-13）
+const { tableError, clearTableError, setTableError } = useTableError()
+
+/**
+ * 本面板的全部写动作（新建/编辑/删除/状态动作）共用同一个后端权限码。
+ *
+ * <p>理赔配置的 7 组资源在 `ClaimConfigProxyController` 上**无差别**标注 `CLAIM_CONFIG_EDIT`
+ * （仅 GET 也只给这一个码），后端不存在更细的粒度。故此处按同一码收放，不自造更细的码——
+ * 前端若比后端更严，就变成「拦住后端本可接受的输入」。</p>
+ */
+const { hasPermission } = usePermission()
+const canEdit = computed(() => hasPermission('claim:config:edit'))
 const dialogVisible = ref(false)
 const saving = ref(false)
 const formRef = ref<FormInstance>()
@@ -267,6 +287,11 @@ const loadList = async () => {
   loading.value = true
   try {
     list.value = await props.listFn()
+    clearTableError()
+  } catch (err) {
+    // 失败必须清空并置错：否则列表停在「暂无数据」，把接口故障说成「确实没有配置项」
+    list.value = []
+    setTableError(err)
   } finally {
     loading.value = false
   }

@@ -83,3 +83,20 @@ export function formatTime(date: string | Date | null | undefined): string {
 
   return `${hour}:${minute}:${second}`
 }
+
+/**
+ * 当前时间的 YYYY-MM-DDTHH:mm:ss 文本，用作日期选择器的默认值。
+ *
+ * <p>不能用 `new Date().toISOString()`：它按 UTC 输出，东八区会把「此刻」写成 8 小时前的字符串，
+ * 用户一打开表单就看到一个明显不对的默认值，反而怀疑是系统算错了。</p>
+ *
+ * @returns 本地时区的当前时间，如 "2026-09-21T10:29:00"
+ */
+export function nowDateTimeValue(): string {
+  const d = new Date()
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return (
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+    `T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+  )
+}

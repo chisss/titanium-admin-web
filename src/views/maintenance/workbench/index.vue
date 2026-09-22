@@ -32,24 +32,115 @@
 
     <template v-if="detail">
       <div class="ti-card section-card">
-        <div class="section-heading"><h4>保全项与字段变更</h4><span>基准值 → 当前值 → 拟变更值 → 已应用值</span></div>
+        <div class="section-heading"><h4>保全项与字段变更</h4><span>基准值 → 当前值 → 拟变更值 → 已应用值；拟变更值的控件与校验按该保全项的字段配置下发</span></div>
         <!-- 保全项与字段变更：整块是「随页面滚动的编辑表单区」，拟变更值列直接绑 draftValues，
              下方还有「保存字段草稿」提交动作。这类表行数由案件决定且不宜内滚，故不收编 TiTable——
              加固定表头只会让页面里多出一条嵌套滚动条。仅统一视觉语言：斑马纹、去纵向边框 -->
-        <el-table :data="fieldEntryRows" stripe class="responsive-table">
-          <el-table-column prop="itemCode" label="保全项" min-width="150" />
-          <el-table-column label="变更对象" min-width="150" show-overflow-tooltip>
+        <el-table :data="fieldEntryRows" stripe class="responsive-table" empty-text="本案件无字段变更">
+          <el-table-column prop="itemCode" label="保全项" min-width="140" />
+          <el-table-column label="变更对象" min-width="130" show-overflow-tooltip>
             <template #default="{ row }">{{ row.objectId || '保单主体' }}</template>
           </el-table-column>
-          <el-table-column prop="fieldCode" label="字段" min-width="150" />
-          <el-table-column prop="baseValue" label="基准值" min-width="140" show-overflow-tooltip />
-          <el-table-column prop="currentValue" label="当前值" min-width="140" show-overflow-tooltip />
-          <el-table-column label="拟变更值" min-width="190">
-            <template #default="{ row }"><el-input v-model="draftValues[changeKey(row)]" size="small" :disabled="isReadOnly" :placeholder="row.proposedValue || '请输入'" /></template>
+          <el-table-column prop="fieldCode" label="字段" min-width="140">
+            <!-- 必填标记挂在字段名左侧：与表单惯例一致，且不占用输入框的横向空间。
+                 判据是「必填且**无**条件规则」——带条件规则的字段必填性由条件决定，
+                 一律标必填会把配置明确豁免的字段标错（见 @/constants/maintenance）。 -->
+            <template #default="{ row }">
+              <span v-if="requiredOf(row)" class="field-required-mark" title="必填字段">*</span>{{ row.fieldCode }}
+            </template>
           </el-table-column>
-          <el-table-column prop="appliedValue" label="已应用值" min-width="140" show-overflow-tooltip />
-          <el-table-column prop="conflictStatus" label="冲突" width="110" />
-          <el-table-column v-if="!isReadOnly" label="冲突处理" min-width="260">
+          <el-table-column prop="baseValue" label="基准值" min-width="120" show-overflow-tooltip />
+          <el-table-column prop="currentValue" label="当前值" min-width="120" show-overflow-tooltip />
+          <!-- 🔴 拟变更值：控件形态与校验全部由后端下发的字段规则驱动（见 @/constants/maintenance）。
+               此前对全部数据类型、全部校验类型一律渲染裸 el-input，规则里的 required/allowClear/
+               validationType/validationMessage 整份被丢弃 —— 配置好的「邮箱/手机号/身份证」格式要等
+               提交后才由后端拒绝，用户拿不到「哪一格错了、该填成什么样」的当场反馈。 -->
+          <el-table-column label="拟变更值" min-width="200">
+            <template #default="{ row }">
+              <div class="field-input">
+                <!-- 结构化控件仅用于后端已钉死规范化格式的类型：
+                     BOOLEAN 只接受 true/false，GENDER 值域固定 M|F|UNKNOWN，DATE 为 ISO yyyy-MM-dd。
+                     DATETIME/INTEGER/DECIMAL 仍走文本 —— 时区偏移与 BigDecimal 精度都不是 JS 数值能
+                     无损表达的，硬套选择器/数字框会产出前端表达不了的值。 -->
+                <!-- BOOLEAN 只有两个取值，用分段单选而非下拉：两选项都可见，一次点击即改。
+                     不为此建字典——true/false 是语言原语，不随租户变化，为它造一条字典行
+                     是过度设计（字典契约禁的是页面手写**业务枚举**下拉，此处不是业务枚举）。 -->
+                <div v-if="controlOf(row) === 'boolean'" class="field-input__boolean">
+                  <el-radio-group
+                    v-model="draftValues[changeKey(row)]"
+                    size="small"
+                    :disabled="isReadOnly"
+                  >
+                    <el-radio-button value="true">是</el-radio-button>
+                    <el-radio-button value="false">否</el-radio-button>
+                  </el-radio-group>
+                  <!-- 单选钮点下即撤不回，误点会无路可退；可清空的字段补显式「清除」，
+                       与下拉的 clearable 等价（allowClear=false 时不出现，与后端判据一致） -->
+                  <el-button
+                    v-if="clearableOf(row) && hasDraftValue(row)"
+                    link
+                    type="primary"
+                    size="small"
+                    :disabled="isReadOnly"
+                    @click="clearDraft(row)"
+                  >清除</el-button>
+                </div>
+                <!-- 性别字典含 ALL（不限），但后端 GENDER 校验只接受 M|F|UNKNOWN，故剔除 ALL：
+                     否则界面会给出一个必然被后端拒绝的选项 -->
+                <TiDictSelect
+                  v-else-if="controlOf(row) === 'gender'"
+                  v-model="draftValues[changeKey(row)]"
+                  dict-type="GENDER"
+                  size="small"
+                  :exclude-values="['ALL']"
+                  :disabled="isReadOnly"
+                  :clearable="clearableOf(row)"
+                />
+                <el-date-picker
+                  v-else-if="controlOf(row) === 'date'"
+                  v-model="draftValues[changeKey(row)]"
+                  type="date"
+                  value-format="YYYY-MM-DD"
+                  size="small"
+                  class="field-input__control"
+                  :disabled="isReadOnly"
+                  :clearable="clearableOf(row)"
+                  placeholder="YYYY-MM-DD"
+                />
+                <el-input
+                  v-else
+                  v-model="draftValues[changeKey(row)]"
+                  size="small"
+                  :disabled="isReadOnly"
+                  :placeholder="placeholderOf(row)"
+                />
+                <!-- 错误提示贴在字段正下方（本轮「错误提示放在字段旁」）：单元格内不长驻
+                     冗余信息，只在出错时占位，行高因此只在有问题的那一行变化 -->
+                <p v-if="!isReadOnly && fieldErrors[changeKey(row)]" class="field-input__error">
+                  {{ fieldErrors[changeKey(row)] }}
+                </p>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column prop="appliedValue" label="已应用值" min-width="120" show-overflow-tooltip />
+          <!-- 🔴 冲突列：码→色彩映射见 CONFLICT_TAGS。原为 `prop="conflictStatus"` 裸渲染，
+               会把枚举码直接印上屏（库内实测 22 行显示 NONE、4 行显示 RESOLVED）且无颜色。 -->
+          <el-table-column label="冲突" width="90">
+            <template #default="{ row }">
+              <TiStatusTag
+                v-if="conflictTagOf(row.conflictStatus).text"
+                :value="row.conflictStatus || ''"
+                :label="conflictTagOf(row.conflictStatus).text"
+                :color="conflictTagOf(row.conflictStatus).type"
+              />
+              <span v-else>-</span>
+            </template>
+          </el-table-column>
+          <!-- 🔴 本列按需建列（有无冲突行决定），不再按 !isReadOnly 无条件占位：
+               三个按钮并排要 260px，是这张表在 1920 以下视口横滚的主因，而多数案件零冲突。
+               宽度取 table.ts 的 280 档（三个 4 字按钮 + gap + 单元格内边距 ≈ 238px，260 与 280 均为
+               合理值，统一收敛到档位集合内），并挂 ti-action-column 走全站操作列样式。 -->
+          <el-table-column v-if="!isReadOnly && hasConflictEntryRows" label="冲突处理" width="280" class-name="ti-action-column">
             <template #default="{ row }">
               <template v-if="isConflict(row)">
                 <!-- 冲突处置与状态流转同端点（operateCase），后端同判 maintenance:approve -->
@@ -64,14 +155,52 @@
           </el-table-column>
         </el-table>
         <!-- 字段草稿走 recordMaintenanceFieldChanges → PUT /items/{itemCode}/changes → maintenance:create -->
-        <div v-if="!isReadOnly" class="section-actions"><el-button type="primary" :loading="savingChanges" v-permission="'maintenance:create'" @click="saveChanges">保存字段草稿</el-button></div>
+        <div v-if="!isReadOnly" class="section-actions">
+          <!-- 错误计数与保存按钮并排：按钮保持可点（点下去会点名第一个出错的字段），
+               而不是禁用后让用户自己逐格找 —— 禁用按钮说不出「为什么不能点」 -->
+          <span v-if="fieldErrorCount" class="section-actions__error">还有 {{ fieldErrorCount }} 个字段待修正</span>
+          <el-button type="primary" :loading="savingChanges" v-permission="'maintenance:create'" @click="saveChanges">保存字段草稿</el-button>
+        </div>
       </div>
 
       <div class="ti-card section-card">
         <div class="section-heading"><h4>流程任务</h4><span>按冻结配置顺序执行，越序操作由服务端拒绝</span></div>
+        <!-- 流程概览：把副标题那句「按冻结配置顺序执行」先给成一眼可见的结论，再往下才是可操作的明细。
+             🔴 不取代下方表格 —— 领取/开始/更多三类行操作只挂在表格行上（时间轴无操作入口）。
+             🔴 R10-06（用户点名 F-04）由 el-steps 改为 el-timeline。原先源码里有一条拒绝 timeline 的
+                判断（「timeline 表达按时间倒序的事件流，而 6 个任务只有 3 个带 lastOperation，
+                 会画出一条缺 3 个节点的轴」）。逐条复核后改判，两条理由：
+                 ① 「缺节点」的前提不成立：每个任务都渲染一个 el-timeline-item，**节点由数据决定而非时间**；
+                    真正会造成空缺的是空 timestamp 占位行 —— EP 在 placement="top" 下**无条件**渲染
+                    该行，故用 `:hide-timestamp="!step.timestamp"` 关掉它（不是编造占位时间）。
+                 ② 语义担忧（时间轴＝倒序事件流）由**排序与色源**消解：节点按 sequence 正序，节点色
+                    直接取该任务的状态色（与同行表格的 TiStatusTag 同值），不渲染时间刻度。
+             🔴 节点色**必须**与 TiStatusTag 的 COLOR_MAP 同值：同一状态在时间轴与表格里颜色不同，
+                用户会读成两回事。两侧真值互比的守卫见 tests/maintenance-flow-timeline-contracts.test.mjs。 -->
+        <el-timeline v-if="flowSteps.length" class="flow-steps">
+          <el-timeline-item
+            v-for="step in flowSteps"
+            :key="step.key"
+            :type="step.type"
+            :hollow="step.hollow"
+            :size="step.current ? 'large' : 'normal'"
+            :timestamp="step.timestamp"
+            :hide-timestamp="!step.timestamp"
+            placement="top"
+          >
+            <div class="flow-step">
+              <span class="flow-step__title">{{ step.title }}</span>
+              <TiStatusTag :value="step.status" />
+              <span v-if="step.operator" class="flow-step__operator">{{ step.operator }}</span>
+            </div>
+          </el-timeline-item>
+        </el-timeline>
         <!-- 流程任务：本页唯一「行数无上限 + 带行操作」的主列表（领取/开始/更多三处动作），
              收编 TiTable 拿到固定表头与统一的失败/空态。max-height 用 lean 档——
              本页无检索区、无分页，骨架与无检索的列表页同档 -->
+        <!-- 🔴 本表**有意不接** `:error`（R7-13）：它的数据来自页面同一份 `load()`，
+             失败时整个案件详情都没取到，失败态归页面级（见模板末尾的 el-alert + 重试）。
+             在此再接一个表级失败态会让同一次故障在屏幕上出现两处，且此处并无独立的可取数据。 -->
         <TiTable
           class="ti-table--flush responsive-table"
           :data="detail.workflowTasks"
@@ -79,10 +208,10 @@
         >
           <el-table-column prop="sequence" label="序号" width="70" />
           <el-table-column prop="itemCode" label="保全项" min-width="150" />
-          <el-table-column prop="stepType" label="步骤" min-width="160" />
-          <el-table-column prop="mode" label="模式" width="110" />
+          <el-table-column label="步骤" min-width="160"><template #default="{ row }">{{ maintenanceStepTypeLabel(row.stepType) }}</template></el-table-column>
+          <el-table-column label="模式" width="110"><template #default="{ row }">{{ maintenanceStepModeLabel(row.mode) }}</template></el-table-column>
           <el-table-column prop="status" label="状态" width="130"><template #default="{ row }"><TiStatusTag :value="row.status" /></template></el-table-column>
-          <el-table-column label="操作" min-width="200" fixed="right" class-name="ti-action-column">
+          <el-table-column label="操作" width="280" fixed="right" class-name="ti-action-column">
             <template #default="{ row }">
               <!-- 平铺动作收敛为 2 个：领取与开始是任务入口且互斥；审核决策对与其余流转动作进「更多」 -->
               <!-- 🔴 本列一律用 `v-if="<业务态> && hasPermission(...)"` 而非 v-permission 指令，两条理由：
@@ -119,7 +248,7 @@
       <div class="two-column">
         <div class="ti-card section-card">
           <div class="section-heading"><h4>配置与 Offering 快照</h4></div>
-          <el-table :data="detail.items" stripe size="small">
+          <el-table :data="detail.items" stripe size="small" empty-text="暂无保全项">
             <el-table-column prop="itemCode" label="保全项" min-width="150" />
             <el-table-column prop="configurationVersion" label="配置版本" width="110" />
             <el-table-column prop="configurationContentHash" label="配置哈希" min-width="180" show-overflow-tooltip />
@@ -178,6 +307,20 @@
         </div>
       </div>
     </template>
+    <!-- 🔴 失败态必须先于「未找到案件」判定（R7-13）：接口挂掉时 detail 同样为 null，
+         若只按 detail 判空，界面会断言「这个案件不存在」—— 而真相是这次没查成。
+         此处用页面级失败态（el-alert + 重试），与 dashboard/system-config 同一范式；
+         表级失败态才走 TiTable 的 :error。 -->
+    <el-alert
+      v-else-if="tableError"
+      class="load-error"
+      type="error"
+      show-icon
+      :closable="false"
+      :title="`案件加载失败：${tableError.message}`"
+    >
+      <el-button text type="primary" size="small" @click="load">重试</el-button>
+    </el-alert>
     <el-empty v-else-if="!loading" description="未找到案件" />
   </div>
 </template>
@@ -205,6 +348,12 @@ import type {
 import TiDetailHeader from '@/components/TiDetailHeader/index.vue'
 import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import TiTable from '@/components/TiTable/index.vue'
+import TiDictSelect from '@/components/TiDictSelect/index.vue'
+import {
+  fieldControlKind,
+  fieldPlaceholder,
+  fieldValueError,
+} from '@/constants/maintenance'
 import { useUserStore } from '@/stores/user'
 import { formatDateTime, formatDateTimeInZone } from '@/utils/date'
 import { formatAmount } from '@/utils/format'
@@ -212,6 +361,7 @@ import { useDict } from '@/composables/useDict'
 import { useDetailColumns } from '@/composables/useDetailColumns'
 import { usePermission } from '@/composables/usePermission'
 import { useRowAction, actionKey } from '@/composables/useRowAction'
+import { useTableError } from '@/composables/useTable'
 
 const route = useRoute()
 const userStore = useUserStore()
@@ -231,9 +381,15 @@ const { hasPermission } = usePermission()
 const { getLabel: maintenanceCaseStatusLabel } = useDict('MAINTENANCE_CASE_STATUS')
 const { getLabel: maintenanceChannelDictLabel } = useDict('MAINTENANCE_CHANNEL')
 const { getLabel: maintenanceEffectiveTypeDictLabel } = useDict('MAINTENANCE_EFFECTIVE_TIME_TYPE')
+// 流程任务的「步骤」「模式」两列原先裸渲染英文码（CREATE / DATA_ENTRY / REQUIRED / SKIPPED），
+// 而这两个字典在保全项配置编辑器里早已被消费（同一份 t_dict_data）。此处补齐本地化。
+const { getLabel: maintenanceStepTypeLabel } = useDict('MAINTENANCE_STEP_TYPE')
+const { getLabel: maintenanceStepModeLabel } = useDict('MAINTENANCE_STEP_MODE')
 const maintenanceChannelLabel = (value?: string) => value ? maintenanceChannelDictLabel(value) : '-'
 const maintenanceEffectiveTypeLabel = (value?: string) => value ? maintenanceEffectiveTypeDictLabel(value) : '-'
 const loading = ref(false)
+// 页面级失败态：接口挂了不得渲染成「未找到案件」（🔴 R7-13）
+const { tableError, clearTableError, setTableError } = useTableError()
 const savingChanges = ref(false)
 /**
  * 「冲突处理 / 生效计划」两族动作的在途行键（与 `useRowAction` 共用同一套 key 约定）。
@@ -269,9 +425,90 @@ const beneficiaryObjectsByItem = ref<Record<string, PolicyBeneficiaryVO[]>>({})
  *  🔴 此前写的是 window.innerWidth < 768 —— 与断点同量级（移动档上界），但 window.innerWidth **不是
  *  响应式来源**，包在 computed 里也不会随窗口缩放重算；改走 useMediaQuery 才真的会降为 1 列。 */
 const detailColumns = useDetailColumns(3)
+
 const snapshotCount = computed(() => Object.values(detail.value?.snapshots || {}).filter(Boolean).length)
 const isReadOnly = computed(() => ['COMPLETED', 'REJECTED', 'WITHDRAWN'].includes(detail.value?.status || ''))
 const conflictCount = computed(() => detail.value?.fieldChanges.filter(isConflict).length || 0)
+/**
+ * 「冲突处理」列的存在性判据：**表内确实有冲突行才建列**。
+ * <p>该列固定 min-width 260px（三个按钮「采用当前值/采用拟值/重新录入」并排的下限），
+ * 而绝大多数案件一个冲突都没有 —— 此前它按 `!isReadOnly` 无条件占位，把字段变更表的总宽
+ * 从 1230 顶到 1490，是这张表在 1920 以下视口必然横滚的主因。</p>
+ * <p>判据取自 `fieldEntryRows` 而非 `conflictCount`：后者的分母是 `detail.fieldChanges`，
+ * 含被字段配置判为不可见/不可编辑的行——那些行根本不进表，会造出「列在、整列全是 '-'」的浪费。</p>
+ */
+const hasConflictEntryRows = computed(() => fieldEntryRows.value.some(isConflict))
+/**
+ * 流程任务概览（`el-timeline`）。
+ *
+ * <p>形态由 R10-06 从 `el-steps` 改为 `el-timeline`（用户 R9-F04 点名）。原判断与其复核见模板注释。</p>
+ *
+ * <p>🔴 概览带**不取代**下方表格：领取/开始/更多三类行操作只在表格里，时间轴不挂操作入口。</p>
+ *
+ * <p>时间「有则显示」：案件级没有审计事件源（`MaintenanceCaseDetail` 只有
+ * createdAt/updatedAt/createdBy/updatedBy，无 audits/history 数组），时间与操作人只能取自
+ * 该任务自身的 `lastOperation`。实测 seq 1 CREATE、4 FEE_SETTLEMENT(SKIPPED)、6 COMPLETE
+ * 恒为空 —— 空就 `hide-timestamp` 关掉那一行，不用占位符编造一个不存在的时间。</p>
+ */
+/**
+ * 任务状态 → el-timeline 节点色（🔴 必须与 `TiStatusTag` 的 `COLOR_MAP` **同值**）。
+ *
+ * <p>同一个状态在时间轴上是一种颜色、在下方表格里是另一种颜色，用户会把一个状态读成两回事。
+ * 全仓状态色的唯一真源是 `TiStatusTag` 的 `COLOR_MAP`，此处只是它在本页的**投影**：键集合
+ * 取后端 `MaintenanceWorkflowTaskStatus` 的**全量 10 码**（🔴 初稿只写了 5 码，剩下的靠
+ * `?? 'info'` 兜底 —— 那会让 PENDING / WAITING_CONDITION / WAITING_EXTERNAL / QUOTED 在
+ * 时间轴上是灰的、在表格里是橙的，REJECTED 灰 vs 红，正是本任务要消灭的那种不一致）。
+ * 三处真值互比（后端枚举 ⊇ 本表键集合、本表取值 ≡ COLOR_MAP）见
+ * `tests/maintenance-flow-timeline-contracts.test.mjs` —— 只写死一份清单再断言自己等于
+ * 自己，两侧同时改坏也照样绿。</p>
+ *
+ * <p>`hollow`（空心节点）表达「这一步还没走到」：EP 的 `el-timeline-item` 上，空心比「已跳过」
+ * 的灰实心更弱，这是时间轴专有的语汇，`el-steps` 表达不出来。当前推进到的那一步用
+ * `size="large"` 放大节点 —— 原实现靠父级 `:active` 推导，还必须提防「显式传 wait 会压掉
+ * 当前步」（旧注释记的那处真机缺陷）；现在每项各自取色，那条陷阱从根上不存在了。</p>
+ */
+/** `el-timeline-item` 的节点色档位（与 `el-tag` 的 `type` 同域，故取值与 COLOR_MAP 一致） */
+type NodeType = 'primary' | 'success' | 'warning' | 'info' | 'danger'
+const TASK_NODE_TYPE: Record<string, NodeType> = {
+  // ---- 流转中（橙）：还需有人或有外部系统推它 ----
+  PENDING: 'warning',
+  READY: 'warning',
+  WAITING_CONDITION: 'warning',
+  IN_PROGRESS: 'warning',
+  WAITING_EXTERNAL: 'warning',
+  QUOTED: 'warning',
+  // ---- 已有结果 ----
+  COMPLETED: 'success',
+  REJECTED: 'danger',
+  FAILED: 'danger',
+  SKIPPED: 'info',
+}
+/**
+ * 尚未有结果的任务 ⇒ 空心节点。
+ *
+ * <p>判据直接取**色族**而不另立一份状态清单：`warning` 这一族在 `COLOR_MAP` 里的分组含义
+ * 就是「流转中：还需有人或有外部系统推它」，正好等于「这一步还没走到」。两处清单必然漂移，
+ * 而这里根本不需要第二份清单 —— 一旦某码被重新归色，节点的实心/空心会自动跟着走。</p>
+ */
+const isPendingStep = (status: string) => TASK_NODE_TYPE[status] === 'warning'
+/** 当前推进到第几步：首个未完成任务的下标；全部完成时取步数（此时没有任何节点被放大） */
+const activeFlowStep = computed(() => {
+  const tasks = detail.value?.workflowTasks || []
+  const index = tasks.findIndex((task) => !['COMPLETED', 'SKIPPED'].includes(task.status))
+  return index === -1 ? tasks.length : index
+})
+
+const flowSteps = computed(() => (detail.value?.workflowTasks || []).map((task, index) => ({
+  key: task.taskId,
+  title: `${task.sequence}. ${maintenanceStepTypeLabel(task.stepType)}`,
+  /** 原始状态码：交给 TiStatusTag 取色与取文案（保证与表格同源） */
+  status: task.status,
+  type: TASK_NODE_TYPE[task.status] ?? 'info',
+  hollow: isPendingStep(task.status),
+  current: index === activeFlowStep.value,
+  timestamp: task.lastOperation?.operatedAt ? formatDateTime(task.lastOperation.operatedAt) : '',
+  operator: task.lastOperation?.operatedBy || '',
+})))
 const financialTasks = computed(() => detail.value?.workflowTasks.filter((task) =>
   task.premiumQuoteEvidence || task.billingPostingEvidence || task.fundSettlementEvidence) || [])
 const hasCreatorOwnedReview = computed(() => detail.value?.createdBy === userStore.userInfo?.id
@@ -288,7 +525,20 @@ const beneficiaryValue = (beneficiary: PolicyBeneficiaryVO, fieldCode: string) =
   if (fieldCode === 'policy.beneficiary.share') return beneficiary.shareRatio?.toString()
   return undefined
 }
-const fieldEntryRows = computed<MaintenanceFieldChange[]>(() => {
+/**
+ * 字段录入行。
+ *
+ * <p>在字段变更之上挂一份**该字段的配置规则**（`visible && editable` 已由上一步过滤）——
+ * 后端随案件详情下发的 `fieldRules` 里已有 `required / allowClear / validationType /
+ * validationPattern / validationMessage / conditionRuleCode`，此前整份被丢弃，只留了
+ * `expectedValueType` 当 `dataType`，于是所有字段都退化成一个无校验、无必填提示的裸文本框，
+ * 配置好的格式规则要等提交后才由后端拒绝。</p>
+ *
+ * <p>`rule` 为空表示这一行是**已保存的字段变更**（见 `fieldEntryRows` 注释）。</p>
+ */
+type FieldEntryRow = MaintenanceFieldChange & { rule?: MaintenanceConfigurationFieldRule }
+
+const fieldEntryRows = computed<FieldEntryRow[]>(() => {
   if (!detail.value) return []
   const savedItems = new Set(detail.value.fieldChanges.map((field) => field.itemCode))
   const unsavedRows = detail.value.items
@@ -302,6 +552,7 @@ const fieldEntryRows = computed<MaintenanceFieldChange[]>(() => {
           itemCode: item.itemCode,
           fieldCode: rule.fieldCode,
           dataType: rule.expectedValueType || 'TEXT',
+          rule,
         }))
       const beneficiaryRows = (beneficiaryObjectsByItem.value[item.itemCode] || [])
         .flatMap((beneficiary) => rules
@@ -315,10 +566,14 @@ const fieldEntryRows = computed<MaintenanceFieldChange[]>(() => {
               dataType: rule.expectedValueType || 'TEXT',
               baseValue: currentValue,
               currentValue,
+              rule,
             }
           }))
       return [...scalarRows, ...beneficiaryRows]
     })
+  // 已保存的字段变更不带 rule：其值在「记录变更」时已由后端逐条校验（含条件规则与字段目录
+  // 可清空性），本页只负责呈现与冲突处置，不再重复判定——重复判定会在规则事后变更时
+  // 把历史数据判成「不合规」，而它们早已生效。
   return [...detail.value.fieldChanges, ...unsavedRows]
 })
 const caseId = String(route.params.id)
@@ -340,6 +595,57 @@ const changeKey = (rawRow: unknown) => {
   const row = rawRow as MaintenanceFieldChange
   return `${row.itemCode}:${row.objectId}:${row.fieldCode}`
 }
+
+/**
+ * 逐字段实时校验结果（键与草稿值、草稿提交同用 `changeKey`）。
+ *
+ * <p>校验口径全部来自后端下发的字段规则，见 `@/constants/maintenance`：那里与
+ * `MaintenanceFieldRule` 逐条对齐（内置正则逐字抄、必填排除条件规则、先判不许清空）。
+ * 前端提前报错只为「当场说清哪里不对」，**不替代后端判定**。</p>
+ */
+const fieldErrors = computed<Record<string, string>>(() => {
+  const errors: Record<string, string> = {}
+  for (const row of fieldEntryRows.value) {
+    const error = fieldValueError(row.rule, draftValues[changeKey(row)])
+    if (error) errors[changeKey(row)] = error
+  }
+  return errors
+})
+const fieldErrorCount = computed(() => Object.keys(fieldErrors.value).length)
+/** 首个出错字段：保存被拦时点名到具体字段，比「有 3 个字段不合规」可执行得多 */
+const firstFieldError = computed(() => {
+  for (const row of fieldEntryRows.value) {
+    const error = fieldErrors.value[changeKey(row)]
+    if (error) return { fieldCode: row.fieldCode, error }
+  }
+  return null
+})
+/** 行控件形态：已保存行无规则 ⇒ 文本 */
+const controlOf = (rawRow: unknown) => {
+  const { rule } = rawRow as FieldEntryRow
+  return rule ? fieldControlKind(rule.expectedValueType, rule.validationType) : 'text'
+}
+/** 「不允许清空」为真时才关掉清除入口；未声明（含已保存行）按可清空处理 */
+const clearableOf = (rawRow: unknown) => (rawRow as FieldEntryRow).rule?.allowClear !== false
+/** 该行是否已录入待提交的值（决定要不要显示「清除」——空着时显示只会是噪音） */
+const hasDraftValue = (rawRow: unknown) => {
+  const value = draftValues[changeKey(rawRow)]
+  return value !== undefined && value !== null && value !== ''
+}
+/** 清空单行草稿。结构化控件（单选/日期）自带清除入口缺失，靠此补齐 allowClear 语义 */
+const clearDraft = (rawRow: unknown) => {
+  delete draftValues[changeKey(rawRow)]
+}
+/** 无条件规则且明细未被抹除的必填字段才标「必填」（带条件规则的必填性由条件决定，标了会误导；
+ *  明细被抹除时 conditionRuleCode 同为 null，无法与「无条件规则」区分，故一并让路） */
+const requiredOf = (rawRow: unknown) => {
+  const { rule } = rawRow as FieldEntryRow
+  return !!rule?.required && !rule.conditionRuleCode && !rule.detailsRedacted
+}
+const placeholderOf = (rawRow: unknown) => {
+  const row = rawRow as FieldEntryRow
+  return row.rule ? fieldPlaceholder(row.rule) : (row.proposedValue || '请输入')
+}
 const isReview = (rawRow: unknown) => (rawRow as MaintenanceWorkflowTask).stepType.toUpperCase().includes('REVIEW')
 const isDataEntry = (rawRow: unknown) => ['DATA_ENTRY', 'VALIDATION'].includes((rawRow as MaintenanceWorkflowTask).stepType)
 const isAssignedToCurrentUser = (rawRow: unknown) => {
@@ -352,9 +658,31 @@ const canReview = (row: unknown) => isOwnedInProgress(row) && isReview(row)
   && detail.value?.createdBy !== userStore.userInfo?.id
 const canCompleteDataEntry = (rawRow: unknown) => isOwnedInProgress(rawRow) && isDataEntry(rawRow)
   && fieldEntryRows.value.some((field) => field.itemCode === (rawRow as MaintenanceWorkflowTask).itemCode)
-const isConflict = (rawRow: unknown) => ['DETECTED', 'CONFLICT'].includes(
-  (rawRow as MaintenanceFieldChange).conflictStatus || '',
-)
+// 值域取后端枚举 MaintenanceFieldConflictStatus（NONE/DETECTED/RESOLVED）——原实现多收了一个
+// 'CONFLICT'：该字面量在保全域后端**不存在**（全仓 CONFLICT 只用于 HTTP 状态语义），
+// 属凭字面相似臆造的码，永远不成立却让谓词看起来比真实值域宽。
+const isConflict = (rawRow: unknown) => (rawRow as MaintenanceFieldChange).conflictStatus === 'DETECTED'
+
+/**
+ * 「冲突」列的展示口径：码 → { 文案, 语义色 }。
+ *
+ * <p>🔴 此前该列是 `<el-table-column prop="conflictStatus">` **裸渲染**，把枚举码直接印上屏——
+ * 库内实测 22 行显示 `NONE`、4 行显示 `RESOLVED`，且无任何颜色，正是用户点名的那类缺陷。
+ * 这三个码**不进** `TiStatusTag` 内置兜底表：`NONE`/`RESOLVED` 是跨域通用词（不同字典里含义
+ * 不同，收进全局表会在别处说错话），故按该组件注释给出的口径（语义有分野的码由页面覆盖）
+ * 在页面内定义。文案逐字取自枚举自带的中文 name，不另行措辞。</p>
+ *
+ * <p>🔴 `NONE` 渲染为「-」而非灰色标签：它是**状态的缺席**而不是一种状态，且库内 22/26 行
+ * 都是它——逐行挂灰标签只会把真正需要看的红标签稀释掉。同表「冲突处理」列对非冲突行
+ * 同样用「-」，两列口径一致。未保存的草稿行没有 `conflictStatus`，也落到「-」。</p>
+ */
+const CONFLICT_TAGS: Record<string, { text: string; type: 'danger' | 'success' }> = {
+  DETECTED: { text: '待解决', type: 'danger' },
+  RESOLVED: { text: '已解决', type: 'success' },
+}
+/** 无冲突/未保存行共用的空描述，避免每次渲染新分配对象 */
+const NO_CONFLICT_TAG = { text: '', type: '' } as const
+const conflictTagOf = (status?: string) => (status && CONFLICT_TAGS[status]) || NO_CONFLICT_TAG
 const isEffect = (rawRow: unknown) => (rawRow as MaintenanceWorkflowTask).stepType === 'EFFECT'
 const isCreatorReviewTask = (rawRow: unknown) => isReview(rawRow)
   && detail.value?.createdBy === userStore.userInfo?.id
@@ -406,6 +734,11 @@ const load = async () => {
         || row.currentValue
         || ''
     })
+    clearTableError()
+  } catch (err) {
+    // 失败必须清掉 detail：留着上一个案件的数据会让用户以为这就是本次结果（比空白更危险）
+    detail.value = undefined
+    setTableError(err)
   } finally { loading.value = false }
 }
 
@@ -463,6 +796,14 @@ const runRowCommand = (row: unknown, command: string) => {
 
 const saveChanges = async () => {
   if (!detail.value) return
+  // 🔴 校验前置到 pending 置位之前：不满足直接 return，无需再把按钮从 loading 态手动复位。
+  //    这里拦的是**前端已能判定**的错（必填缺失、不允许清空、格式不符），全部来自后端下发的
+  //    字段规则；拦下来是为了当场说明白，而不是省掉后端那次校验。
+  if (fieldErrorCount.value) {
+    const first = firstFieldError.value
+    ElMessage.warning(`还有 ${fieldErrorCount.value} 个字段不符合配置要求，如「${first?.fieldCode}」：${first?.error}`)
+    return
+  }
   savingChanges.value = true
   try {
     const groups = new Map<string, Array<Record<string, unknown>>>()
@@ -546,11 +887,41 @@ onMounted(load)
 .section-heading h4 { margin: 0; }
 .section-heading span { color: var(--el-text-color-secondary); font-size: 12px; }
 .section-card { margin-top: 16px; }
+/* 流程概览带：把副标题那句「按冻结配置顺序执行」先给成一眼可见的结论。
+   R10-06 由 el-steps 换为 el-timeline（用户点名 F-04）——三层信息 el-steps 一个都给不出：
+   节点色 = 任务状态色（与右侧表格的 TiStatusTag 同源）、未达终态的节点空心（「还没走到」）、
+   当前推进到的那一步节点放大（原实现靠父级 :active 推导，还得提防「显式传 wait 会压掉当前步」）。
+   🔴 左内边距比 EP 默认（ul 40px + wrapper 28px = 68px）各收一档：卡片里 68px 的悬挂缩进
+   会把 6 个节点挤成一条竖排细线，而这一带的作用是**一眼看清全流程**。 */
+.flow-steps { margin-bottom: $space-4; padding: $space-3 $space-4 $space-1; border-radius: $radius-md; background: var(--el-fill-color-lighter); }
+.flow-steps.is-start { padding-left: $space-5; }
+.flow-steps :deep(.el-timeline-item) { padding-bottom: $space-3; }
+.flow-steps :deep(.el-timeline-item.is-start .el-timeline-item__wrapper) { padding-left: $space-5; }
+/* 刻度与节点圆心对齐：EP 给 timestamp 留 padding-top:4px / margin-bottom:8px，而节点圆心距
+   行首 6px（node-size-normal 12px 的半径）⇒ 那 4px 的 padding 正好把刻度压到圆心下方 4px。
+   本页 6 个节点里 3 个无时刻，留白全落在空处，收紧为 0 / $space-1。 */
+.flow-steps :deep(.el-timeline-item__timestamp.is-top) { margin-bottom: $space-1; padding-top: 0; font-size: $font-size-sm; }
+.flow-step { display: flex; flex-wrap: wrap; align-items: center; gap: $space-2; }
+.flow-step__title { color: $text-primary; font-size: $font-size-base; font-weight: $font-weight-medium; }
+.flow-step__operator { color: $text-secondary; font-size: $font-size-sm; }
 .role-alert { margin-top: 14px; }
 .section-actions { justify-content: flex-end; margin-top: 14px; }
-.two-column { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+/* 🔴 `repeat(2, minmax(0, 1fr))` 而非 `1fr 1fr`：grid 子项默认 `min-width: auto`，
+   会把「内容最小宽度」当成列宽下限。左卡里的快照表列 min-width 合计 649px（卡片 padding 后 689），
+   于是 900~1400px 视口区间内左列被顶到 689、右列只剩 115.9px ——
+   右卡 el-descriptions 的标签实测被压到 **37px 宽 / 1553px 高**，即逐字竖排成一列。
+   （1920px 下容器 1394 = 689×2+16 恰好够，所以宽屏看不出来；用户点名「视觉样式需要提升」，
+   现场实际在 1440/1280 这些主流分辨率上。）minmax(0, …) 把下限归零，两列严格等宽。 */
+.two-column { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .hash-text { word-break: break-all; font-family: monospace; }
 .financial-evidence + .financial-evidence { margin-top: 14px; }
 @media (max-width: $breakpoint-narrow) { .two-column { grid-template-columns: 1fr; } }
 @media (max-width: $breakpoint-mobile) { .section-heading { align-items: flex-start; flex-direction: column; } /* 窄屏给表格一个横向最小宽度，让列不被压扁——选择器必须只命中 el-table 本身：此前写成 .responsive-table 裸类名，收编 TiTable 后该类名同时落在 .ti-table-wrap 根节点上，会把整张卡片撑到 900px 冲破栅格 */ .el-table.responsive-table, .responsive-table .el-table { min-width: 900px; } }
+/* 必填标记：* 用 $danger-text 而非 $danger-color —— 后者是**填充色**，当文字色对比度实测仅 2.61，故文字一律用其压暗变体（见 variables.scss 说明） */
+.field-required-mark { margin-right: $space-1; color: $danger-text; }
+/* 字段旁错误提示：只在出错时占位，不预留固定高度，避免整表行高被少数出错行拉齐 */
+.field-input__error { margin: $space-1 0 0; font-size: $font-size-sm; line-height: 1.5; color: $danger-text; }
+.section-actions__error { font-size: $font-size-sm; color: $danger-text; }
+/* 布尔字段的分段单选与「清除」并排：字号不同，靠 baseline 对齐而非默认的 stretch */
+.field-input__boolean { display: flex; align-items: center; gap: $space-2; }
 </style>

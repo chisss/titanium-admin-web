@@ -30,6 +30,8 @@
       :max-height="'var(--ti-table-max-height-default)'"
       @page-change="onPageChange"
       @size-change="onSizeChange"
+      :error="tableError"
+      @refresh="retry"
     >
       <el-table-column prop="code" label="租户编码" width="140" class-name="ti-code-column">
         <template #default="{ row }">
@@ -55,7 +57,7 @@
         <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
       </el-table-column>
       <!-- @vue-generic {TenantVO} -->
-      <el-table-column label="操作" min-width="160" fixed="right" class-name="ti-action-column">
+      <el-table-column label="操作" width="200" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
           <!-- 权限码取自 admin 自身种子与 TenantController：编辑用 system:tenant:edit，
                启用/停用共用 system:tenant:toggle（停用是破坏性动作但不是独立码）。 -->
@@ -148,7 +150,7 @@ const { getLabel: commonStatusLabel } = useDict('COMMON_STATUS')
 
 const queryParams = reactive({ name: '', code: '', status: undefined as string | undefined })
 
-const { tableData, tableLoading, pagination, fetchData, handleSearch, handleReset, onPageChange, onSizeChange } =
+const { tableData, tableLoading, tableError, pagination, fetchData, handleSearch, handleReset, onPageChange, onSizeChange, retry } =
   useTable<TenantVO, typeof queryParams>((params) => getTenantList(params), queryParams)
 
 fetchData()

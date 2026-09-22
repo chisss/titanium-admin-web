@@ -21,18 +21,20 @@
       :max-height="'var(--ti-table-max-height-default)'"
       @page-change="changePage"
       @size-change="changeSize"
+      :error="tableError"
+      @refresh="load"
     >
       <el-table-column prop="configurationId" label="配置 ID" min-width="180" class-name="ti-code-column" />
       <el-table-column label="保全项" min-width="190">
         <template #default="{ row }">{{ configurationName(row) }} <span class="muted">{{ configurationItemCode(row) }}</span></template>
       </el-table-column>
       <el-table-column label="版本" width="150"><template #default="{ row }">{{ configurationVersion(row) }}</template></el-table-column>
-      <el-table-column prop="status" label="状态" width="120"><template #default="{ row }"><TiStatusTag :value="row.status" :label="statusLabel(row.status)" /></template></el-table-column>
+      <el-table-column prop="status" label="状态" width="120"><template #default="{ row }"><TiStatusTag :value="row.status" :color="STATUS_COLOR[row.status]" :label="statusLabel(row.status)" /></template></el-table-column>
       <el-table-column label="步骤/费用" min-width="150">
         <template #default="{ row }">{{ workflowLabel(row) }}</template>
       </el-table-column>
       <el-table-column prop="validFrom" label="生效起始" width="170"><template #default="{ row }">{{ formatDateTime(row.validFrom) }}</template></el-table-column>
-      <el-table-column label="操作" min-width="200" fixed="right" class-name="ti-action-column">
+      <el-table-column label="操作" width="280" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
           <!-- 🔴 下面几处权限一律判进 `v-if`/`v-else-if` 表达式，**不用** v-permission 指令：
                指令在 mounted 里直接 `el.parentNode.removeChild(el)` 改真实 DOM，与同一元素上的
@@ -71,7 +73,7 @@
         <el-descriptions :column="1" border>
           <el-descriptions-item label="配置 ID">{{ selected.configurationId }}</el-descriptions-item>
           <el-descriptions-item label="版本">{{ selected.definition?.version || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="状态"><TiStatusTag :value="selected.status" :label="statusLabel(selected.status)" /></el-descriptions-item>
+          <el-descriptions-item label="状态"><TiStatusTag :value="selected.status" :color="STATUS_COLOR[selected.status]" :label="statusLabel(selected.status)" /></el-descriptions-item>
           <el-descriptions-item label="有效期起始">{{ formatDateTime(selected.validFrom) }}</el-descriptions-item>
           <el-descriptions-item label="有效期结束">{{ formatDateTime(selected.validTo) }}</el-descriptions-item>
           <el-descriptions-item label="字段白名单"><span v-for="field in selected.definition?.fieldRules || []" :key="field.fieldCode" class="tag">{{ field.fieldCode }}</span></el-descriptions-item>
@@ -121,6 +123,7 @@ import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
 import { useDict } from '@/composables/useDict'
 import { usePermission } from '@/composables/usePermission'
+import { useTableError } from '@/composables/useTable'
 import { formatDateTime } from '@/utils/date'
 import { useUserStore } from '@/stores/user'
 import MaintenanceConfigurationEditor from './MaintenanceConfigurationEditor.vue'
@@ -145,6 +148,8 @@ const total = ref<number | null>(0)
 const pageNum = ref(1)
 const pageSize = ref(20)
 const loading = ref(false)
+// 失败态：接口挂了不得渲染成「暂无数据」（🔴 R7-13）
+const { tableError, clearTableError, setTableError } = useTableError()
 const drawerVisible = ref(false)
 const drawerLoading = ref(false)
 const selected = ref<MaintenanceConfigurationSummary>()
@@ -153,6 +158,17 @@ const editorSaving = ref(false)
 const editorSource = ref<MaintenanceConfigurationSummary>()
 
 const { getLabel: statusLabel } = useDict('MAINTENANCE_CONFIG_STATUS')
+
+/**
+ * 保全项配置状态色的**域内覆盖**（🔴 约定见 `TiStatusTag` 的 `COLOR_MAP` 维护说明）。
+ * <p>全局口径下 `APPROVED`（已审批）与 `PUBLISHED`（已发布）同为绿，本页二者**必须可辨**：
+ * 已审批只表示走完了审批，配置尚不可用；只有已发布才真正生效。故压成蓝（primary，
+ * 与「试用/投保中」同属「可用但非正式」），本页状态读起来是一条递进的链：
+ * 灰(草稿) → 橙(待审批) → 蓝(已审批) → 绿(已发布) → 灰(已退役)。</p>
+ */
+const STATUS_COLOR: Record<string, string> = {
+  APPROVED: 'primary',
+}
 const { getLabel: feeModeLabel } = useDict('MAINTENANCE_FEE_MODE')
 const { getLabel: stepTypeLabel } = useDict('MAINTENANCE_STEP_TYPE')
 const { getLabel: stepModeLabel } = useDict('MAINTENANCE_STEP_MODE')
@@ -214,6 +230,12 @@ const load = async () => {
       try { return await getMaintenanceConfiguration(row.configurationId) } catch { return row }
     }))
     total.value = result.total ?? null
+    clearTableError()
+  } catch (err) {
+    // 失败必须清空并置错：否则列表停在「暂无数据」，把接口故障说成「确实没有配置」
+    rows.value = []
+    total.value = null
+    setTableError(err)
   } finally { loading.value = false }
 }
 

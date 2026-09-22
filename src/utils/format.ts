@@ -42,3 +42,38 @@ export function formatAmount(
 
   return `${amount < 0 ? '-' : ''}${meta ? meta.symbol : `${code} `}${grouped}`
 }
+
+/** 费率/比例百分数的最大小数位（收敛前各页取值 2 / 4 不一，同一 0.015 会渲染成 1.5% 与 1.50%） */
+const RATE_MAX_DIGITS = 4
+
+/**
+ * 格式化费率/比例：把 **0–1 小数** 渲染为百分数（`0.3` → `30%`，`0.015` → `1.5%`）。
+ *
+ * <p>🔴 **本函数只接受 0–1 小数**，这是全仓的规范编码（后端 {@code extraPremiumRatio} 契约注释即
+ * 「如 0.30 表示加费30%」，契约校验 {@code LossAssessment.isOutOfDecimalScale} 同样以 1 为界）。
+ * 传 0–100 的百分数进来会得到放大 100 倍的结果，反之亦然——**编码口径不一致正是历史上
+ * 「加费比例低估 100 倍」缺陷的根因**，故不提供自动猜测量纲的入口。</p>
+ *
+ * <p>本函数取代了此前散落在 channel / billing / actuarial / product 四处的同名 `rateText`
+ * 副本（四份字节级相同、仅空值文案不同），现由 `emptyText` 参数统一承接空值差异。</p>
+ *
+ * @param value     0–1 小数比例；接受 number 或数字字符串（部分后端字段按字符串下发）
+ * @param emptyText 空值展示文案；默认 `-`。佣金等需脱敏的场景传 `'***'`
+ * @returns 百分数字符串；小数位最多 4 位并去除尾随零
+ */
+export function formatRate(
+  value: number | string | null | undefined,
+  emptyText = '-',
+): string {
+  if (value === null || value === undefined || value === '') return emptyText
+  const rate = Number(value)
+  if (!Number.isFinite(rate)) return emptyText
+
+  // 尾随零必须剥掉：0.05 应显示 5% 而非 5.0000%
+  const percent = (rate * 100)
+    .toFixed(RATE_MAX_DIGITS)
+    .replace(/0+$/, '')
+    .replace(/\.$/, '')
+
+  return `${percent}%`
+}

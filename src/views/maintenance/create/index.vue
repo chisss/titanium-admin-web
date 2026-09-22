@@ -18,7 +18,13 @@
         class="page-alert"
       />
 
-      <el-form ref="formRef" :model="form" :rules="rules" label-position="top" class="ti-form-width--wide">
+      <!-- 🔴 本表单是**单列**布局、且用的正是 `ti-form-width--wide` 令牌——该令牌在 variables.scss:242
+           的注释写着「宽表单：含 520px 级宽控件（标签 140 + 控件 520 = 660，640 放不下）」，
+           即它本来就是为**横向标签**准备的；同令牌的另 4 处（product/template-config:50/138/196/266）
+           也都配 `label-width="140px"`。此处却叠加 `label-position="top"`，是全站唯一把该令牌
+           反着用的地方：720px 宽的容器里标签独占一行、下面只剩单列输入框，纵向被拉长一倍。
+           宽屏改右对齐，窄屏（≤768px）退回上方（单列窄屏下横向标签会把输入框挤到 200px 内）。 -->
+      <el-form ref="formRef" :model="form" :rules="rules" :label-position="isNarrowScreen ? 'top' : 'right'" :label-width="isNarrowScreen ? 'auto' : '110px'" class="ti-form-width--wide">
         <el-form-item label="保单 ID" prop="policyId">
           <el-input v-model="form.policyId" clearable placeholder="输入需要变更的保单 ID" />
         </el-form-item>
@@ -86,13 +92,17 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useMediaQuery } from '@vueuse/core'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, Check, Refresh } from '@element-plus/icons-vue'
 import { createMaintenanceCase, getMaintenanceConfigurations } from '@/api/maintenance'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
+import { MEDIA_MAX_MOBILE } from '@/constants/layout'
 
 const router = useRouter()
 const waitForProjection = () => new Promise((resolve) => window.setTimeout(resolve, 500))
+/** 窄屏（≤768px）时标签退回输入框上方，见模板 el-form 处注释 */
+const isNarrowScreen = useMediaQuery(MEDIA_MAX_MOBILE)
 const formRef = ref()
 const submitting = ref(false)
 const configurationLoading = ref(false)

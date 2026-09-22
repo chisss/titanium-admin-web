@@ -3,6 +3,24 @@ import axios, { type AxiosInstance, type AxiosRequestConfig, type InternalAxiosR
 import { ElMessage } from 'element-plus'
 import type { ApiResponse } from '@/types/api.d'
 
+/**
+ * 请求级静默失败开关（🔴 D-501-58）。
+ *
+ * <p>响应拦截器默认对一切失败弹全局红条 —— 这对「用户主动发起的请求」是对的，
+ * 但对「页面为补全信息顺带发的**辅助请求**」是错的：调用方已用 `.catch()` 兜了底
+ * （如产品详情逐条取条款，缺一条不影响其余），用户仍会被一条与自己操作无关的红条打扰。
+ * 更糟的是它把「页面其实已经优雅降级」显示成了一次失败。</p>
+ *
+ * <p>置 `silentError: true` 后拦截器不再弹提示，且 reject 的是**未打标记**的普通 Error，
+ * 把「要不要提示」的决策权交还调用方（`showErrorIfUnhandled` 仍可正常兜底）。
+ * 不传时行为与从前完全一致。</p>
+ */
+declare module 'axios' {
+  export interface AxiosRequestConfig {
+    silentError?: boolean
+  }
+}
+
 // 创建 Axios 实例
 const http: AxiosInstance = axios.create({
   baseURL: '/api',
@@ -30,6 +48,17 @@ const handledError = (message: string): Error => {
   ;(error as Error & Record<string, unknown>)[HANDLED_FLAG] = true
   return error
 }
+
+/** 是否该弹全局提示：静默请求（调用方自行兜底）不弹，其余一律弹（默认行为不变）。 */
+const shouldToast = (config?: AxiosRequestConfig): boolean => config?.silentError !== true
+
+/**
+ * 构造拦截器的 reject 值（🔴 D-501-51 / D-501-58）：
+ * 非静默 → 「业务消息 + 已提示标记」的 Error，调用方据此避免重复弹窗；
+ * 静默 → 未打标记的普通 Error，「要不要提示」的决策权交还调用方。
+ */
+const rejectError = (message: string, config?: AxiosRequestConfig): Error =>
+  shouldToast(config) ? handledError(message) : new Error(message)
 
 /**
  * 统一错误提示（D-501-51）：拦截器已提示过的不重复弹，未提示的按业务兜底文案提示。
@@ -157,34 +186,38 @@ http.interceptors.response.use(
     }
 
     if (res.code === 403) {
-      ElMessage.error('无权限访问该资源')
-      return Promise.reject(handledError('无权限'))
+      if (shouldToast(response.config)) ElMessage.error('无权限访问该资源')
+      return Promise.reject(rejectError('无权限', response.config))
     }
 
-    ElMessage.error(res.message || '请求失败')
-    return Promise.reject(handledError(res.message))
+    // 提示与 reject 复用同一条消息：此前提示走 `res.message || '请求失败'`、reject 走裸 `res.message`，
+    // 后端未给 message 时调用方拿到空字符串，兜底文案在 `showErrorIfUnhandled` 那道防线上失效
+    const message = res.message || '请求失败'
+    if (shouldToast(response.config)) ElMessage.error(message)
+    return Promise.reject(rejectError(message, response.config))
   },
   async (error) => {
     if (error.response?.status === 401) {
       // Token 过期 → 先尝试续期并重放，续期不可用才登出（🔴 D-501-29）
       return handleUnauthorized(error.config as RetriableConfig)
     }
-    // 🔴 D-501-51：本分支的 reject 必须与成功分支（上方 `handledError(res.message)`）约定一致，
+    // 🔴 D-501-51：本分支的 reject 必须与成功分支（上方 `rejectError(message, ...)`）约定一致，
     // 即「reject 携带业务消息且已提示标记的 Error」。此前直接 reject 原始 AxiosError，
     // 调用方 `catch (e) { ElMessage.error(e.message) }` 取到的是 axios 裸技术文本
     // "Request failed with status code 400"，与拦截器已弹出的业务消息构成双重提示。
+    // 🔴 D-501-58：静默请求既不弹提示、也 reject 未打标记的 Error —— 提示决策权交还调用方。
+    // 提示收敛为出口处一处：三条分支原各写一次 `ElMessage.error`，加静默开关时会各漏一次。
+    const config = error.config as AxiosRequestConfig | undefined
     let message: string
     if (error.response?.status === 403) {
       message = '无权限访问该资源'
-      ElMessage.error(message)
     } else if (error.code === 'ECONNABORTED') {
       message = '请求超时，请重试'
-      ElMessage.error(message)
     } else {
       message = (await resolveErrorMessage(error.response?.data)) || '网络异常，请稍后重试'
-      ElMessage.error(message)
     }
-    return Promise.reject(handledError(message))
+    if (shouldToast(config)) ElMessage.error(message)
+    return Promise.reject(rejectError(message, config))
   },
 )
 

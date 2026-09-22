@@ -17,7 +17,7 @@
     "D-14": { "op": "lte", "value": 0 },
     "S-01": { "op": "eq", "value": 29 },
     "S-01b": { "op": "eq", "value": 29 },
-    "S-01c": { "op": "eq", "value": 46 },
+    "S-01c": { "op": "lte", "value": 0 },
     "S-02": { "op": "lte", "value": 0 },
     "S-03": { "op": "lte", "value": 5 },
     "S-04": { "op": "gte", "value": 15 },
@@ -39,6 +39,7 @@
     "D-16": { "op": "lte", "value": 22 },
     "D-17": { "op": "lte", "value": 210 },
 
-    "I-01": { "op": "lte", "value": 0 }
+    "I-01": { "op": "lte", "value": 0 },
+    "I-02": { "op": "lte", "value": 0 }
   }
 }

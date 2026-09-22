@@ -1,4 +1,5 @@
 import http from './http'
+import type { AxiosRequestConfig } from 'axios'
 import type { PageResult } from '@/types/api.d'
 
 export interface RuleDefinition {
@@ -24,8 +25,16 @@ export interface RuleSet {
   rules?: RuleDefinition[]
 }
 
-export const listRuleSets = (type = 'PRICING') =>
-  http.get<unknown, PageResult<RuleSet>>('/web/v1/proxy/rules', { params: { type } })
+/**
+ * 查询规则集列表。
+ *
+ * <p>`config` 与既有的 `params` 合并下发（`params` 在前、`config` 在后，
+ * 故调用方可覆盖 type）—— 当前唯一传参方 `product/detail` 用它带 `silentError: true`：
+ * 核保规则集只是产品详情页的**名称映射附属数据**，取不到不影响主信息，
+ * 调用方已就地 `.catch(() => {})`，不该再弹全局红条。</p>
+ */
+export const listRuleSets = (type = 'PRICING', config?: AxiosRequestConfig) =>
+  http.get<unknown, PageResult<RuleSet>>('/web/v1/proxy/rules', { params: { type }, ...config })
 
 export const getRuleSet = (code: string) =>
   http.get<unknown, RuleSet>(`/web/v1/proxy/rules/${encodeURIComponent(code)}`)

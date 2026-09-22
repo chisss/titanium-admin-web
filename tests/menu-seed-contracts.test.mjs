@@ -67,16 +67,24 @@ test('每个菜单种子文件都被 changelog-master 收录', async () => {
   assert.deepEqual(unregistered, [], `以下 DML 未被 changelog-master.xml 收录：\n${unregistered.join('\n')}`)
 })
 
-test('理赔配置中心页面级权限与按钮级权限分列，页面缺一不可', async () => {
+test('理赔配置中心一码到底：菜单码与按钮码同码', async () => {
   const blocks = await menuSeedBlocks()
 
-  // 页面级（MENU）：决定菜单树是否出现该节点 —— 缺它则整页不可达
-  assert.match(blocks, /'claim:config'/)
-  // 按钮级（BUTTON）：决定页内维护动作是否放行 —— 与页面级是两个层次，不可互相替代
+  // B4 收敛：原先把页面级（claim:config）与按钮级（claim:config:edit）拆成两码，结果是一座
+  // **两级码死胡同**——该 controller 全部约 30 个端点（含 GET）都要求 claim:config:edit，
+  // 于是只授页面码的人菜单可见、打开后每个请求 403；只授按钮码的人因菜单树是精确匹配
+  // （findByPermCodes）而根本看不到菜单。本页无只读形态，故取「能编辑者才看得到这个页」：
+  // 菜单码直接复用按钮码，前端路由码同码，三者一致才算收敛完成。
   const buttonSeed = await readFile(
     join(menuSeedDir, 'admin_write_endpoint_permissions_202609161030_weisun_dml.sql'),
     'utf8',
   )
-  assert.match(buttonSeed, /'claim:config:edit'/)
-  assert.match(routesSource, /title: '理赔配置中心', permission: 'claim:config'/)
+  assert.match(buttonSeed, /'claim:config:edit'/, '按钮级权限点 claim:config:edit 缺失')
+  assert.match(blocks, /'claim:config:edit'/, '菜单码未使用按钮级码 claim:config:edit')
+  assert.doesNotMatch(blocks, /'claim:config'/, '页面级码 claim:config 应已废弃（两级码死胡同）')
+  assert.match(
+    routesSource,
+    /title: '理赔配置中心', permission: 'claim:config:edit'/,
+    '前端路由码须与菜单/按钮同码，否则菜单给了入口、路由门禁又拦人',
+  )
 })

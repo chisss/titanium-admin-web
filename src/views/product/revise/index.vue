@@ -41,7 +41,16 @@
 
         <!-- 核保配置（补配场景核心） -->
         <el-divider content-position="left">核保配置</el-divider>
-        <el-form :model="form" label-width="120px">
+        <!-- B2 字段级权限：本区块归 underwriting:config:edit 管，缺码则只读（提交时按详情原值透传） -->
+        <el-alert
+          v-if="!canEditUnderwriting"
+          type="warning"
+          :closable="false"
+          show-icon
+          style="margin-bottom: 12px"
+          title="核保配置为只读：当前角色持有产品编辑权但没有「维护核保配置（underwriting:config:edit）」权限。提交时这些字段按当前版本原值透传，不会被改动。"
+        />
+        <el-form :model="form" label-width="120px" :disabled="!canEditUnderwriting">
           <el-form-item label="核保模式">
             <el-radio-group v-model="form.underwritingConfig.underwritingMode">
               <el-radio-button value="AUTO">自动核保</el-radio-button>
@@ -173,7 +182,22 @@
 
         <!-- 定价 -->
         <el-divider content-position="left">定价</el-divider>
-        <el-form ref="pricingFormRef" :model="form" :rules="pricingRules" label-width="120px">
+        <!-- B2 字段级权限：费率归 product:pricing:edit 管，缺码则只读（提交时按详情原值透传） -->
+        <el-alert
+          v-if="!canEditPricing"
+          type="warning"
+          :closable="false"
+          show-icon
+          style="margin-bottom: 12px"
+          title="定价为只读：当前角色持有产品编辑权但没有「维护定价（product:pricing:edit）」权限。提交时费率按当前版本原值透传，不会被改动。"
+        />
+        <el-form
+          ref="pricingFormRef"
+          :model="form"
+          :rules="pricingRules"
+          label-width="120px"
+          :disabled="!canEditPricing"
+        >
           <el-form-item label="定价模式">
             <el-radio-group v-model="form.pricingMode">
               <el-radio-button value="RATE_TABLE">费率表</el-radio-button>
@@ -200,18 +224,20 @@
 
         <!-- 条款关联（带出现有绑定，可移除；保障期间/缴费/出单/保单形态等其余配置随修订继承） -->
         <el-divider content-position="left">条款关联</el-divider>
-        <el-table :data="clauseRels" size="small" border style="width: 640px">
+        <el-table :data="clauseRels" size="small" border style="width: 640px" empty-text="暂无关联条款">
           <el-table-column label="条款ID" prop="clauseId" min-width="220" show-overflow-tooltip />
           <el-table-column label="条款版本" prop="clauseVersion" width="120">
             <template #default="{ row }">{{ row.clauseVersion || '-' }}</template>
           </el-table-column>
           <el-table-column label="主条款" width="90">
             <template #default="{ row }">
-              <el-tag v-if="row.isMainClause" type="danger" size="small" effect="plain">主条款</el-tag>
+              <!-- 🔴 分类标记不得借用动作保留色（R9-F03）：danger 全站只用于破坏性动作，
+                   「主条款」是分类而非状态/动作，改品牌色 primary（同 product/detail 同列口径一致） -->
+              <el-tag v-if="row.isMainClause" type="primary" size="small" effect="plain">主条款</el-tag>
               <span v-else>-</span>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="100" class-name="ti-action-column">
+          <el-table-column label="操作" width="120" class-name="ti-action-column">
             <template #default="{ $index }">
               <el-button size="small" type="danger" :icon="Remove" @click="removeClauseRel($index)">移除</el-button>
             </template>
@@ -221,7 +247,14 @@
 
         <!-- 提交 -->
         <div class="revise-footer">
-          <el-button :icon="Check" type="primary" :loading="submitting" @click="handleSubmit">提交修订</el-button>
+          <!-- 提交修订落 `POST /products/{id}/revise` → PRODUCT_EDIT（不是 PRODUCT_CREATE） -->
+          <el-button
+            v-if="hasPermission('product:edit')"
+            :icon="Check"
+            type="primary"
+            :loading="submitting"
+            @click="handleSubmit"
+          >提交修订</el-button>
           <el-button @click="$router.back()">取消</el-button>
         </div>
       </template>
@@ -230,7 +263,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Check, Delete, Plus, Remove } from '@element-plus/icons-vue'
 import TiDetailHeader from '@/components/TiDetailHeader/index.vue'
@@ -242,9 +275,22 @@ import { listRuleSets, type RuleSet } from '@/api/rule-engine'
 import { INSURANCE_TYPE_LABEL } from '@/constants/insurance'
 import { MATERIAL_OPTIONS } from '@/constants/material'
 import { useDict } from '@/composables/useDict'
+import { usePermission } from '@/composables/usePermission'
 
 const route = useRoute()
 const router = useRouter()
+/** 修订写权限（权威码：`ProductProxyController` `POST /{id}/revise` → PRODUCT_EDIT） */
+const { hasPermission } = usePermission()
+
+/**
+ * 字段级权限（B2）：端点权限之外，产品的四组配置各归一个码管。
+ * 🔴 后端 `FieldWriteGuard` 用「提交值 ≠ 当前值 ⇒ 需权限」判定，故前端只需保证一件事：
+ * **没有该码的区块，提交的必须是详情接口里的原值**。下面这三处只读化 + 载荷按原始值透传，
+ * 都是为这一件事服务的——只要有一个字段被表单默认值改写，整张修订单会被 74008000 拦下，
+ * 而报错点名的字段用户根本没碰过（这类报错无从自查）。
+ */
+const canEditPricing = computed(() => hasPermission('product:pricing:edit'))
+const canEditUnderwriting = computed(() => hasPermission('underwriting:config:edit'))
 const loading = ref(false)
 const submitting = ref(false)
 
@@ -253,7 +299,7 @@ const detail = ref<Record<string, any> | null>(null)
 /** 当前条款关联（修订可移除，其余继承） */
 const clauseRels = ref<{ clauseId: string; clauseVersion?: string; isMainClause?: boolean }[]>([])
 
-/** 修订表单（编辑区字段） */
+/** 修订表单（编辑区字段）；未配置的项保持 undefined —— 不预置业务默认值，见 prefillForm 注释 */
 const form = ref({
   newProductName: '',
   newProductDesc: '',
@@ -267,16 +313,16 @@ const form = ref({
     healthNotice: '',
   },
   underwritingConfig: {
-    underwritingMode: 'SMART' as 'AUTO' | 'MANUAL' | 'SMART' | 'HYBRID',
+    underwritingMode: undefined as 'AUTO' | 'MANUAL' | 'SMART' | 'HYBRID' | undefined,
     autoApprovalCondition: '',
     manualReviewAmountThreshold: undefined as number | undefined,
     requiredDocuments: [] as string[],
     underwritingSLADays: undefined as number | undefined,
-    surchargeAcceptable: false,
-    specialAgreementAcceptable: false,
+    surchargeAcceptable: undefined as boolean | undefined,
+    specialAgreementAcceptable: undefined as boolean | undefined,
     ruleSetCode: undefined as string | undefined,
   },
-  pricingMode: 'RATE_TABLE' as 'RATE_TABLE' | 'ACTUARIAL_FORMULA',
+  pricingMode: undefined as 'RATE_TABLE' | 'ACTUARIAL_FORMULA' | undefined,
   pricingBasicRule: {
     baseRate: undefined as number | undefined,
     minPremium: undefined as number | undefined,
@@ -343,7 +389,16 @@ const removeRequiredDocument = (index: number) =>
   form.value.underwritingConfig.requiredDocuments.splice(index, 1)
 const removeClauseRel = (index: number) => clauseRels.value.splice(index, 1)
 
-/** 详情原始载荷 → 修订表单预填 */
+/**
+ * 详情原始载荷 → 修订表单预填。
+ *
+ * 🔴 一律**照抄快照**，不给「看起来更合理」的默认值（曾经是 `?? 'SMART'` / `?? 'RATE_TABLE'` / `?? false`）。
+ * 这些默认值在两处造成实际损害：
+ *   ① 后端字段守卫判的是「提交值 ≠ 当前值」——快照为空而表单默认成 'SMART' 时，一个从未打开过
+ *      核保区块的用户提交修订即被判为「改了核保模式」，整单被 74008000 拦下；
+ *   ② 有权用户未触碰该控件也会把默认值当成真实改动写进新版本（静默变更，无人察觉）。
+ * 空值就显示为空，由 placeholder 说明该填什么——用户的选择才是改动。
+ */
 const prefillForm = (raw: Record<string, any>) => {
   const uw = raw.underwritingConfig ?? {}
   const ins = raw.insureCondition ?? {}
@@ -361,17 +416,17 @@ const prefillForm = (raw: Record<string, any>) => {
       healthNotice: ins.healthNotice ?? '',
     },
     underwritingConfig: {
-      underwritingMode: uw.underwritingMode ?? 'SMART',
+      underwritingMode: uw.underwritingMode,
       autoApprovalCondition: uw.autoApprovalCondition ?? '',
       manualReviewAmountThreshold:
         uw.manualReviewAmountThreshold != null ? Number(uw.manualReviewAmountThreshold) : undefined,
       requiredDocuments: [...(uw.requiredDocuments ?? [])],
       underwritingSLADays: uw.underwritingSLADays,
-      surchargeAcceptable: uw.surchargeAcceptable ?? false,
-      specialAgreementAcceptable: uw.specialAgreementAcceptable ?? false,
+      surchargeAcceptable: uw.surchargeAcceptable,
+      specialAgreementAcceptable: uw.specialAgreementAcceptable,
       ruleSetCode: uw.ruleSetCode,
     },
-    pricingMode: pr.pricingMode ?? raw.pricingMode ?? 'RATE_TABLE',
+    pricingMode: pr.pricingMode ?? raw.pricingMode,
     pricingBasicRule: {
       baseRate: pr.baseRate != null ? Number(pr.baseRate) : undefined,
       minPremium: pr.minPremium != null ? Number(pr.minPremium) : undefined,
@@ -408,13 +463,16 @@ const buildPayload = (): Record<string, unknown> => {
     newPaymentConfig: raw.paymentConfig,
     newIssuanceProcessConfig: raw.issuanceProcessConfig,
     newPolicyFormConfig: raw.policyFormConfig,
-    // 定价基础规则：原始响应字段为基线，表单编辑字段覆盖
-    newPricingBasicRule: {
-      ...pr,
-      baseRate: form.value.pricingBasicRule.baseRate,
-      minPremium: form.value.pricingBasicRule.minPremium,
-      maxPremium: form.value.pricingBasicRule.maxPremium,
-    },
+    // 定价基础规则：原始响应字段为基线，表单编辑字段覆盖；
+    // 无 product:pricing:edit 时整块按快照透传（表单此时是只读的，透传保证「提交值 = 当前值」不被默认值污染）
+    newPricingBasicRule: canEditPricing.value
+      ? {
+          ...pr,
+          baseRate: form.value.pricingBasicRule.baseRate,
+          minPremium: form.value.pricingBasicRule.minPremium,
+          maxPremium: form.value.pricingBasicRule.maxPremium,
+        }
+      : { ...pr },
     // 费率表引用/精算基础：由定价规则响应合并字段（clauseId/tableCode/tableVersion 与精算参数）重组
     newRateTableRef: pr.tableCode
       ? { clauseId: pr.clauseId, tableCode: pr.tableCode, version: pr.tableVersion }
@@ -427,17 +485,21 @@ const buildPayload = (): Record<string, unknown> => {
             expenseLoadingRate: pr.expenseLoadingRate,
           }
         : undefined,
-    newUnderwritingConfig: {
-      underwritingMode: form.value.underwritingConfig.underwritingMode,
-      autoApprovalCondition: form.value.underwritingConfig.autoApprovalCondition || undefined,
-      manualReviewAmountThreshold: form.value.underwritingConfig.manualReviewAmountThreshold,
-      requiredDocuments: form.value.underwritingConfig.requiredDocuments,
-      underwritingSLADays: form.value.underwritingConfig.underwritingSLADays,
-      surchargeAcceptable: form.value.underwritingConfig.surchargeAcceptable,
-      specialAgreementAcceptable: form.value.underwritingConfig.specialAgreementAcceptable,
-      ruleSetCode: form.value.underwritingConfig.ruleSetCode,
-    },
-    newPricingMode: form.value.pricingMode,
+    // 核保配置：无 underwriting:config:edit 时整块按快照透传（下游对整块做「不传即继承」，
+    // 但这里显式带出原值即可，不必依赖该兜底）
+    newUnderwritingConfig: canEditUnderwriting.value
+      ? {
+          underwritingMode: form.value.underwritingConfig.underwritingMode,
+          autoApprovalCondition: form.value.underwritingConfig.autoApprovalCondition || undefined,
+          manualReviewAmountThreshold: form.value.underwritingConfig.manualReviewAmountThreshold,
+          requiredDocuments: form.value.underwritingConfig.requiredDocuments,
+          underwritingSLADays: form.value.underwritingConfig.underwritingSLADays,
+          surchargeAcceptable: form.value.underwritingConfig.surchargeAcceptable,
+          specialAgreementAcceptable: form.value.underwritingConfig.specialAgreementAcceptable,
+          ruleSetCode: form.value.underwritingConfig.ruleSetCode,
+        }
+      : { ...raw.underwritingConfig },
+    newPricingMode: canEditPricing.value ? form.value.pricingMode : pr.pricingMode ?? raw.pricingMode,
     // 条款关联：当前绑定（可移除）三元组
     newClauseRels: clauseRels.value.map((rel) => ({
       clauseId: rel.clauseId,

@@ -1,0 +1,2250 @@
+{
+  "version": 2,
+  "created": "2026-09-21T03:40:00Z",
+  "session_config": {
+    "concurrency_mode": "exclusive",
+    "max_tasks_per_session": 12,
+    "max_sessions": 50
+  },
+  "archived_batches": [
+    {
+      "batch": "ui-round2",
+      "title": "titanium-admin-web 第二轮 UI 收敛（D 底盘 + S 扫尾 + R 真机）",
+      "repos": [
+        "titanium-admin-web"
+      ],
+      "tasks_total": 25,
+      "completed": 25,
+      "failed": 0,
+      "closed_at": "2026-09-17T19:40:00+08:00",
+      "guard_rules": "24/24 全绿（基线 3/24）",
+      "pillars": "11/24 → 17/24",
+      "regression_count": 0,
+      "reports": [
+        "docs/ui-audit/UI-REVIEW.md",
+        "docs/ui-audit/ROUND2-BASE.md",
+        "docs/ui-audit/ROUND2-VERIFY.md",
+        "docs/ui-audit/ROUND2-REGRESSION.md",
+        "docs/ui-audit/ROUND2-CLOSURE.md"
+      ]
+    },
+    {
+      "batch": "R7",
+      "title": "用户第三轮全站 bug 反馈整改（10 类问题 + 举一反三）",
+      "repos": [
+        "titanium-admin-web",
+        "titanium-policy",
+        "titanium-product",
+        "docker",
+        "docs"
+      ],
+      "tasks_total": 21,
+      "completed": 21,
+      "failed": 0,
+      "closed_at": "2026-09-21T18:52+08:00",
+      "guard_rules": "ui-guard 44/44",
+      "pillars": "契约 246/246；product mvn test 251/251",
+      "regression_count": 0,
+      "reports": [
+        "titanium-admin-web/harness-progress.txt"
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "R7-01",
+      "title": "产品详情「资源不存在」：修坏数据 + 前端不再对已捕获的失败弹全局红条",
+      "status": "completed",
+      "priority": "P0",
+      "depends_on": [],
+      "attempts": 1,
+      "max_attempts": 3,
+      "started_at_commit": null,
+      "repos": [
+        "titanium-product",
+        "titanium-admin-web"
+      ],
+      "validation": {
+        "command": "npx vue-tsc --noEmit && node scripts/ui-guard.mjs && npm run test:contracts",
+        "timeout_seconds": 600
+      },
+      "on_failure": {
+        "cleanup": "回滚 read model UPDATE 与 http.ts 改动；坏数据保持原样不影响主详情渲染，不得为掩盖报错而改前端 catch"
+      },
+      "checkpoints": [
+        {
+          "step": 1,
+          "total": 4,
+          "description": "复现：Playwright 打开 /product/detail/225517127149289472，确认 404 /proxy/clauses/CL-MED-ZYES-V2 + alert「资源不存在」；对照 /product/detail/STD-PRD-MED 无 404"
+        },
+        {
+          "step": 2,
+          "total": 4,
+          "description": "修数据：titanium_product.t_product_clause_rel_view 中引用编码 CL-MED-ZYES-V2 的 2 行 clause_rels_json 改为真实 clause_id 7d7c8bfe-c10f-4096-8424-9b9a6e38f982（ACTIVE V1.0），以幂等 Liquibase DML 落盘而非手工 SQL"
+        },
+        {
+          "step": 3,
+          "total": 4,
+          "description": "前端韧性：产品详情条款面板加载失败时显示内联「条款信息缺失」提示，且该次请求不弹全局红条（依赖 R7-14 的静默选项）"
+        },
+        {
+          "step": 4,
+          "total": 4,
+          "description": "真机复核两个坏产品详情页：alert 消失、条款名称与保障责任正常渲染"
+        }
+      ],
+      "completed_at": "2026-09-21T12:50:00+08:00",
+      "result": {
+        "summary": "根因是「条款编码被当成条款主键写进了产品-条款绑定」，2 行坏数据经幂等 Liquibase DML 订正为 ACTIVE V1.0 的真实主键；前端把从属面板的失败改为静默+就地降级，并在全部取不到时补一条准确的整体失败提示。两产品详情页真机复核：红条消失，主条款渲染出真实名称、V1.0 与 4 项保障责任。",
+        "evidence": [
+          "根因（recon 实读+实测，已亲验 src/views/product/detail/index.vue:404-433）：产品-条款绑定关系把条款**编码**当条款**主键**存了。t_product_clause_rel_view.clause_rels_json 中 2 行 clauseId=CL-MED-ZYES-V2，而 t_clause_view 里 CL-MED-ZYES-V2 是 clause_code（真 id = 7d7c8bfe-c10f-4096-8424-9b9a6e38f982）",
+          "链路：detail/index.vue:411 getClauseDetail(rel.clauseId) → /proxy/clauses/CL-MED-ZYES-V2 → 条款域 404 CLAUSE_NOT_EXIST(40000000) → BFF GlobalExceptionHandler.java:105-110 改写为 404「资源不存在」(74007000) → src/api/http.ts:185 ElMessage.error 无条件弹出",
+          "🔴 已亲验 src/api/http.ts:185：错误分支无条件 ElMessage.error，`detail/index.vue:411` 的 .catch(() => null) 只能拦住 Promise，拦不住全局 toast",
+          "影响面：租户 1 共 31 产品，仅 2 个中招（225517127149289472 CTL-CFG-0915 DRAFT、221586539887460352 CFT-MED-MILLION-0904 EFFECTIVE），均为验收测试产物；31/31 产品详情接口本身全部 200",
+          "同源连带：views/product/create/index.vue:865-876 修订向导复用同一坏 ID 调 coverage 预览，下游返回 200+空数组 ⇒ 静默丢责任数据且不报错",
+          "⚠️ 不可触碰：accountingClass/jurisdictionCode 之外的存量字段若参与 contentHash，改值会让已发布版本哈希变化",
+          "【订正件】titanium-product-bootstrap/.../liquibase/dml/t_product_clause_rel_view_202609211700_weisun_dml.sql，已注册进 changelog-master.xml:27 的 DML 段；容器 databasechangelog 实测 id=product-clause-rel-view-clause-id-fix-1 dateexecuted=2026-09-21 12:42:45 exectype=EXECUTED（由 Liquibase 亲自执行，非手工 SQL）",
+          "【数据取证】容器库 13306 两行 clause_rels_json 现为 clauseId=7d7c8bfe-c10f-4096-8424-9b9a6e38f982、relId=<同id>_null（relId = clauseId + \"_\" + clauseVersion 的派生不变式在 clauseVersion 仍为 null 下成立）",
+          "【API 取证·浏览器会话内实测】GET /proxy/clauses/CL-MED-ZYES-V2 → 404 code=74007000；GET /proxy/clauses/7d7c8bfe-c10f-4096-8424-9b9a6e38f982 → 200 V1.0 ACTIVE，/coverages 返回 4 条；同编码另有 221612854808150016 = V1.1 DRAFT（不可绑定）",
+          "【真机复核·修复后】/product/detail/221586539887460352 与 /product/detail/225517127149289472 均 0 条 el-message，条款区文本「主条款 尊享e生中高端医疗条款2025V2 CL-MED-ZYES-V2 · V1.0 · 4 项保障」+ 4 行责任明细（住院津贴/恶性肿瘤医疗/质子重离子/一般医疗）",
+          "【韧性取证·路由拦截构造】伪造「一条有效 + 一条悬空」两条绑定：拦截命中「改写产品条款关联为两条」+ 404→clauses/CL-MED-ZYES-V2 + 404→clauses/CL-MED-ZYES-V2/coverages；结果 全局弹条=[]（完全静默），分组标题为「主条款…·V1.0·4 项保障」「附加条款（条款信息缺失）CL-MED-ZYES-V2 · - · 0 项保障」—— 失败被精确限定在受影响的那一条上，不再冒充整页失败",
+          "【韧性取证·整体不可用】条款子资源全部 404 时弹出的是新补的「条款信息加载失败，请稍后重试」（而非逐条的「资源不存在」），证明 silentError 的「提示决策权交还调用方」被真正用起来了，不是一刀切静默",
+          "【质量门】npx vue-tsc --noEmit 无输出；node scripts/ui-guard.mjs 37/37 达标；npm run test:contracts 229/229 通过",
+          "【业务影响升级】不止显示：policy 出单链路 PolicyProductAssembler.java:134,140 用 ref.clauseId() 调 ClauseServicePort.fetchClauseSnapshot / fetchCoverageSnapshots，坏值会让 EFFECTIVE 产品 221586539887460352 出单时取不到条款与责任快照",
+          "【构建可信度】产品域镜像重建后由容器内 Liquibase 执行 changeset（docker compose build titanium-product → up -d --no-deps），故本次复测所依据的 8082 与工作树一致"
+        ],
+        "deviation": "① 事件存储残留（未处置，刻意取舍）：axon_domain_event_entry 中两个产品的 ProductCreatedEvent 载荷 (sequence_number=0) 仍是坏值，故**读模型整体重放会把坏值写回**。不改事件载荷的理由：事件流是不可变历史，就地改它比本缺陷本身危险得多；且 EFFECTIVE 产品无法经 UpdateProductClauseRelCommand（处理器仅放行 DRAFT，InsuranceProduct.java:330-337）走正规命令订正，而该命令**全仓零 REST 入口**（ProductCommandAppService.updateProductClauseRel 零调用方）——持久化订正需要「产品修订」这一业务动作。长期防线是写入侧校验（R7-02），本批不改历史。② 未臆造 clauseVersion：原值即 null（调用方未传），订正只替换 clauseId，版本保持 null；详情页经 `rel.clauseVersion ?? detail?.version` 回落到条款自身的 V1.0，用户看到的信息是完整的。③ 检查点 3 的措辞是「不弹全局红条」，实测补做了「全部失败仍要提示」的区分——单条悬空是数据问题（面板内已就地说明），整体失败是服务不可用（必须说出来），二者不能同归一静。④ 检查点原文提到「回滚 http.ts 改动」，实际无需改 http.ts：R7-14 已把 silentError 开关做好，本任务只是第一个消费者。",
+        "rejected_approach": "改 ClauseProxyController 在 404 时回退 /code/{code}（会把真查不到也吞掉）；只改 detail/index.vue 的 catch（问题在全局拦截器，改前端只能让报错看不见，坏数据与空责任面板依旧存在）；只让「取不到条款」静默而不区分整体失败（条款服务宕机时整块面板清一色\"条款信息缺失\"却零提示，用户会当成又一个 bug 报上来）；手写 SQL 直接 UPDATE 而不落 Liquibase（容器重启/重建即失效，且重放后无迹可循）"
+      }
+    },
+    {
+      "id": "R7-02",
+      "title": "产品-条款绑定写入侧校验：建关系前解析条款编码为主键或直接拒绝",
+      "status": "completed",
+      "priority": "P2",
+      "depends_on": [
+        "R7-01"
+      ],
+      "attempts": 1,
+      "max_attempts": 3,
+      "started_at_commit": "0f667a5",
+      "repos": [
+        "titanium-product"
+      ],
+      "validation": {
+        "command": "cd /Users/sunwei/titanium-project/titanium-product && mvn -q test",
+        "timeout_seconds": 900
+      },
+      "on_failure": {
+        "cleanup": "放弃该任务并登记为已知缺口；R7-01 的数据修复已独立成立，不得因本任务失败而回退"
+      },
+      "checkpoints": [
+        {
+          "step": 1,
+          "total": 3,
+          "description": "读 titanium-product-domain/.../aggregate/InsuranceProduct.java:192-196 与 :491-495，确认现有校验只到「非空 + mainClauseId ∈ clauseIds」，任何字符串都能落库"
+        },
+        {
+          "step": 2,
+          "total": 3,
+          "description": "在 domain/port 按对端域新建 clause 子包，定义条款存在性校验 Port（六边形：接口在 domain，Adapter 在 infrastructure，不得放 application）"
+        },
+        {
+          "step": 3,
+          "total": 3,
+          "description": "接条款域已有端点 GET /web/v1/clauses/code/{clauseCode} 解析编码→主键；含单测覆盖「传编码被解析」「传不存在的编码被拒」"
+        }
+      ],
+      "completed_at": "2026-09-21T18:52+08:00",
+      "result": {
+        "summary": "条目原文允许二选一（「解析条款编码为主键**或**直接拒绝」），实探后取后者：在写入侧落一道**条款存在性校验**，把「条款编码不能当主键」从口头约定变成不可绕过的拒绝。六边形落位——Port 在 `domain/port/clause/ClauseExistencePort`、Adapter 在 `infrastructure/adapter/clause/ClauseExistenceAdapter`，复用条款域既有 `getClauseById`，**404 即「不存在」，其余失败原样上抛**（基础设施故障不得被表述成「条款不存在」）。接线点：`ProductCommandAppService.createProduct` 派发前校验；聚合根补三条纯领域不变量（不重复 / 关联列表非空 / 恰一条主条款）。单测 13 例（adapter 5 / application 4 / domain 4），两轮**负向对照**逐例精确变红证明有牙。全量 `mvn -q test` 251 例 0 失败。真机：编码当主键 → 400 + 60000006 且未落库；换真实主键 → 200 创建成功（非无差别拒绝）。过程中由全量测试与真机暴露并修复两个**单测看不见的装配缺口**（Feign 扫描包、上下文测试桩登记），已固化为 product 模块规约 §7.13「新增跨域 Feign 契约必须三处同批登记」。",
+        "evidence": [
+          "设计取「拒绝」而非「解析」的三条理由：① 接受编码须改写 30 字段的 CreateProductCommand，copy-with 漏抄字段**无编译期保护**；② 前端条款选择器 `create/index.vue:123` 是 `:value=\"c.id\"`，只产主键，无真实编码输入源（YAGNI）；③ 条目原文「解析条款编码为主键**或**直接拒绝」明确允许后者，且「向条款域实地求证存在性」是比形态猜测强得多的判据",
+          "新增（六边形分层，规约 3.4.5/3.4.6/3.4.13）：`titanium-product-domain/.../port/clause/ClauseExistencePort.java`（接口，按对端域包子包）+ `titanium-product-infrastructure/.../adapter/clause/ClauseExistenceAdapter.java`（实现，404→缺失、其它 FeignException→原样上抛）",
+          "三态判据实测：`FeignException.NotFound`（404 = 条款域 CLAUSE_NOT_EXIST）判缺失；`FeignException.ServiceUnavailable`/`RetryableException` 一律上抛；响应体为 null 亦判缺失（兜底，防下游「解码失败却不抛错」的变更）",
+          "单测 13 例：`ClauseExistenceAdapterTest` 5 例（含「只报 404 的那些且保持入参顺序」「服务不可用 isSameAs 上抛」）、`ProductCommandAppServiceTest` 4 例（含「拒绝时 `verify(commandGateway, never()).sendAndWait(any())`」——拒绝写入才是这道校验的意义）、`InsuranceProductTest` 新增 4 例（重复条款 / 关联列表空 / 主条款条数≠1 / 合法列表替换成功）",
+          "**负向对照（两轮，注入 3 处后逐例精确变红）**：① domain 模块 `Tests run: 77, Failures: 3`，恰好是 `shouldRejectCreateWhenClauseIdsDuplicated`、`shouldRejectClauseRelUpdateWhenListEmpty`、`shouldRejectClauseRelUpdateWhenMainClauseCountIsNotOne`（第一轮漏注入「创建路径内联去重 if」，只红 2 例，补注后命中 3 例）；② application 模块 `Tests run: 4, Failures: 2`，恰好是 `shouldRejectAndNotDispatchWhenAnyClauseMissing` 与 `shouldPropagateClauseServiceFailureInsteadOfRejecting`，另 2 例（模板相关）保持绿 —— 证明测试有牙且指向正确，注入已清理（`grep -c NEGCTL_INJECT`=0）",
+          "validation 全量 `cd /Users/sunwei/titanium-project/titanium-product && mvn -q test` → **exit=0**，251 例 0 失败（domain 77 / application 58 / infrastructure 24 / query 14 / web 28 / bootstrap 50，含 ProductArchitectureTest 架构守卫）",
+          "🔴 **全量测试暴露的真实缺陷 1**：bootstrap 上下文测试 RED —— `No qualifying bean of type com.titanium.clause.api.ClauseApi`。根因：`ProductApplication#@EnableFeignClients(basePackages=...)` 未含 `com.titanium.clause.api`（该依赖曾被删，本域从未扫过此包）。已补",
+          "🔴 **全量测试暴露的真实缺陷 2**：补扫包后仍 RED —— `No Feign Client for loadBalancing defined`（本地无 spring-cloud-starter-loadbalancer，未 mock 的客户端会因惰性解析失败拖垮上下文）。按 `ProductDeadLetterQueueContextTest` 类注释既有约定「新增 Feign 契约必须同步补入下发表」补 `ClauseApi.class`",
+          "第三处登记（真机才有）：`docker/docker-compose.yml` 共享锚点**早已**有 `spring.cloud.openfeign.client.config.clauseApi.url=http://titanium-clause:8083/titanium-clause`（注释明言「未被某服务实例化的 contextId 条目无副作用，一处维护全域生效」），本次零改动即可用 —— 证实前两条是本域唯一缺口；已连同此条固化为 product 规约 §7.13 三处登记表",
+          "真机负向（重建镜像 `titanium-backend:product-acceptance-20260921-v1` 后，POST http://localhost:8082/web/v1/products，X-Tenant-ID: TENANT-001，模板 TPL-03F0B719(ACTIVE)，`clauseIds=[\"ANNUITY_CLAUSE\"]` —— 用**真实条款编码**冒充主键，即 R7-01 的故障形态）：`http=400`，`{\"code\":\"60000006\",\"message\":\"命令 CreateProductCommand 字段 clauseIds 校验失败: 以下条款不存在，无法绑定: ANNUITY_CLAUSE（请确认传入的是条款主键；条款编码不能直接绑定）\"}`（60000006 = ProductErrorCode.CLAUSE_BINDING_FAILED，60 段）",
+          "真机「未落库」取证：`GET /web/v1/products/R702-NEG-1` → `{\"code\":\"60000000\",\"message\":\"产品不存在\"}`；`GET /web/v1/products?productName=R7-02` → `totalElements=0` ⇒ 拒绝发生在派发之前，坏值没有进事件流",
+          "真机正向对照（同载荷仅把 clauseIds/mainClauseId 换成真实主键 `seed_clause_annuity`）→ `http=200` + `data:\"R702-POS-1\"`；product 日志 `[读模型投影] 产品条款关联初始化: productId=R702-POS-1, 条款数=1` ⇒ **非无差别拒绝**，真实条款照常放行并投影",
+          "适配器运行日志（负向当次）：`WARN c.t.p.i.a.clause.ClauseExistenceAdapter : 条款不存在，产品条款绑定校验将拒绝该引用: clauseId=ANNUITY_CLAUSE, tenantId=TENANT-001`；容器 `Started ProductApplication in 13.011 seconds`，无装配异常",
+          "规约固化：`titanium-product/CLAUDE.md` 升 V1.4，新增 §7.13（三处登记点 + 漏登记后果 + 本次实测症状 + `-pl 单模块` 假阴性陷阱），并在 §7.5 的「`titanium-clause-api` 已删除」条目下补注**方向相反、不冲突**（删的是入站 Kafka，重加的是出站查询）"
+        ],
+        "deviation": [
+          "**放弃「解析编码→主键」分支**（checkpoint 3 的字面要求）：取「直接拒绝」，理由见 evidence 第 1 条。任务原文允许二选一，此取舍已在代码注释与 Port javadoc 中写明",
+          "`UpdateProductClauseRelCommand` 路径**未接存在性校验**：该命令无 `tenantId`、且全仓零 web/provider 调用者，Port 无从取得租户上下文。已在聚合内补齐该路径可判定的不变量（关联列表非空 / 恰一条主条款 / 不重复），存在性校验登记为**已知缺口**，待该命令接线时一并补",
+          "`titanium-clause-api` 依赖**曾被 m10-1304 以「全仓零引用」删除**（CLAUDE.md §7.5），本次为首次真实引用；两者不矛盾——删除针对的是**入站 Kafka 监听**（设计方向相反且无消费基础设施），本次是**出站 Feign 查询**",
+          "**未校验条款状态**（如要求 ACTIVE）：仅校验「存在」。依据——条款域现存 3 条种子条款状态均为 DRAFT，若叠加 ACTIVE 要求会让当前可用条款全部被拒；「哪些状态允许绑定」属独立口径，超出本任务边界，未擅自设定",
+          "条款服务不可用时**原样上抛 FeignException**，不新增错误码、不降级放行：基础设施故障若被表述成「条款不存在」，会把排查方向带偏（与 R7-01 同源）。代价是产品创建接口在条款域抖动时返回 5xx —— 这是**有意的**：宁可拒绝写入，不可静默写坏绑定",
+          "两个装配缺口（Feign 扫描包 / 上下文测试桩）**单测与单模块构建全绿**，只有全量 `mvn test` 与真机才暴露：已写入 §7.13 并注明「第三处只有真机复核能发现」",
+          "真机正向对照在验收库留下一个 DRAFT 产品 `R702-POS-1`（用于证明非无差别拒绝）。产品无删除端点、DRAFT 不可下架，故**保留并登记**，以免后续 UI 复核把它误判为脏数据",
+          "验证过程中一次假红：`tar` 还原源码不更新 mtime，而注入期产物 `.class` 更**新**，Maven 增量编译判定「源码未变」跳过重编，旧注入字节码继续参与测试（源码 18:34:59 < 字节码 18:40:51）。已 `touch` 源文件后复跑。该陷阱登记进 §7.13"
+        ],
+        "rejected_approach": [
+          "**「拒绝非 UUID 形态的 clauseId」**（入口的降级备选）被实测否决：条款主键**双形态并存**——UUID `7d7c8bfe-c10f-4096-8424-9b9a6e38f982` 与雪花数字 `221612854808150016`。任何形态正则都会把后者这类**合法**条款挡在门外，属于用「像不像」替代「是不是」",
+          "不在条款域新增「按编码查主键」端点：判定「不存在」只需既有 `getClauseById` 的 404 语义，新增契约是 YAGNI，且会再触发一轮三处登记（§7.13）",
+          "不把 Adapter 写进 application 层（规约 3.4.5 明令禁止）；也不放 `domain/service`（ArchUnit 已固化「domain.service 不得依赖 domain.port」）。Port 与 aggregate 平级放 `domain/port/clause/`，Adapter 归 `infrastructure/adapter/clause/`",
+          "不把存在性校验下沉到聚合根：聚合根无从知道其它域的事实，「条款真伪」是跨域问题，只能由 application 编排 + Port 求证。该分工已写进 `validateCreateCommand` 的注释（与「条款不得重复」这条**纯领域不变量**形成对照）"
+        ]
+      }
+    },
+    {
+      "id": "R7-03",
+      "title": "保单状态字典死码：POLICY_STATUS 下拉排除 ACTIVE/PROPOSAL/NOT_EFFECTIVE",
+      "status": "completed",
+      "priority": "P0",
+      "depends_on": [],
+      "attempts": 1,
+      "max_attempts": 3,
+      "started_at_commit": null,
+      "repos": [
+        "titanium-admin-web"
+      ],
+      "validation": {
+        "command": "npx vue-tsc --noEmit && node scripts/ui-guard.mjs && npm run test:contracts",
+        "timeout_seconds": 600
+      },
+      "on_failure": {
+        "cleanup": "恢复 TiDictSelect 的 exclude-values 传参；不得改后端字典表（字典项被其它页面复用）"
+      },
+      "checkpoints": [
+        {
+          "step": 1,
+          "total": 3,
+          "description": "确认值域真源：metadata PolicyEnum.PolicyStatus 仅 7 项（PENDING_EFFECTIVE/EFFECTIVE/EXPIRED/TERMINATED/SUSPENDED/CANCELLED/LAPSED）；字典 POLICY_STATUS 的 10 项 = 早期 seed 6 项 ∪ admin_business_dictionary dml 8 项的并集，死码 3 个（PROPOSAL/ACTIVE/NOT_EFFECTIVE）。NOT_EFFECTIVE 是**写侧** PolicyStatusCode 的码，读侧投影时已映射为 PENDING_EFFECTIVE"
+        },
+        {
+          "step": 2,
+          "total": 3,
+          "description": "新增 src/constants/policy.ts 的 POLICY_STATUS_DEAD_CODES（含根因 JSDoc）；views/policy/list/index.vue 的 TiDictSelect 传 :exclude-values=\"POLICY_STATUS_DEAD_CODES\"（TiDictSelect 既有 prop，未改组件）。改动的是消费方筛选值域，未动字典表"
+        },
+        {
+          "step": 3,
+          "total": 3,
+          "description": "真机复核（:5199 dev server）下拉恰 7 项、死码三项全部消失；正向验证选「已生效」→ 共 19 条 / 19 行，与 live 实测一致"
+        }
+      ],
+      "completed_at": "2026-09-21T16:10:00+08:00",
+      "result": {
+        "summary": "保单查询状态下拉剔除 3 个历史死码（PROPOSAL/ACTIVE/NOT_EFFECTIVE）：新增 constants/policy.ts 的 POLICY_STATUS_DEAD_CODES 常量（含根因 JSDoc）并在 list 页 TiDictSelect 接线，字典表未动。真机复核下拉恰 7 项（= 读侧 metadata PolicyStatus 全量），选「已生效」筛出 19 条；新增契约用例锁住「逐码剔除 + 不得误剔真实码」。三门全绿：vue-tsc 0 / ui-guard 40-40 / 契约 230-230（+1）",
+        "evidence": [
+          "值域真源比对：metadata `titanium-metadata/.../enums/policy/PolicyEnum.java` 的 PolicyStatus 恰 7 项；字典 POLICY_STATUS 的 10 项来自两批数据并存 —— `titanium-admin-bootstrap/liquibase/dml/admin_init_202507191000_seed_dml.sql:101-106`（PROPOSAL/ACTIVE/SUSPENDED/LAPSED/EXPIRED/TERMINATED）与 `admin_business_dictionary_202608281445_dml.sql:123-125,269-273`（PENDING_EFFECTIVE/EFFECTIVE/CANCELLED/NOT_EFFECTIVE + 4 个重复码），并集 10 项",
+          "死码定性：NOT_EFFECTIVE 是写侧 `titanium-policy-common/.../enums/PolicyStatusCode.java` 的码（7 项，含 NOT_EFFECTIVE 无 PENDING_EFFECTIVE），读侧投影映射为 PENDING_EFFECTIVE —— 与 R7-05 的幻码问题同源；PROPOSAL 来自 `PolicyEnum.IntentStatus`（意向单状态），ACTIVE 无任何枚举定义",
+          "真机（:5199 Vite dev）下拉实测：修复前 10 项（含「投保中/未生效/生效中」），修复后恰 7 项 —— 待生效、已生效、已中止、已失效、已满期、已终止、已撤销",
+          "真机正向验证：选中「已生效」→ 点搜索 → 「共 19 条保单」+ 19 行数据 + 分页器「共 19 条」，与 live 实测 status=EFFECTIVE→19 吻合",
+          "🔴 真机环境判据（本任务发现，影响后续所有真机复核）：`:8888` 服务的是**构建产物**（index.html 引用 `/assets/index-NvUOV8T_.js`），`:5199` 才是 Vite dev（引用 `/@vite/client` + `/src/main.ts`）。在 :8888 上复核同一改动得到的是**旧代码**的现象（下拉 10 项、未生效），会被误判为「改动没生效」。真机复核一律用 :5199",
+          "新增契约用例 `tests/dictionary-contracts.test.mjs`「保单查询状态下拉剔除字典中的历史死码」：逐码断言剔除 + 反向断言剔除集合不含 6 个真实码（防「剔错把可用筛选项一起藏掉」）。负向验证：把 :exclude-values 改为 \"[]\" → exit=1「状态下拉未剔除死码 ACTIVE」，复原后绿"
+        ],
+        "deviation": "实现方式由「在模板里内联字面量数组」改为「新增 constants/policy.ts 常量 + 引用」：死码集合与 R7-05 要清理的 `POLICY_STATUSES`/门禁码同源（都源于写侧-读侧双枚举），内联会在两处各写一份清单（本项目已记的教训「同一个判断在两处各写一份清单 ⇒ 必漂移」）。契约用例两种形态都放行（引用常量或内联字面量），断言的是「值对了没」而非写法。",
+        "rejected_approach": "① 改字典表（删掉 3 个死码）：同一 POLICY_STATUS 字典被多页复用，且这些码在字典里并非错误数据只是不属本场景，删了会连带影响其它消费方 —— 与 on_failure.cleanup 的约束一致。② 给 TiDictSelect 加「白名单 include-values」prop：剔除语义已存在且够用，加白名单会引入第二套等价机制（KISS）。③ 信任后端「未知状态码返回空集」即可、前端不用管：R7-04 正是要把静默丢弃改成空集，但「返回 0 条」对用户仍是误导（读起来像系统里没有这类保单），故仍需在前端剔除。"
+      }
+    },
+    {
+      "id": "R7-04",
+      "title": "意向单/投保单状态过滤静默丢弃：未知状态码应返回空集而非全表（含前端字典死码剔除）",
+      "status": "completed",
+      "priority": "P0",
+      "depends_on": [],
+      "attempts": 1,
+      "max_attempts": 3,
+      "started_at_commit": "0f667a5",
+      "repos": [
+        "titanium-policy",
+        "titanium-admin-web"
+      ],
+      "validation": {
+        "command": "cd /Users/sunwei/titanium-project/titanium-policy && mvn -q test",
+        "timeout_seconds": 900
+      },
+      "on_failure": {
+        "cleanup": "回滚两处 QueryServiceImpl 改动并登记；不得只改一处（两处策略必须一致）"
+      },
+      "checkpoints": [
+        {
+          "step": 1,
+          "total": 3,
+          "description": "改 ProposalQueryServiceImpl 与 InsuranceQueryServiceImpl 的状态码 catch 块：IllegalArgumentException 时改为 cb.disjunction() 返回空集 + log.warn，对齐同域 PolicyQueryServiceImpl 的 D-501-66 写法；并各补一个规约测试类（mock CriteriaBuilder + ArgumentCaptor 抓 cb.and() 谓词数组，断言空集谓词落在 AND 内 / 已知码不触发 disjunction）"
+        },
+        {
+          "step": 2,
+          "total": 3,
+          "description": "前端同型修复（checkpoint 未列，见 deviation ①）：两个查询页的状态下拉按该视图**投影实际写入的那一侧枚举**剔除字典死码，契约测试逐码守护正反两向"
+        },
+        {
+          "step": 3,
+          "total": 3,
+          "description": "live 复核（:5199 Vite dev）：每页各取一个**活码**与**死码**做双向对照 —— 死码须 0 条，活码须等于全量条数（只测死码=0 无法排除「筛选链路整体失效」）"
+        }
+      ],
+      "completed_at": "2026-09-21T17:05:00+08:00",
+      "result": {
+        "summary": "意向单/投保单两个读侧查询遇未知状态码时由「丢弃条件 ⇒ 返回全表」改为 cb.disjunction() 返回空集，与同域 PolicyQueryServiceImpl 的 D-501-66 语义对齐；并同批剔除前端字典中投影永不写入的死码（意向单 2 个、投保单 3 个），使「按某状态筛选却列出全部」与「能选到永远 0 条的状态」两个面同时闭合。",
+        "evidence": [
+          "后端：ProposalQueryServiceImpl.java:97-102 与 InsuranceQueryServiceImpl 同型 catch 块改为 cb.disjunction() + log.warn（日志前缀分别为 [意向单查询]/[投保单查询]）",
+          "测试：新增 ProposalQuerySpecificationTest、InsuranceQuerySpecificationTest 各 2 例（未知码 ⇒ verify(cb).disjunction() 且空集谓词落在 cb.and(...) 内；已知码 ⇒ never()).disjunction()）；mvn -pl titanium-policy-query test 17 例 0 失败",
+          "负向验证（后端）：删掉 disjunction 调用 → 1 failure；复原后复绿",
+          "policy 域全量 mvn -q -f titanium-policy/pom.xml test exit=0；bootstrap jar 构建 exit=0；镜像 titanium-backend:policy-acceptance-20260921-v1 构建成功，up -d --no-deps titanium-policy 后 /actuator/health = 200",
+          "live 双向对照（:5199，修复后）：意向单活码 CONVERTED_TO_APPLICATION「已转投保单」→ 共 17 条（=全量），死码 CONFIRMED「已确认」→ 共 0 条，死码 CANCELLED「已作废」→ 共 0 条；投保单活码 ISSUED「已承保」→ 共 19 条（=全量），死码 PENDING_AUDIT「待审核」→ 共 0 条，死码 COMPLETED「已完成」→ 共 0 条",
+          "live 修复前基线：意向单 CONFIRMED → 共 17 条（全量 17），即「筛了等于没筛」",
+          "前端：src/constants/policy.ts 新增 POLICY_INTENT_STATUS_DEAD_CODES=['CONFIRMED','CANCELLED'] 与 POLICY_APPLICATION_STATUS_DEAD_CODES=['PENDING_AUDIT','REJECTED','COMPLETED']，两查询页接线 :exclude-values；live 实测下拉 6→4 项、11→8 项，且「核保拒绝」(UNDERWRITING_REJECTED) 未被误伤，选「已承保」仍筛出 19 条",
+          "门禁：契约 232/232（+2 例，dictionary-contracts.test.mjs）、ui-guard 40/40、vue-tsc exit=0",
+          "负向验证（前端契约，两向）：把 'REJECTED' 误改为活码 'UNDERWRITING_REJECTED' → RED『未剔除死码 REJECTED』；保留死码再额外混入活码 → RED『剔除集合误含真实状态码 UNDERWRITING_REJECTED』；复原后复绿"
+        ],
+        "deviation": [
+          "① 范围扩展（前端）：checkpoint 只列后端两处 QueryServiceImpl，实际同批做了前端字典死码剔除。理由：只修后端会留下缺陷的另一半——用户仍能选到「永远 0 条」的状态，界面表现从「筛了没筛」变成「这类数据不存在」，仍是误导；用户原话亦要求「举一反三，全面探查所有页面」。repos 相应加入 titanium-admin-web。",
+          "② 顺带修复 R7-03 遗留的契约断言空转：原反向断言用 constantsSource.match(/X_DEAD_CODES[^\\]]*\\]/)，而常量声明形如 `export const X: string[] = [...]`——**类型标注 string[] 里就有 `]`**，正则在此截断、返回 `export const X: string[]`，比对文本不含任何状态码，故「不得误含真实码」恒绿。已在本次负向验证中被抓出（probeB 未变红）。改为 extractArrayLiteral()（先定位 export 声明，再从 `=` 之后找 `[`），R7-03 的用例一并改用共享 helper assertDeadCodeExcluded。",
+          "③ 后端测试形态：用 mock CriteriaBuilder + ArgumentCaptor 抓 cb.and(...) 的谓词数组，而非 @DataJpaTest —— 本域读侧无 H2 测试配置，且本项要断言的是「谓词构成」（空集谓词是否落在 AND 内），不是 SQL 执行结果。",
+          "④ 死码判定方向**逐视图不同**，不可外推：保单查询页的读模型由投影**映射**为读侧 PolicyEnum.PolicyStatus（死码 = 写侧独有的 NOT_EFFECTIVE）；而意向单/投保单的投影把**写侧**枚举原样写入读模型（ProposalProjectionEventHandler :78/:91/:101/:111、InsuranceProjectionEventHandler 五处 setStatus），故死码是**读侧独有**的那几个。判据只能是「本视图投影写了哪一侧的码」，须逐视图实读投影源码 + live 实测，不能从相邻页面推断。",
+          "⑤ live 复核环境：统一走 :5199（Vite dev，源码即时生效）。:8888 是 dist 构建产物，未重建时给出旧代码现象，会把「代码没生效」误判为缺陷未修。"
+        ],
+        "rejected_approach": [
+          "不采用「改字典表删死码」：同一字典（POLICY_INTENT_STATUS/POLICY_APPLICATION_STATUS）被多页面复用，且这些码在字典中并非错误数据、只是不属于本场景；处置口径与 R7-03 一致 —— 消费方剔除而非改全局值域。",
+          "不采用「前端本地拦」替代后端修复：后端才是权威，绕过 UI 直调接口仍会返回全表；前端剔除是补充而非替代。",
+          "不采用「前缀/包含判断」剔除：投保单侧死码 REJECTED 是活码 UNDERWRITING_REJECTED 的子串，前缀剔除会把「核保拒绝」这个真实筛选项一并藏掉；已由带引号的精确匹配 + 反向断言锁死。",
+          "不改动 R7-03 用例的清单口径（deadCodes/liveCodes 仍逐码显式列出）：仅把三处重复的断言实现收敛为共享 helper，避免第三个页面出现时再复制一份已证明会空转的写法。"
+        ]
+      }
+    },
+    {
+      "id": "R7-05",
+      "title": "「撤销保单」永久不可达：门禁判的 NOT_EFFECTIVE 是读侧永不产生的幻码",
+      "status": "completed",
+      "priority": "P0",
+      "depends_on": [],
+      "attempts": 1,
+      "max_attempts": 3,
+      "started_at_commit": null,
+      "repos": [
+        "titanium-admin-web"
+      ],
+      "validation": {
+        "command": "npx vue-tsc --noEmit && node scripts/ui-guard.mjs && npm run test:contracts",
+        "timeout_seconds": 600
+      },
+      "on_failure": {
+        "cleanup": "回滚 constants/policy.ts 改动；不得通过放宽为「所有状态都可撤销」来绕过"
+      },
+      "checkpoints": [
+        {
+          "step": 1,
+          "total": 3,
+          "description": "cancel 门禁由 statuses: [\"NOT_EFFECTIVE\"] 改 [\"PENDING_EFFECTIVE\"]，重写注释点明「后端守卫判写侧码、前端拿读侧码」；原注释自称已修但把真源认成写侧枚举，结论仍错"
+        },
+        {
+          "step": 2,
+          "total": 3,
+          "description": "同步清理幻码：POLICY_STATUSES 由写侧 7 码改读侧 7 码（新增 JSDoc 说明「前端只能用读侧码」），types/business.d.ts 的 PolicyStatus 联合同步（原注释称「与后端 PolicyStatusCode 逐一对应」）；连带修正 views/policy/detail 注释里把读侧真实码 PENDING_EFFECTIVE 称作战码的错述"
+        },
+        {
+          "step": 3,
+          "total": 3,
+          "description": "真机复核 /policy/detail/aed01b20-…（徽章「待生效」）：「撤销保单」由 disabled 变可点（disabled=false）"
+        }
+      ],
+      "completed_at": "2026-09-21T16:35:00+08:00",
+      "result": {
+        "summary": "「撤销保单」永久不可达修复：门禁与类型域的口径由**写侧**码改为**读侧**码（NOT_EFFECTIVE → PENDING_EFFECTIVE）。改动 4 处 —— constants/policy.ts（cancel.statuses + POLICY_STATUSES）、types/business.d.ts（PolicyStatus 联合）、views/policy/detail 注释、契约测试（测试①真源由写侧枚举改读侧枚举 + 新增映射断言）。真机复核：待生效保单的「撤销保单」由 disabled 变为可点。三门全绿：vue-tsc 0 / ui-guard 40-40 / 契约 230-230",
+        "evidence": [
+          "后端守卫（**写侧**）：`titanium-policy-domain/.../aggregate/Policy.java:607` `this.status.statusCode() != PolicyStatusCode.NOT_EFFECTIVE` → \"Only NOT_EFFECTIVE policies can be cancelled\"",
+          "桥接点：`titanium-policy-query/.../handler/projection/PolicyProjectionEventHandler.java:284-292` —— 注释「NOT_EFFECTIVE 对齐 metadata 的 PENDING_EFFECTIVE，其余同名映射」+ `case NOT_EFFECTIVE -> PolicyEnum.PolicyStatus.PENDING_EFFECTIVE`；`PolicyViewRepository.java:89` 再次强调「读模型状态 PENDING_EFFECTIVE 是写侧 NOT_EFFECTIVE 的有意映射，二者非同一枚举，勿混用」",
+          "🔴 判据口径的教训：前一轮「修幻码」时把真源认成了**写侧** `PolicyStatusCode`，于是前端写 `NOT_EFFECTIVE` 看着完全正确，而读侧数据里没有这个码 ⇒ 门禁恒 false。契约测试①当时的真源也是写侧枚举，断言「前端码 == 写侧码」恒绿 — **门禁量错了对象**。教训：门禁的对象是**流通的数据**，不是「看起来更权威的那个枚举」",
+          "真机复核（:5199，保单 aed01b20-…，徽章「待生效」）：操作菜单 10 项中「撤销保单」disabled=false（修复前 disabled，且原因文案「仅未生效（NOT_EFFECTIVE）保单可撤销，当前状态：PENDING_EFFECTIVE」已自证门禁判错）；同页其余 8 项仍按状态正确禁用、文案均带「当前状态：PENDING_EFFECTIVE」，「执行年金给付」保持可用（后端确实无状态前置，前端不凭空加）",
+          "负向验证：把 cancel.statuses 改回 [\"NOT_EFFECTIVE\"] → 契约同时触发两条失败 ——「cancel 的白名单含非真实状态码 NOT_EFFECTIVE（这正是 cancel 曾永不可达的成因）」与「cancel 在 PENDING_EFFECTIVE 下应放行」；复原后绿",
+          "契约测试①新增的守护：读侧枚举抽取限定在 PolicyStatus 块内（PolicyEnum.java 同文件还有 IntentStatus/ProposalStatus 等 5+ 枚举，全文抽码会混入）；并断言投影映射代码存在，防止读侧口径变更时前端静默失效"
+        ],
+        "deviation": "checkpoint 2 原只要求清理 POLICY_STATUSES 常量，实际必须一并改 types/business.d.ts 的 PolicyStatus 联合类型（它同样声明「与后端 PolicyStatusCode 逐一对应」，是同一错误的另一处副本）与契约测试①的真源 —— 只改常量则测试仍以写侧枚举为真源、断言恒绿，修复无法被守护（「同一个判断在两处各写一份清单 ⇒ 必漂移」）。另：checkpoint 1 指的 `:110-113` 注释行号因 R7-03 在本文件插入常量而漂移，按内容定位而非行号。",
+        "rejected_approach": "① 把读侧投影改成直接透传写侧码（让前端值域与写侧一致）：动的是已落库读模型的值域与 metadata 跨域共享枚举，波及保单以外全部消费方，且违背「读侧状态是 metadata 统一值域」的既有设计。② 门禁同时放行两个码（statuses: [\"PENDING_EFFECTIVE\", \"NOT_EFFECTIVE\"]）：用错配换表面可用，会让「前端值域是什么」变成无人能答的问题，且掩盖真正的病灶。③ 只在详情页把 status 做个映射后再判（局部补丁）：门禁的单一真源仍在 constants/policy.ts，局部映射会让「同一状态在两处含义不同」。"
+      }
+    },
+    {
+      "id": "R7-06",
+      "title": "保单查询高级搜索：后端透传 4 个日期区间 + 前端高级字段区",
+      "status": "completed",
+      "priority": "P1",
+      "depends_on": [
+        "R7-03"
+      ],
+      "attempts": 1,
+      "max_attempts": 3,
+      "started_at_commit": "0f667a5",
+      "repos": [
+        "titanium-policy",
+        "titanium-admin-web"
+      ],
+      "validation": {
+        "command": "cd /Users/sunwei/titanium-project/titanium-policy && mvn -q test && cd /Users/sunwei/titanium-project/titanium-admin-web && npx vue-tsc --noEmit && node scripts/ui-guard.mjs && npm run test:contracts",
+        "timeout_seconds": 900
+      },
+      "on_failure": {
+        "cleanup": "分开回滚：后端透传与前端高级字段互不依赖，一半成功也保留；不得为让前端看起来有高级搜索而造无后端支撑的字段"
+      },
+      "checkpoints": [
+        {
+          "step": 1,
+          "total": 4,
+          "description": "后端断点确认：PolicyController.java:181-195 pagePolicies 未声明 4 个 @RequestParam；PolicyAppQueryService.java:108 与 :119-120 硬编码 4 个 null；而 PolicyQueryServiceImpl.java:433-444 的谓词与 FindPoliciesByMultipleConditionsQuery.java:8-19 的 record 字段全部已就绪"
+        },
+        {
+          "step": 2,
+          "total": 4,
+          "description": "后端透传 effectiveDateStart/End、expiryDateStart/End 两层（Controller + AppService）"
+        },
+        {
+          "step": 3,
+          "total": 4,
+          "description": "前端 policy/list 照支付运营范式接高级搜索：TiSearchForm :has-advanced=\"true\"，日期区间用页面级 ref 不挂 model，fetch 时展开成两键，@reset 显式清 ref（照 billing/payment-operations/index.vue:12-31/169-171/220-224）"
+        },
+        {
+          "step": 4,
+          "total": 4,
+          "description": "搜索框宽度由内联像素改走 ti-search-control-* 令牌；placeholder「精确查询」改为与后端 LIKE 语义一致；真机复核高级搜索能真正过滤（不再出现 live 反证的「加参数 total 不变」）"
+        }
+      ],
+      "completed_at": "2026-09-21T18:15:00+08:00",
+      "result": {
+        "summary": "保单查询四个日期区间（生效/到期 × 起止）的真实断点在后端且有两处：Controller 两方法未声明 @RequestParam、AppService 两方法把四参硬编码为 null，而读侧谓词（PolicyQueryServiceImpl#buildSpecification）与 FindPoliciesByMultipleConditionsQuery record 字段早已齐备——Spring 对未声明的查询参数静默忽略，故此前「加日期条件、条数恒为 30、无任何报错」。本轮打通两层透传（共 4 个方法位点），前端照 billing/payment-operations 范式接高级搜索区（页面级 ref 不挂 model + fetch 展开两键 + @reset 显式清 ref），并新增全仓首条跨仓键名对账契约测试锁住「前端展开键 ⇔ 后端 @RequestParam」这条字符串耦合链路。真机复核证明条件真正过滤：基线 30 → 生效区间 18 → 到期区间 13 → 两区间交集 13 且每行日期均落区间内；必然为空区间得 0 条。",
+        "evidence": [
+          "断点实读确认（CP1，四处证据）：PolicyController 的 pagePolicies/listPolicies 均未声明四个日期参数；PolicyAppQueryService 两方法把 effectiveDateStart/End、expiryDateStart/End 硬编码 null；PolicyQueryServiceImpl:400-447 buildSpecification 谓词已就绪（startDate/endDate，greaterThanOrEqualTo/lessThanOrEqualTo）；FindPoliciesByMultipleConditionsQuery record 11 字段含 4 个 LocalDateTime",
+          "判定为下游缺陷、BFF 零改动：逐层实读 PolicyServiceClient（@GetMapping(\"/web/v1/policies/page\") + @RequestParam Map<String,Object>）与 ProxyQueryParamAdapter.toSpringDataPage（只改写 pageSize/pageNum，其余键原样保留）⇒ 前端加参数会原样抵达 policy 域，无需动 admin BFF（与 R7-07 改 BFF 形成区别，也意味着本轮要重建的是 policy 镜像而非 admin 镜像）",
+          "后端透传补齐（4 个方法位点，非仅 /page 版）：Controller 两方法各加 4 个 @RequestParam + @DateTimeFormat(iso = ISO.DATE_TIME)；AppService 两方法具名透传至 queryGateway/读模型服务",
+          "后端单测 +2（分层各锁一层）：RootQueryPaginationTest.policyDateRangesArePassedThroughToReadSide 与 RootPaginationControllerTest.policyDateRangesArePassedThroughToQueryFacade，均以 Mockito verify 逐参锁定——只断言返回值会在桩写宽松（any()）时恒绿，故必须锁调用实参",
+          "跨仓契约测试 +3（新建 tests/policy-advanced-search-contracts.test.mjs，全仓首条同时读两个仓的契约）：前端展开键与后端 @RequestParam 双向 deepEqual 对账；前端 value-format 必须带 T 与 HH:mm:ss 且数量为 2、后端 @DateTimeFormat 数量必须等于日期参数数；高级区存在 + @reset 清 ref 必须早于 handleReset()",
+          "负向对照 5 组全部命中（证明非空转）：前端键改名 → fail1；后端参数整行注释 → fail2；value-format 去时间部分 → fail1；reset 改回不显式清 ref → fail1；还原后复绿 pass3/fail0。契约文件预置 stripComments 堵住「注释掉的代码被正则当作存在」这一 R7-20 刚踩过的陷阱，解析失败一律 assert 抛错而非静默返回空集",
+          "门禁全绿：policy 域 mvn -q test EXIT=0（含新增用例）；前端 vue-tsc EXIT=0、ui-guard「全部 40 条规则达标」、契约 246 tests / 246 pass / 0 fail（243 + 新增 3）",
+          "🔴 镜像一致性硬对照（真机复核前置）：源文件 mtime 18:02 vs 运行镜像 CreatedAt 13:52 ⇒ 镜像陈旧，重建 titanium-policy；重建后 docker/jars 工作树产物 sha256 c3aedd3c7821730e2a8157486b0c960fc25798883850c71d2e2498628ee0b444 与镜像内 /app/jars/ 同名 jar 逐字节一致；并对 jar 内 PolicyController.class 执行 javap，两个方法签名均含 4 个 java.time.LocalDateTime",
+          "真机数据链（Playwright :5199 /policy/list，浏览器内实测）：基线「共 30 条保单」；生效区间 2026-09-01T00:00:00~2030-12-31T23:59:59 → 18 条；到期区间 2026-01-01T00:00:00~2028-12-31T23:59:59 → 13 条且抽样到期日 2027-09-06/2027-08-31 全落区间内；两区间交集 → 13 条且逐行校验越界计数 0/0；必然为空区间 1900-01-01~1900-01-02 → 0 条、表格无行、空态占位显示",
+          "网络请求逐条留证（proxy/policies）：#78 带 effectiveDateStart/End、#80 带 expiryDateStart/End（空集那次）、#81 带到期区间、#83 同时带四键 ⇒ 前端展开的两个区间确实都发出了，且四键同时抵达后端",
+          "重置行为真机确认：点「重置」后 4 个日期输入框 value 全为空串、统计回到「共 30 条保单」——证明页面级 ref（TiSearchForm 快照覆盖不到）确被 handleResetAll 显式清空，契约测试断言的顺序约束在真机上成立"
+        ],
+        "deviation": [
+          "改动范围超出「只修 BFF 实际调用的 /page 版」：listPolicies 与 pagePolicies 两个方法都补了 4 个参数（CP1 证据同时点了两处断点，只补一处会留下同形缺陷的另一半）",
+          "超出 checkpoint 范围新增跨仓契约测试 tests/policy-advanced-search-contracts.test.mjs（3 例）：该链路仅靠字符串相等耦合、无任何编译期校验，不给它加一条对账断言，下次单侧改名仍会以「加了条件条数不变」的形态复发",
+          "同族修正：产品编码 placeholder 由「产品编码」改为「精确匹配」——与保单号相反，产品编码后端是 cb.equal（精确），不能照抄保单号的「模糊匹配」提示",
+          "保单号 placeholder 由「精确查询」改为「模糊匹配」（checkpoint step 4 已含），后端读侧是 cb.like(%…%)，原提示与谓词语义相反"
+        ],
+        "rejected_approach": "抽一个 TiAdvancedSearch 二层封装（只会产出 props.fields + emit 的中转壳，且要把页面私有状态泄漏进组件）——维持原判；另拒绝「把两个日期区间挂进 queryParams model」的写法：区间是一对值，挂 model 会把「有没有选日期」与「选了哪两个日期」混进一个键，且与下游要的两个独立键不同构，故照支付运营范式用页面级 ref 在 fetch 时展开"
+      }
+    },
+    {
+      "id": "R7-07",
+      "title": "意向单→投保单→保单跳转：BFF 补出单进度代理 + 三端状态化跳转入口",
+      "status": "completed",
+      "priority": "P1",
+      "depends_on": [],
+      "attempts": 1,
+      "max_attempts": 3,
+      "started_at_commit": "0f667a5",
+      "repos": [
+        "titanium-admin",
+        "titanium-admin-web"
+      ],
+      "validation": {
+        "command": "cd /Users/sunwei/titanium-project/titanium-admin-web && npx vue-tsc --noEmit && node scripts/ui-guard.mjs && npm run test:contracts",
+        "timeout_seconds": 900
+      },
+      "on_failure": {
+        "cleanup": "回滚新增的 issuance 代理与跳转入口；不得为了让链路看起来通而用 bizNo 在前端做客户端匹配（列表不支持 bizNo 过滤，分页拉全量不可行）"
+      },
+      "checkpoints": [
+        {
+          "step": 1,
+          "total": 5,
+          "description": "确认现成一桥打三方的端点已存在且可用：GET /web/v1/issuances/{bizNo} → IssuanceResponse（含 proposalId/insuranceId/policies[].policyId/underwritingId）；live 实测 BIZ-STD-AUTO-NORMAL 返回完整"
+        },
+        {
+          "step": 2,
+          "total": 5,
+          "description": "BFF 补代理：controller/proxy/ 下新建 issuance 子包 + IssuanceServiceClient（Feign → services.policy.url，端口 8080 不是 8082），前端 src/api/ 补封装"
+        },
+        {
+          "step": 3,
+          "total": 5,
+          "description": "保单→意向单/核保单：PolicyVO 类型补 proposalId/underwritingId（后端已真返回），保单详情页加入口；核保单复用已有路由 /underwriting/detail/:id"
+        },
+        {
+          "step": 4,
+          "total": 5,
+          "description": "意向单/投保单详情是 el-dialog 且无 footer，需先加 footer 或内联跳转按钮；仅对应状态显示：意向单仅 CONVERTED_TO_APPLICATION、投保单仅 ISSUED"
+        },
+        {
+          "step": 5,
+          "total": 5,
+          "description": "真机走通完整闭环：意向单 PRP202608290000007 → 投保单 INS202608290000010 → 保单（bizNo 桥接），并核对三端 ID 互相一致"
+        }
+      ],
+      "completed_at": "2026-09-21T17:45:00+08:00",
+      "result": {
+        "summary": "三端跳转闭环打通。BFF 侧新增出单进度代理（PolicyServiceClient.getIssuanceProgress + BusinessProxyService 转发 + 新建 IssuanceProxyController，落在 /web/v1/proxy/issuances/{bizNo}，@PreAuthorize 要求 POLICY_LIST 或 POLICY_VIEW）；前端新增 getIssuanceProgress（silentError，辅助请求不弹全局红条）、PROPOSAL_STATUS_CONVERTED / INSURANCE_STATUS_ISSUED 两个常量、PolicyVO 补 proposalId/underwritingId，并在三个页面落跳转入口：意向单详情 footer「查看投保单」、投保单详情 footer「查看保单」、保单详情「关联单据」区「查看意向单 / 查看核保单」。入口可见性判据统一为「目标状态成立 ∧ 桥返回目标 ID」，避免死入口。门禁 vue-tsc 0 错 / ui-guard 40-40 / 契约 243-243，BFF 侧守卫与契约测试 0 失败；真机走通意向单→投保单→保单→（反向）意向单/核保单全闭环，落点 ID 与 DB 逐一一致，console 0 错误。",
+        "evidence": [
+          "三方关联字段三重确认：投保单有 proposalId（InsuranceVO.java:33-34 / t_insurance_view.proposal_id）；保单有 proposalId/underwritingId（PolicyDetailVO.java:84-88）",
+          "🔴 断链三处：意向单无 insuranceId（ProposalVO 全文、t_proposal_view 无该列）；投保单无 policyId；保单的 applicationId 被 web VO 层丢弃——PolicyView.java:52 有 insurance_id 列、PolicyQueryServiceImpl.java:456 已 setApplicationId，但 PolicyDetailVO 全文无该字段，PolicyWebMapper.toReportVO 是 ReportingPolicy.ERROR 只对 target 未映射报错，source 多出的字段静默丢弃",
+          "下游无 by-proposalId / by-insuranceId 查询：InsuranceController.java:97-104 仅 insuranceNo/holderId/productId/status；唯一桥是 bizNo",
+          "数据覆盖 live 实测：t_issuance_progress 107 行（77 有 policy_id / 63 有 insurance_id / 53 有 proposal_id）；t_policy_view 87 行（48 proposal_id / 58 insurance_id / 58 underwriting_id）",
+          "⚠️ 下游 policy 服务端口是 8080（titanium-admin-bootstrap/src/main/resources/application.yml:72）",
+          "🔴 真机首轮 500 的根因是**镜像陈旧**，与代码无关：源文件 IssuanceProxyController.java 改于 17:35、运行中的 titanium-backend:admin-acceptance-20260921-v1 构建于 13:18 —— 容器里根本没有该端点。静态门禁（vue-tsc/ui-guard/契约/BFF 单测）此时**全绿且必然全绿**（它们读工作树，不读容器）。重建 admin 镜像后同一请求立即通过。这正是「复测可信度＝镜像与工作树的一致性」的又一实证：**BFF 改动的验收前置必须是重建镜像**",
+          "真机闭环（重建镜像后实测，Playwright :5199，全程未读 localStorage、未回显任何凭据）：意向单 PRP202608290000007（e85f80a9-6a9c-433d-a278-707c3abf4957）→[查看投保单]→ /policy/application?insuranceId=1e176723-1875-4c50-9320-4b7182e6c486 →[查看保单]→ /policy/detail/3f510688-9e1e-4ad3-8e1d-be0fe304dec6；反向 [查看意向单] 回到 e85f80a9…（与起点逐字一致）、[查看核保单] → /underwriting/detail/d9b5bd0f-e26c-4094-8067-a95c358fcf5f（与 DB underwriting_id 一致，页面正常渲染非死链）。console 全程 0 错误 0 警告",
+          "桥的键安全性 live 核验：bizNo `BIZ-STD-ENT-MANUAL-20260829` 在进度表所在行与 t_proposal_view / t_insurance_view 逐一比对一致（proposal_id / insurance_id 全等）；t_issuance_progress 107 行 / 107 个 distinct biz_no，且存在唯一约束 `uk_issuance_biz(tenant_id, biz_no)` ⇒ 按 bizNo 取行在租户内安全，非「当前数据恰好不重复」的巧合",
+          "「取 policies[0]」的依据 live 核验：该行 policy_ids 为 NULL、issuance_strategy=MERGE_ONE_POLICY（合并出单单张保单）；全表 107 行 policy_ids 均空 ⇒ 当前不存在需要多张选择的场景，已在代码注释登记「若将来启用拆分策略应改为列表」",
+          "🔴 负向对照（证明门禁覆盖新端点、非空转）：把 IssuanceProxyController 的 @PreAuthorize 注释掉单跑 EndpointAuthorizationGuardTest → **变红并点名** `IssuanceProxyController.getIssuanceProgress(java.lang.String, java.lang.String) 是 HTTP 端点但未声明 @PreAuthorize`；恢复后复绿。注意 PhantomProxyEndpointContractTest（3/3 绿）是**硬编码的三条历史缺陷负面断言**，不覆盖新端点，其绿不能作为本条证据",
+          "门禁：vue-tsc 0 错 / ui-guard 40-40 / 契约 243-243；BFF 侧 PhantomProxyEndpointContractTest 3-3、ProxyPaginationContractGuardTest 4-4、EndpointAuthorizationGuardTest 1-1、ReadEndpointDoubleCodeGuardTest 1-1、AdminArchitectureTest 45（19 skipped，均既有 @Disabled）—— 0 失败"
+        ],
+        "deviation": "四处与任务预设方案的偏离：\n① checkpoint 2 预设「新建 IssuanceServiceClient」，实际**并入既有 PolicyServiceClient** —— 二者同属微服务 titanium-policy、共用同一 `services.policy.url`；按项目规约 3.4.10「同域多 @FeignClient 同 name 必须各配唯一 contextId」，为同一后端再造第二个 client 只增加 contextId 维护面而无收益（KISS）。proxy controller 仍按预设新建 issuance 子包。\n② checkpoint 3 预设需处理「保单的 applicationId 被 VO 层丢弃」，实现时确认 PolicyDetailVO **已真返回** proposalId/underwritingId，缺口仅在前端 PolicyVO 类型未声明 ⇒ 只补类型与入口，未动后端。\n③ checkpoint 1 举证的 bizNo 是 BIZ-STD-AUTO-NORMAL，实际闭环取 BIZ-STD-ENT-MANUAL-20260829（三端 ID 齐备的那条）。\n④ 保单详情页**有意不放「投保单」入口**：保单视图的 insurance_id 被 web VO 层丢弃；即便经桥取到 insuranceId，其落点也只能是「投保单查询页 + query」（投保单详情是 el-dialog、无独立路由）。保单的直属上游是核保单，故放「意向单 + 核保单」两个入口。",
+        "rejected_approach": "① 未采用「前端按 bizNo 在列表做客户端匹配」定位下游单据（on_failure.cleanup 已明令禁止）：投保单/意向单列表均不支持 bizNo 过滤，分页拉全量不可行。\n② 未为同一 policy 微服务新建第二个 @FeignClient（理由见 deviation ①）。\n③ 未让跳转按钮「只看状态就显示」：canGoToInsurance / canGoToPolicy 两个 computed 均要求「目标状态成立 ∧ 桥返回了目标 ID」**两者兼备** —— 状态对但桥无目标（历史数据无进度行、跨租户）时不显示，避免造出「点进去无目标」的死入口。"
+      }
+    },
+    {
+      "id": "R7-08",
+      "title": "精算工作台账务分类：新建 AccountingClass 枚举（并集 14 值）+ 下拉接线",
+      "status": "completed",
+      "priority": "P1",
+      "depends_on": [],
+      "attempts": 1,
+      "max_attempts": 3,
+      "started_at_commit": "0f667a5",
+      "repos": [
+        "titanium-metadata",
+        "titanium-admin",
+        "titanium-admin-web"
+      ],
+      "validation": {
+        "command": "cd /Users/sunwei/titanium-project/titanium-metadata && mvn -q install -DskipTests && cd /Users/sunwei/titanium-project/titanium-admin-web && npx vue-tsc --noEmit && node scripts/ui-guard.mjs && npm run test:contracts",
+        "timeout_seconds": 900
+      },
+      "on_failure": {
+        "cleanup": "回滚枚举与字典种子；🔴 严禁改存量 accounting_class 字段值（参与 contentHash，改值会让已发布策略哈希变化、billing 证据链断裂）"
+      },
+      "checkpoints": [
+        {
+          "step": 1,
+          "total": 4,
+          "description": "新建 com.titanium.metadata.enums.pricing.AccountingClass，值域 = ChargeCategory 11 值 ∪ {PREMIUM, COMMISSION_PAYABLE, TAX_PAYABLE} = 14 值；类注释写明「并集不可收窄」的理由与 contentHash 红线"
+        },
+        {
+          "step": 2,
+          "total": 4,
+          "description": "字典注册：t_dict_type 910085、t_dict_data 920422-920435（14 条），沿用 INSERT ... SELECT ... UNION ALL ... WHERE NOT EXISTS 幂等写法；已手工同步至 live 库"
+        },
+        {
+          "step": 3,
+          "total": 4,
+          "description": "前端接线：actuarial-workbench/index.vue 费用项表单与税费策略表单两处 accountingClass 裸 el-input → TiDictSelect(dict-type=\"ACCOUNTING_CLASS\")"
+        },
+        {
+          "step": 4,
+          "total": 4,
+          "description": "展示位 4 处（费用项列表 :57、计算明细 :187、费用项详情 :303、税费策略详情 :318）改 labelOf(accountingClassOptions, ...)；补 2 条契约用例"
+        }
+      ],
+      "completed_at": "2026-09-21T18:20:00+08:00",
+      "result": {
+        "summary": "新建 AccountingClass 枚举（14 值并集）并接通字典下拉与全部展示位；契约 234/234、ui-guard 40/40、vue-tsc 0；真机实测下拉 14 项中文、列表/详情/计算明细三处均渲染中文标签，其中「应付佣金」(COMMISSION_PAYABLE) 一行为「并集不可收窄」的 live 实证",
+        "evidence": [
+          "枚举：titanium-metadata/src/main/java/com/titanium/metadata/enums/pricing/AccountingClass.java（14 常量，RISK_PREMIUM…TAX_PAYABLE，fromCode 委托 BaseEnum）",
+          "字典种子：admin_business_dictionary_202608281445_dml.sql 新增 changeset codex:admin-business-dictionary-03/04（910085 + 920422-920435）",
+          "🔴 id 水位更正：原计划 910079/920367 取自本文件最大值，实际库内水位为 910084/920421——同目录 admin_claim_dict_*(910079-910083、920367-920421)、admin_underwriting_dict_*(910084) 共用同一 id 空间，按原计划会撞主键",
+          "live 库核验：t_dict_data ACCOUNTING_CLASS 14 条（920422-920435）、HEX(dict_label) 与旧字典同形态（如 风险保费 = E9A38EE999A9E4BF9DE8B4B9）",
+          "存量兼容：t_product_charge_component.accounting_class 去重后为 RISK_PREMIUM/TAX/STAMP_DUTY/REGULATORY_LEVY/PRODUCT_FEE/OTHER_INTERNAL_COST，全部落在 14 值内",
+          "真机（:5199，产品 V2A-AUTO-001）：新建费用项抽屉「账务分类」为 el-select，14 项中文（风险保费…应交税费），默认值 PREMIUM 回显「保费收入」",
+          "真机列表位：费用项表格「账务分类」列 = 其他内部成本/风险保费/税费（原为裸码）",
+          "真机详情位：费用项详情「账务分类」= 其他内部成本；内容哈希原样保留（a081ebce…/4533234e…）",
+          "真机计算明细位（计算 ID 006fb7ce-269f-4ccf-b0be-6d095498472f）：「账务分类」列 = 风险保费/监管征费/应付佣金/其他内部成本",
+          "🔴 并集不可收窄的 live 实证：t_product_calculation_line 的 accounting_class 值分布含 PREMIUM(52)/COMMISSION_PAYABLE(51)/TAX_PAYABLE(5) 三个纯会计科目码，收窄到 11 值业务分类会让这 108 行展示退化为裸码",
+          "契约用例：dictionary-contracts.test.mjs 新增「字典种子 vs metadata 枚举逐条对账」（两处独立真源，不内联第三份期望清单）",
+          "负向验证四跑：baseline 绿 / 删字典端 VN 红 / 删枚举端 VN 红 / 改元组别名红 / 复原绿",
+          "门禁：mvn -q install -DskipTests(metadata) exit 0；vue-tsc --noEmit exit 0；ui-guard 40/40；test:contracts 234/234（较 R7-04 的 232 增 2 条）"
+        ],
+        "deviation": "① id 水位：计划 910079/920367，实际用 910085/920422——水位必须以**库内最大值**为准，源文件最大值会漏掉兄弟文件占用的 id；② 字典未走 Liquibase 执行路径：acceptance 容器跑的是预构建 JAR，源码改动需重建镜像才生效，故按幂等写法手工同步至 live 库供真机复核（两处守卫均为 WHERE NOT EXISTS，后续 Liquibase 再执行时插入 0 行，不会与手工数据冲突）；③ 展示位实现用本文件既有 idiom labelOf(dictOptions, value) 而非 useDict 的 getLabel——前者在码缺失时回退原值，与本文件其余 12 处展示位一致",
+        "rejected_approach": "① 只做 3 值 {PREMIUM, COMMISSION_PAYABLE, TAX_PAYABLE}（语义最干净，但存量 12 行费用项值全落 ChargeCategory 码，窄化会让它们存不回去，且改值会动 contentHash）；② 用 `docker exec mysql` 默认字符集灌种子（实测会把中文双重编码成 C3A9C2A3… 且用同一客户端读回时显示正常，属假阴性；已改用 --default-character-set=utf8mb4 重建）；③ 契约用例内联第三份期望码清单（三份清单必漂移，改为「Liquibase 种子」与「metadata 枚举」两处独立真源直接对账）"
+      }
+    },
+    {
+      "id": "R7-09",
+      "title": "精算工作台司法辖区：新建 Jurisdiction 枚举 + 下拉接线",
+      "status": "completed",
+      "priority": "P1",
+      "depends_on": [],
+      "attempts": 1,
+      "max_attempts": 3,
+      "started_at_commit": "0f667a5",
+      "repos": [
+        "titanium-metadata",
+        "titanium-admin",
+        "titanium-admin-web"
+      ],
+      "validation": {
+        "command": "cd /Users/sunwei/titanium-project/titanium-metadata && mvn -q install -DskipTests && cd /Users/sunwei/titanium-project/titanium-admin-web && npx vue-tsc --noEmit && node scripts/ui-guard.mjs && npm run test:contracts",
+        "timeout_seconds": 900
+      },
+      "on_failure": {
+        "cleanup": "回滚枚举与字典种子；不得为对齐枚举改存量 jurisdiction_code（参与 contentHash）"
+      },
+      "checkpoints": [
+        {
+          "step": 1,
+          "total": 4,
+          "description": "新建 com.titanium.metadata.enums.pricing.Jurisdiction（11 值 ISO alpha-2）；类注释含与 CountryEnum 的四行区分判据表（需求文档 V2:137 把二者并列为两个匹配维度）+ 值域依据与缺口声明（次国家级零证据，不凭空造码）"
+        },
+        {
+          "step": 2,
+          "total": 4,
+          "description": "字典注册：t_dict_type 910086、t_dict_data 920436-920446（11 条），与本批 R7-08 连续不撞号；已手工同步至 live 库"
+        },
+        {
+          "step": 3,
+          "total": 4,
+          "description": "前端接线：actuarial-workbench/index.vue:212 jurisdictionCode 裸 el-input → TiDictSelect(dict-type=\"JURISDICTION\") + filterable allow-create；新增 normalizeJurisdiction 做 trim+toUpperCase 归一，与域层 TaxPolicyDefinition.toUpperCase(Locale.ROOT) 对齐"
+        },
+        {
+          "step": 4,
+          "total": 4,
+          "description": "展示位 2 处（税费策略列表 :118、税费策略详情 :315）改 labelOf(jurisdictionOptions, ...)；补契约用例含「存量唯一值 CN 必须在值域内」"
+        }
+      ],
+      "completed_at": "2026-09-21T18:20:00+08:00",
+      "result": {
+        "summary": "新建 Jurisdiction 枚举（11 值，与 CountryEnum 分立）并接通下拉与展示位；真机实测下拉 11 项中文、allow-create 键入 us-ca 回显归一为 US-CA、列表与详情两处「司法辖区」均渲染「中国」（存量值 CN 可回显）",
+        "evidence": [
+          "枚举：titanium-metadata/src/main/java/com/titanium/metadata/enums/pricing/Jurisdiction.java（CN/US/GB/JP/HK/SG/PH/ID/MY/TH/VN）",
+          "🔴 值域依据（非凭空）：取系统已支持市场 = CountryEnum 的 11 国；次国家级辖区（US-CA、CN-31）在代码与库中**零证据**，故不造码，改由前端 allow-create 承接",
+          "与 CountryEnum 的分工判据（写入类注释）：CountryEnum = 地理/币种维度（中文名 + currency，停在国家级）；Jurisdiction = 税务与监管的适用法域维度（仅法域码，可下沉次国家级，是 t_product_tax_policy 唯一键的组成部分）",
+          "需求依据：需求文档《保险费用计算与精算工作台建设需求-V2》第 137 行「税费政策按国家/地区、司法辖区、险种、主体类型、渠道和业务时点匹配」——二者并列，非重复",
+          "字典种子：admin_business_dictionary_202608281445_dml.sql changeset 03/04（910086 + 920436-920446）",
+          "live 库核验：JURISDICTION 11 条，HEX(dict_name) 正确（司法辖区 = E58FB8E6B395E8BE96E58CBA）",
+          "存量兼容：t_product_tax_policy 的 jurisdiction_code 去重后唯一值为 CN（VARCHAR(64)）；CN 同时在枚举与字典值域内",
+          "真机（:5199，新建税费策略抽屉）：下拉 11 项中文（中国/美国/英国/日本/中国香港/新加坡/菲律宾/印度尼西亚/马来西亚/泰国/越南）",
+          "真机 allow-create：键入 us-ca → 下拉首项出现可创建的 us-ca → 选中后回显 US-CA（归一生效）",
+          "真机列表位（产品 V2A-AUTO-001，策略 V2B_AUTO_TAX）：「司法辖区」列 = 中国（原为裸码 CN）",
+          "真机详情位：税费策略详情「司法辖区」= 中国、「账务分类」= 应交税费，内容哈希原样保留",
+          "契约用例 2 条：字典种子 vs Jurisdiction 枚举逐条对账；存量唯一值 CN 必须在枚举与字典两侧值域内",
+          "门禁：mvn install(metadata) exit 0；vue-tsc exit 0；ui-guard 40/40；test:contracts 234/234"
+        ],
+        "deviation": "① 值域取「系统已支持市场」而非需求文档可能暗示的完整法域清单——代码与库侧对次国家级辖区零证据，凭空造码会让「依据」不可追溯；改为前端 allow-create 让业务按需键入，并把这个缺口写进枚举类注释与 result.evidence；② 补了计划外的 normalizeJurisdiction（trim + toUpperCase）：allow-create 键入的是用户原样文本（us-ca），若不归一，库值（US-CA，域层归一）与下拉回显值会不一致",
+        "rejected_approach": "① 复用 CountryEnum / src/constants/locale.ts 的 COUNTRY_OPTIONS（零新建，但把「国家/地区」与「司法辖区」两个维度合并，与需求文档 V2 的并列设计冲突，且 COUNTRY_OPTIONS 带 currency 语义、法域不需要）；② 在枚举里预置 US-CA/CN-31 等次国家级码（无任何代码/库证据支撑，属凭空造值）"
+      }
+    },
+    {
+      "id": "R7-10",
+      "title": "核保工单操作列：去 text 属性还原按钮形态 + min-width 改 width",
+      "status": "completed",
+      "priority": "P1",
+      "depends_on": [],
+      "attempts": 1,
+      "max_attempts": 3,
+      "started_at_commit": null,
+      "repos": [
+        "titanium-admin-web"
+      ],
+      "validation": {
+        "command": "npx vue-tsc --noEmit && node scripts/ui-guard.mjs && npm run test:contracts",
+        "timeout_seconds": 600
+      },
+      "on_failure": {
+        "cleanup": "回滚该文件；不得通过删掉「审核」按钮来消除形态不一致"
+      },
+      "checkpoints": [
+        {
+          "step": 1,
+          "total": 3,
+          "description": "views/underwriting/list/index.vue:67-76 去掉 text 属性、保留 type=\"primary\"；判据 COLOR-CONTRACT 动词色桶：审核属③流转/受理 → primary"
+        },
+        {
+          "step": 2,
+          "total": 3,
+          "description": ":59 的 min-width=\"160\" 改 width=\"160\"（该列是全表唯一 flex 列，EP table-layout.mjs:107 会分它 100% 剩余宽）"
+        },
+        {
+          "step": 3,
+          "total": 3,
+          "description": "真机双视口复核（1920 与 2560）：操作列渲染宽须恒为声明值，不再随视口变化"
+        }
+      ],
+      "completed_at": "2026-09-21T13:35:00+08:00",
+      "result": {
+        "summary": "核保工单操作列两处缺陷已修：① 去掉「审核」的 text 属性，还原为与同列「详情」一致的带边框平铺（type=primary 保留——契约 ③ 流转/受理色桶）；② 操作列 min-width→width=160。另修同一缺陷类的另一半：全列数字 width 后表格剩余宽无处可去（1920 下留白 848px），按全站同型写法把「核保案号」改 min-width=200 承接（原为全站唯一 min-width 列数为 0 的表）。",
+        "evidence": [
+          "源码：views/underwriting/list/index.vue:32（案号 min-width=200）、:59-61（操作列 width=160 + 根因注释）、:66-77（审核去 text，保留 type=primary + 形态判据注释）",
+          "真机 @1920（vite:5199 服务工作树）：操作列 **160px** —— 修复前 368px；列宽 案号408/类型110/金额130/风险110/申请170/状态120/完成160/操作160，**和 = 表格宽 1368 ⇒ 无留白**；20 行 · 「共 36 条」· 页码 1 2",
+          "真机 @2560：操作列 **160px** —— 修复前 1008px（视口翻 1.33 倍，列宽未变 ⇒ 渲染宽已是声明值的函数）；表格宽 2008 = 列宽和",
+          "按钮形态实测（首行）：详情 w=64 border=1px bg=rgb(255,255,255) cls=el-button el-button--small；审核 w=48 border=1px bg=rgb(26,58,107) cls=el-button el-button--primary el-button--small —— 修复前审核 cls 含 is-text、border:0px、bg transparent",
+          "全站对照（同分辨率量测）：document/list 由两个 flex 数据列分摊（文件名529/关联业务527），**其操作列同样在吸收剩余宽 = 422px** ⇒ 佐证「剩余宽必须有数据列承接，否则流向操作列」这一根因；核保工单页改前是唯一 min-width 列数为 0 的表",
+          "EP 算法依源码复核：node_modules/element-plus/es/components/table/src/table-layout.mjs:91-118 updateColumnsWidth —— flexColumns = 无数字 width 的列；唯一 flex 列时 realWidth = minWidth + (bodyWidth - bodyMinWidth)，多 flex 列时按 minWidth 比例分摊；fit 未透传（TiTable:32-42）故恒为 true",
+          "质量门：vue-tsc 0 错 / ui-guard 37-37 / 契约 229-229",
+          "视觉确认：截图 .playwright-mcp/r7-10-uw-1920.png"
+        ],
+        "deviation": "检查点未涵盖「改完操作列后表格剩余宽的归属」，执行中发现并一并处理：全列数字 width 会让 EP 无 flex 列可分发剩余宽（1920 下留白 848px），故把编码列改为 min-width 承接（与 document/list「关联业务」同型）。该页 2560 下案号列渲染 1048px 偏宽，属 fit=true 全站统一行为（document/list 文件名列同分辨率下 529px），非本页特有，未做页面级特判。",
+        "rejected_approach": [
+          "只把 min-width 改成 width、不补 flex 承接列 —— 修好操作列却让表格右侧留白 848px，等于把问题从「列太宽」换成「表格不满」",
+          "给操作列保留 min-width、靠 CSS 覆盖 EP 的 flex 分配 —— 违反 COLOR/UI 契约里「优先用声明值而非覆盖」的既有结论，且 EP 的 flexColumns 判定在 JS 层，样式覆盖打不到",
+          "把时间/枚举列也设成 flex 分摊剩余宽 —— 短枚举与 19 字符时间列被拉宽后留白更刺眼，违反列宽语义（只有文本/编码列适合承接）"
+        ]
+      }
+    },
+    {
+      "id": "R7-11",
+      "title": "全站操作列列宽收敛：46 个操作列 min-width → width，按动作数量取档",
+      "status": "completed",
+      "priority": "P1",
+      "depends_on": [
+        "R7-10"
+      ],
+      "attempts": 1,
+      "max_attempts": 3,
+      "started_at_commit": null,
+      "repos": [
+        "titanium-admin-web"
+      ],
+      "validation": {
+        "command": "npx vue-tsc --noEmit && node scripts/ui-guard.mjs && npm run test:contracts",
+        "timeout_seconds": 600
+      },
+      "on_failure": {
+        "cleanup": "按页面回滚，保留已达标页面；不得为凑档位把按钮删掉或改成图标-only"
+      },
+      "checkpoints": [
+        {
+          "step": 1,
+          "total": 4,
+          "description": "建唯一真源 src/constants/table.ts：导出 ACTION_COL_WIDTH {1:120, 2:200, 3:280, 4:320} + ACTION_COL_WIDTH_XL 400 + ACTION_COL_WIDTH_ALLOWED；原计划的 {1:100, 2:160, 3:240, 4:320} 被真机实测证伪（见 deviation ①）。SCSS 令牌 $table-action-width-* 同步为同值，S-18 机械锁两处相等"
+        },
+        {
+          "step": 2,
+          "total": 4,
+          "description": "46 个操作列（35 文件）min-width/动态 → 数字 width，逐条按实测实需取档（120×22、200×14、280×7、320×2、400×1）；6 张「无 flex 承接列」的表按表形态补承接列（见 deviation ②）"
+        },
+        {
+          "step": 3,
+          "total": 4,
+          "description": "ui-guard 新增 S-16（操作列必须写数字 width 且落在档位集合内）/ S-17（每张表必须保留 ≥1 个只写 min-width 的列承接剩余宽）/ S-18（SCSS 令牌与 TS 真源逐一相等），规则总数 37 → 40；负向验证 4/4 全红、复原全绿"
+        },
+        {
+          "step": 4,
+          "total": 4,
+          "description": "逐页真机复核 8 个代表页「操作列渲染宽 == 声明值、blankRight == 0、按钮不换行」，含 fixed+flex 共存（claim/list）、动态 flex（claim/config）、横向滚动（product/list）、XL 档 4 按钮余 37px（rate-tables）"
+        }
+      ],
+      "completed_at": "2026-09-21T15:40:00+08:00",
+      "result": {
+        "summary": "全站操作列列宽收敛收官：46 个操作列（35 文件）由 min-width/动态绑定改为数字 width 并按「同时可见动作数」取档，6 张「无 flex 承接列」的表按表形态补承接列；档位真源落在 src/constants/table.ts，SCSS 令牌同步，ui-guard 新增 3 条机械守卫（37 → 40）。三门全绿：vue-tsc 0 错误 / ui-guard 40-40 / 契约 229-229；8 个代表页真机复核 blankRight 全部为 0。",
+        "evidence": [
+          "根因：EP `element-plus/es/components/table/src/table-layout.mjs:91-131` updateColumnsWidth() —— flexColumns = flattenColumns.filter((column) => !isNumber(column.width))，即**无数字 width 的列即 flex 列**。fit=true 时若 bodyMinWidth <= bodyWidth，唯一 flex 列 realWidth = minWidth + (bodyWidth - bodyMinWidth)；多 flex 列按 minWidth 比例分摊、首列吃取整余数；无 flex 列时走 else 分支 realWidth = Number(width || minWidth) 且 bodyWidth.value = bodyMinWidth —— 表格宽 = 列宽之和，比容器窄就右侧留白（style-helper.mjs:59,156 把 bodyWidth 显式写进 DOM style，确认是真窄）",
+          "档位取值依据（真机实测按钮渲染宽）：2 字带图标 64、2 字无图标带边框 48、3 字带图标 76、4 字无图标 72、4 字带图标 88；列需求宽 = 24（单元格左右 padding）+ Σ按钮宽 + 8×(按钮数−1)。逐档取全站该档最坏实需：1 档 100（maintenance/list「工作台」3 字带图标）、2 档 184（rule-engine/list「查看规则」+「停用」）、3 档 256（maintenance/configuration 查看/编辑/生命周期）、4 档 304（product/list 详情/修订/配置/更多）",
+          "档位分布：120×22、200×14、280×7、320×2、400×1（共 46，脚本逐条确认命中无行号漂移）。400 为登记在册单页特例（product/rate-tables，4 个 4~5 字带图标按钮实需 363，渲染 400 下余 37px）",
+          "承接列 6 处：billing/list 账单号 min-width=180、claim/list 报案号 min-width=190(fixed=left)、customer/list 客户姓名 min-width=140、product/rate-tables 试算保费 min-width=170(align=right)，以及 policy/detail 与 billing/detail 两张定长窄表改**全列 min-width**（见 deviation ②）",
+          "新增守卫（scripts/ui-guard.mjs，规则总数 37 → 40）：S-16「操作列必须写数字 width 且取值落在 src/constants/table.ts 档位集合内」、S-17「每张表必须保留 ≥1 个只写 min-width 的列承接剩余宽」、S-18「SCSS 令牌 $table-action-width-* 必须与 TS 真源逐一相等（guard 侧不抄数字，从 table.ts 正则读出再比）」",
+          "负向验证 4/4 全红、复原全绿（含 S-18 首版恒为 null 的自我证伪：pairs 里的名字误带 `$` 而 read() 正则已含 \\$ ⇒ 要求两个美元符、5 条全 null，去掉 `$` 后真正生效）",
+          "真机复核 8 页（操作列声明/渲染 · 承接列渲染 · 按钮）：billing/list 120/120 · 账单号 628 · 1 行；claim/list 120/120 · 报案号 598（fixed+flex 共存正常）· 1 行；customer/list 200/200 · 客户姓名 242；product/rate-tables 400/400 · 费率表编码 418 · 4 按钮不换行余 37px；maintenance/configuration 280/280 · 配置ID 226/保全项 236 · 3 按钮余 30px；product/list 320/320 · 横向滚动 blankRight −362 · 3 按钮；underwriting/list 200/200 · 核保案号 368 · 详情 64(带边框)/审核 48(带边框 primary) 1 行；claim/config 200/200 · 模板ID 344(动态 flex) · 1 行。全部 blankRight == 0（无留白）",
+          "截图存证：.playwright-mcp/r7-11-policy-detail-schedule.png（方案 A 单列承接的 990px 空档）、.playwright-mcp/r7-11-policy-detail-schedule-B.png（方案 B 全列分摊）、.playwright-mcp/r7-11-billing-detail-schedule.png"
+        ],
+        "deviation": "① 计划档位 {1:100, 2:160, 3:240, 4:320} 被实测证伪，改 {120,200,280,320} + XL 400：1 档最坏实需 100 **正好等于**档位值（零余量，任何字体/缩放波动即裁切）；2 档 184 > 160；3 档 256 > 240；4 档 product/list 304 < 320 但 rate-tables 实需 363 > 320。原值照抄会立刻在 ≥4 个页面上裁切。② 计划「每张表保留 1 个 min-width 数据列承接」在**整表定长数据且列数少**的表上产生反效果：policy/detail 缴费计划实测承接列 990px（容器 1360），列内只有一个「待缴费」标签，比原来 490px 的窄表更难看 —— EP 会把全部剩余宽砸给唯一 flex 列。改为**全列 min-width** 让 EP 按 minWidth 比例分摊（实测 223/388/416/333，和 = 1360 = 容器宽），billing/detail 同型处理；判据固化为「承接列三形态」写进 table.ts 的 ACTION_COL_WIDTH_ALLOWED JSDoc。③ R7-15 原 checkpoint 1 要求「width ≥ 实需且 ≤ 实需 + 一档」，机械校验「实需」须在 guard 里复刻按钮宽度公式（12×中文字数 + padding + icon），该公式随 EP 版本/字体/多语言漂移，故 S-16 只校「取值落在档位集合内」，「是否容得下」由逐档真机复核保证并把每档最坏实需写进 table.ts JSDoc。④ tests/claim-config-contracts.test.mjs 判据属性随本次规则迁移由 min-width 改为数字 width（阈值 160 意图不变），首次未察觉因 `| tail` 的 $? 是 tail 的退出码。⑤ S-16/S-17 原属 R7-15 规划，因与本次改动同批落地而前移，R7-15 顺延为 S-19~S-22。",
+        "rejected_approach": "① 保留：直接删掉 4 个零引用的 SCSS 令牌（ROUND4 已定论处置方向是补桥接不是删；同族 $table-max-height-* 就是桥接成 --ti-table-max-height-* 才被用上的）。② 新增否掉：在 ui-guard 里复刻按钮宽度公式以校验「声明值 ≥ 实需」（见 deviation ③，判据会随 EP 版本/字体/多语言漂移，改为档位集合枚举 + 真机复核）。③ 新增否掉：把操作列 padding 用 class 覆盖压到 0 以省宽度（属绕过 EP 结构，且会与 ti-action-column 既有样式打架，未采纳）。"
+      }
+    },
+    {
+      "id": "R7-12",
+      "title": "保单详情页视觉优化：分组标题 + TiCopyText + 补齐已返回未渲染字段",
+      "status": "completed",
+      "priority": "P1",
+      "depends_on": [
+        "R7-07"
+      ],
+      "attempts": 1,
+      "max_attempts": 3,
+      "started_at_commit": "0f667a5",
+      "repos": [
+        "titanium-admin-web"
+      ],
+      "validation": {
+        "command": "npx vue-tsc --noEmit && node scripts/ui-guard.mjs && npm run test:contracts",
+        "timeout_seconds": 600
+      },
+      "on_failure": {
+        "cleanup": "回滚该页；不得渲染 API 未返回的字段（会造成恒空列）"
+      },
+      "checkpoints": [
+        {
+          "step": 1,
+          "total": 4,
+          "description": "基本信息 10 个字段加 el-divider content-position=\"left\" 分组（对齐 claim/detail:30、billing/detail、underwriting/detail 的既有做法）"
+        },
+        {
+          "step": 2,
+          "total": 4,
+          "description": ":53-56 的 el-button text :icon=\"CopyDocument\"（全仓唯一写法）换 TiCopyText，对齐 underwriting/detail:13-15 与 intention/application/payment-operations；TiCopyText 自带非安全上下文 execCommand 降级"
+        },
+        {
+          "step": 3,
+          "total": 4,
+          "description": "补齐 API 已返回但页面未渲染的高价值字段：collectionStatus/collectedAmount/salesChannel（运营高频）"
+        },
+        {
+          "step": 4,
+          "total": 4,
+          "description": "加载失败走 el-skeleton（对齐 claim/detail:66）；真机复核渲染结果"
+        }
+      ],
+      "completed_at": "2026-09-21T17:55:00+08:00",
+      "result": {
+        "summary": "保单详情页视觉优化完成四项。① 基本信息 Tab 按语义拆三分组（保单信息 8 字段 / 保费信息 6 字段 / 保险期间 6 字段），标题统一走 el-divider content-position=\"left\"，对齐 claim/billing/underwriting 详情页既有做法；② 全仓唯一一处的「el-button text :icon=CopyDocument」复制写法换成 TiCopyText（保单号、产品编码），随之删除无用的 copyText 函数与图标 import；③ 补齐后端已返回但页面未渲染的高价值字段：productCode、lineCount、totalPremium、collectionMode、collectionStatus、collectedAmount、salesChannel、waitingPeriodEndDate、hesitationPeriodEndDate、updateTime；④ 加载失败态落地：el-skeleton 骨架屏 + el-empty 失败提示与「重新加载」按钮，页头标题抽成 pageTitle computed（修掉加载中渲染成「保单详情 - 」的悬空横杠）；另把裸 h4 的「被保标的」标题并入 el-divider 体系并补最小样式（该类此前全项目零定义）。门禁 vue-tsc 0 错 / ui-guard 40-40 / 契约 243-243，真机复核正常态与失败态两态（含重试按钮行为）。",
+        "evidence": [
+          "live detail 响应中全部有值但页面一个都没显示：proposalId/underwritingId/marketPackageId/productId/totalPremium/lineCount/waitingPeriodEndDate/hesitationPeriodEndDate/collectionMode/collectionStatus/collectedAmount/channelId/salesChannel/agentId/updateTime",
+          "⚠️ 两条「取不到」不得硬渲染：① currency 在整条保单链路缺失（PolicyQueryResult.java:109 有，PolicyDetailVO 与 PolicyDetailMirror 均无，live JSON 确认不返回）⇒ detail:61 只能单参走 CNY 默认值，:448 年金币种硬编码 'CNY'（注释自陈缺口）；② 保单形态在列表态恒空（t_policy_view 无 policy_form 列），详情靠 enrichDetail:309-313 从投保单视图补，insuranceId=null 的一步出单保单渲染成 '-'",
+          "对照缺口：claim/detail:70-89 有阶段引导 el-alert，policy/detail 无",
+          "🔴 恒空字段实证（on_failure 明令「不得渲染 API 未返回的字段」）：t_policy_view 87 行，payment_method / agent_id / policy_holder_gender / policy_holder_birth_date / market_package_id **五个字段全为 0/87**。任务原 evidence 把 marketPackageId、agentId 列为「有值但未渲染」——照抄就会造出恒空列，故一律未渲染",
+          "🔴 同码不同义实证（决定「不许接字典」）：t_policy_view.collection_status 真实值域为 COLLECTED(31)/UNCOLLECTED(55)/PENDING(1)，而库中 PAYMENT_COLLECTION_STATUS 字典只有 PAID/PENDING/FAILED —— **仅 PENDING 一个值重合**；PremiumCollectionStatus.java 的 javadoc 明写二者不可互相替代（policy 域「保费收讫聚合态」vs billing 域「单笔缴费流水」）。若按字段名接字典，大部分行会裸显英文码、个别行看着正确（最坏组合）。另 PremiumCollectionMode.ONLINE=「线上支付」而 SALES_CHANNEL.ONLINE=「线上直销」，同码不同义 ⇒ collectionMode/collectionStatus 各用本页局部映射表（COLLECTION_MODE_TEXT / COLLECTION_STATUS_META），仅 salesChannel 走 SALES_CHANNEL 字典（与意向单页同源）",
+          "真机正常态复核（Playwright :5199，/policy/detail/3f510688-9e1e-4ad3-8e1d-be0fe304dec6）：页头 heading level=3 = 「保单详情 - POL202608290000017」（无悬空横杠）；divider 五处齐备（保单信息 / 保费信息 / 保险期间 / 关联单据 / 被保标的 1 项）；收讫状态渲染为绿色 tag「已收讫」而非裸码 COLLECTED、销售渠道「线上直销」而非 ONLINE、收费方式「免支付」而非 FREE；保单号与产品编码带 TiCopyText 复制图标。截图 .playwright-mcp/page-2026-09-21T09-53-02-666Z.png",
+          "真机失败态复核（/policy/detail/00000000-0000-4000-8000-000000000000）：渲染「保单详情加载失败，请重试」+「重新加载」按钮（截图 .playwright-mcp/page-2026-09-21T09-51-57-589Z.png）；**点击重试**后网络面板新增第二条同 URL 请求（#87，仍 404）证明重试真的重发而非空转；重试后快照中失败文案仍在、skeleton 计数为 0 —— 页面回到失败态而**未卡在骨架屏**（这正是「只写 skeleton 不写失败态」的核心风险：接口挂了会永远转圈）",
+          "门禁：vue-tsc 0 错 / ui-guard 40-40（全部 40 条规则达标）/ 契约 243 pass、0 fail、0 skip"
+        ],
+        "deviation": "五处与任务预设的偏离：\n① CP4 未「失败走 el-skeleton」，而是**两态分离**：el-skeleton 表加载中、el-empty 表加载失败（带「重新加载」）。任务原文「加载失败走 el-skeleton（对齐 claim/detail:66）」若照字面实现，接口失败会**永久停在骨架屏**——把「失败」显示成「很慢」，且 R7-13 已确立「全局 toast 瞬时、不构成失败态兜底」。\n② 分组不是「基本信息 10 个字段」单组，而是按语义拆三组（保单信息/保费信息/保险期间）：原 Tab 内字段 20+，单组仍是一堵墙；分组判据为「同一认知维度」，与 claim/billing 详情页一致。\n③ 任务 evidence 列为「有值但未渲染」的 marketPackageId / agentId **未渲染** —— 实测该两列全表 0/87 恒空（另三个恒空字段同理），渲染即造恒空列，触发 on_failure.cleanup。\n④ 未扩展渲染证件号等 PII：policy_holder_id_no 在库中为 18 位明文（无脱敏），全站既有口径即为明文（customer/detail:26），本任务未要求证件字段 ⇒ 不在单页扩 PII 暴露面、也不造成跨页不一致。\n⑤ 计划外补充两处（均系实施中真机复核发现）：页头 pageTitle computed 修掉悬空横杠；「被保标的」由裸 h4 并入 el-divider 并补 .subject-section 系列样式（该类样式全项目零定义，此前标题与表格无视觉关联）。",
+        "rejected_approach": "① 未按字段名接字典：collectionStatus→PAYMENT_COLLECTION_STATUS、collectionMode→PremiumCollectionMode（无对应字典）——前者与真实值域仅 PENDING 重合、会裸显英文码，后者与他域 ONLINE 同码不同义、会说错话。\n② 未渲染恒空的 5 个字段（payment_method/agent_id/policy_holder_gender/policy_holder_birth_date/market_package_id），尽管任务 evidence 把它们列为「有值未渲染」。\n③ 未保留原「el-button text :icon=CopyDocument」写法（全仓唯一，且 TiCopyText 自带非安全上下文 execCommand 降级）。\n④ 未把 collectionStatus 原始码直接交给 TiStatusTag 而不传 label：TiStatusTag 兜底表**按码取文案、无从分辨同码的两个语义**（R7-20 刚实证「标准体」被静默显示成「标准承保」），故此处显式传 label 并用局部 COLOR_MAP 映射颜色。"
+      }
+    },
+    {
+      "id": "R7-13",
+      "title": "表格错误态全站接入：接口 500 不得渲染成「暂无数据」",
+      "status": "completed",
+      "priority": "P1",
+      "depends_on": [],
+      "attempts": 1,
+      "max_attempts": 3,
+      "started_at_commit": "0f667a5",
+      "repos": [
+        "titanium-admin-web"
+      ],
+      "validation": {
+        "command": "npx vue-tsc --noEmit && node scripts/ui-guard.mjs && npm run test:contracts",
+        "timeout_seconds": 600
+      },
+      "on_failure": {
+        "cleanup": "按页面回滚；不得改 useTable 的清空行为（catch 清空 tableData 本身是对的，缺的是把错误传给 TiTable）"
+      },
+      "checkpoints": [
+        {
+          "step": 1,
+          "total": 4,
+          "description": "确认基础设施已就绪：useTable.ts:45 tableError、:90-92 catch 清空 + 置 tableError、:100 retry；TiTable/index.vue:23-27 错误块 + 重试按钮、:113 :error prop"
+        },
+        {
+          "step": 2,
+          "total": 4,
+          "description": "先修用户点名的三个保单链页面：policy/list:122-123、policy/intention:164、policy/application:159（均只解构 6 个字段，缺 tableError/retry）"
+        },
+        {
+          "step": 3,
+          "total": 4,
+          "description": "全站普查其余列表页并接入（当前全仓只有 maintenance/workbench 一个页面接了）"
+        },
+        {
+          "step": 4,
+          "total": 4,
+          "description": "补契约用例；真机验证错误态（用无效 token 复现时注意会被拦截器重定向到 /login，需另找注入失败态的手段）"
+        }
+      ],
+      "completed_at": "2026-09-21T17:07+08:00",
+      "result": {
+        "summary": "全站 30 个文件 / 35 个 TiTable 实例接入表级失败态（:error + @refresh 成对）：20 个 useTable 页经 codemod 统一解构 tableError/retry，10 个自定义加载页手工补 catch，其中 billing/payment-operations 由「表上方 el-alert」迁移为表内失败块；maintenance/workbench 因整页共用一份 load() 改走页面级失败态（el-alert + 重试），已在代码与契约白名单双处固化管理理由。新增 4 条契约用例钉住「成对」「在途反馈」「任意形态归一」「重试成功须清错」四条不变量。",
+        "evidence": [
+          "已亲验 views/policy/list/index.vue:122-123 —— 只解构 { tableData, tableLoading, pagination, fetchData, handleSearch, handleReset, onPageChange, onSizeChange }，无 tableError/retry，TiTable 也未传 :error",
+          "🔴 用户可见后果：接口 500 → tableData=[] → 表格渲染「暂无数据」，向用户断言「系统里没有这类数据」",
+          "⚠️ 该缺陷在 policy/list 的注释里已被 D-07 自称修复过，但实际未落地",
+          "基础设施亲验：useTable.ts:45 tableError、:86-92 catch 清空+置位、:100 retry；TiTable/index.vue:23-29 失败态优先于空态、:113 :error prop —— D-07/D-06 基础设施确实就绪，缺口纯在使用侧",
+          "改动面：30 文件 / 35 个 TiTable 实例。20 个 useTable 页（codemod 统一两行注入，属性每行一个与周边一致）+ 10 个自定义页（手工 catch）；billing/payment-operations 16 处替换完成「页面级 el-alert → 表级失败块」迁移，删除本地 errorText 与 .table-alert CSS",
+          "契约用例 tests/table-error-state-contracts.test.mjs（新建，4 例全绿）：① 引号感知标签扫描器逐个 TiTable 断言 :error 与 @refresh 成对（含覆盖量下限 instanceCount >= 30 防测空集恒真）；② 重试按钮在途 feedback（stub 声明 loading: Boolean，否则量到 undefined）；③ useTableError 任意形态归一 + 成功清错；④ useTable「失败→成功」序列（单测失败分支抓不到清错位置写错的回归）",
+          "🔴 为何必须成对：错误块里「重试」按钮是 emit('refresh')。全站此前无一个页面用 show-refresh，只接 :error 会渲染出一个点了没反应的重试按钮 —— 比不接更难排查（看起来功能是有的）",
+          "三门全绿：vue-tsc EXIT=0 / ui-guard EXIT=0（40-40）/ contracts EXIT=0（238-238，234 + 4 新增）",
+          "🔴 反向对照（证明用例①非恒绿）：删掉 policy/list 的 :error → 用例①变红并精确点名「src/views/policy/list/index.vue 第 1 个 TiTable（:error=false @refresh=true）」；文件字节级还原（diff -q 一致）",
+          "真机验证（:5199 Vite dev，4 种页面形态，全部用路由拦截注入 500、不碰凭据）：① policy/list（useTable 页）失败块渲染 + 真实后端文案「保单查询服务暂时不可用」上屏 + elTablePresent:false + emptyTextPresent:false（缺陷消失）+ paginationPresent:false + role=\"alert\"；重试失败时保持失败态不误清；撤拦截后重试恢复 20 行；挂住请求时 spinning:true。② maintenance/workbench（页面级）注入 500 → 「案件加载失败：保全服务暂时不可用」+ 重试 + saysNotFound:false（修复前此处正显示「未找到案件」）+ steps 消失，重试恢复。③ billing/payment-operations（3 tab）三个 tab 全通过 + legacyElAlert:0（迁移干净）+ emptyTextInVisiblePane:false + totalErrBlocksInDom 随访问 1→2→3，撤拦截重试恢复 14 行。④ system/dict（自定义 + 后置声明处理函数）未选类型时不挂载表格，点击 .dict-type-item 后失败块+重试，撤拦截重试恢复 11 行首格 CN —— 证明后置声明的 reloadDictData 运行期解析正常",
+          "健康加载全站回归（无任何拦截，29 条真实路由，路径由 dynamicRoutes.ts 缩进层级重建而非猜测）：0 个失败态误报、0 个 404 页；28/29 有表格（/system/dict 未选字典类型时不挂载表格，属设计）；console 全程只有预期的 500 网络日志，无 JS 错误、无警告",
+          "全站覆盖率复扫：30 文件 35 个 TiTable 实例，仅 maintenance/workbench 一处未接表级 :error —— 有意为之，已在代码注释与契约 PAGE_LEVEL_EXEMPT 双处固化理由"
+        ],
+        "deviation": "① 计划检查点 4 原文「用无效 token 复现错误态时注意会被拦截器重定向到 /login」被证伪：api/http.ts 的 401 走 handleUnauthorized 先刷新后重放，而不是直接跳登录，按原计划制造无效 token 得不到稳定的失败态。改用 Playwright 路由拦截注入 500 —— 该手段不触碰任何凭据，且能确定性复现，优于原计划。② 检查点 3 原文「当前全仓只有 maintenance/workbench 一个页面接了」被证伪：rule-engine/list 已接 :error=\"error\" + @refresh=\"load\"（用本地 error 变量，注释写明理由），是全站唯一达标页、也是自定义页的现成样板。故实际缺口是 34 个实例而非 35 个。③ 三项遗留未在本条修复，登记为后续：(a) system/dict 左侧字典类型列表（.dict-type-item 自定义列表，由 loadTypes 加载）无失败态，属同类缺陷但不在「表格错误态」范围，未静默扩范围；(b) DB t_maintenance_view.maintenance_id（雪花 id）走详情代理返回「资源不存在」，而 UI row.caseId 是 UUID 形态 —— 疑似 id 口径问题，与本条无关但值得另立；(c) 命名不一致：rule-engine/list 用 error，其余 29 处用 tableError，建议 R7-15 增补守卫时一并统一。",
+        "rejected_approach": null
+      }
+    },
+    {
+      "id": "R7-14",
+      "title": "http.ts 错误提示支持静默：调用方已 catch 的请求不应再弹全局红条",
+      "status": "completed",
+      "priority": "P0",
+      "depends_on": [],
+      "attempts": 1,
+      "max_attempts": 3,
+      "started_at_commit": "0f667a5",
+      "repos": [
+        "titanium-admin-web"
+      ],
+      "validation": {
+        "command": "npx vue-tsc --noEmit && node scripts/ui-guard.mjs && npm run test:contracts",
+        "timeout_seconds": 600
+      },
+      "on_failure": {
+        "cleanup": "回滚 http.ts；不得改为「全局不再弹错误」（会让真正未处理的失败静默）",
+        "cleanup_note": "默认行为必须保持弹框，静默是显式 opt-in"
+      },
+      "checkpoints": [
+        {
+          "step": 1,
+          "total": 3,
+          "description": "为 http 增加静默选项（如 config.meta.silent），:164/:185 等错误分支在静默时不弹 ElMessage，但仍 reject 携带业务消息的 handledError（保持 D-501-51 约定：reject 必须带已提示标记的业务消息）"
+        },
+        {
+          "step": 2,
+          "total": 3,
+          "description": "产品详情条款面板改走静默（R7-01 的 step 3 依赖此项），失败改内联提示"
+        },
+        {
+          "step": 3,
+          "total": 3,
+          "description": "🔴 必须保留 401/403 分支的非静默语义：401 走 D-501-29 单飞刷新重放，403 提示无权限；补契约用例"
+        }
+      ],
+      "completed_at": "2026-09-21T04:35:00Z",
+      "result": {
+        "summary": "http.ts 新增请求级 silentError 开关（axios 模块增强）；三处提示出口收敛为 shouldToast 单一守卫；reject 形态随静默切换。新增 5 例行为契约测试，全绿",
+        "evidence": [
+          "src/api/http.ts：declare module axios 增 AxiosRequestConfig.silentError；新增 shouldToast(config) / rejectError(message, config) 两个纯函数",
+          "🔴 错误分支的三处 ElMessage.error（403 / ECONNABORTED / 通用）收敛为出口一处 if (shouldToast(config)) ElMessage.error(message) —— 原写法加静默开关会各漏一次",
+          "成功分支同样加守卫；静默时 reject 未打标记的普通 Error，把提示决策权交还调用方（showErrorIfUnhandled 仍可兜底）",
+          "新增 tests/http-silent-error-contracts.test.mjs：5 例行为测试（真替换 axios adapter 注入受控失败 + 捕获 ElMessage.error 调用），实测 5 pass / 0 fail",
+          "🔴 反向守卫：用例②断言「不传 silentError 时提示照旧弹出」——否则「全站静默吞错」这种更严重的回归也能让用例①通过",
+          "用例⑤断言静默不吞会话处置：401 仍走 forceLogout + 清 token",
+          "实测发现 http.ts 可在 Node 下被导入（element-plus/axios 均可加载），故放弃项目既有的源码文本断言写法，改真行为测试"
+        ],
+        "deviation": "顺带修正成功分支「提示消息与 reject 消息不一致」：此前提示走 res.message || 请求失败、reject 走裸 res.message，后端未给 message 时调用方拿到空字符串，使 showErrorIfUnhandled 的兜底文案失效",
+        "rejected_approach": "在 http.ts 里按 URL 黑名单静默（会把同类问题固化成一串特例）"
+      }
+    },
+    {
+      "id": "R7-15",
+      "title": "ui-guard 新增规则 S-19~S-22，堵住已有守卫盲区（S-16~S-18 已由 R7-11 落地）",
+      "status": "completed",
+      "priority": "P2",
+      "depends_on": [
+        "R7-11"
+      ],
+      "attempts": 1,
+      "max_attempts": 3,
+      "started_at_commit": "0f667a5",
+      "repos": [
+        "titanium-admin-web"
+      ],
+      "validation": {
+        "command": "node scripts/ui-guard.mjs && npm run test:contracts",
+        "timeout_seconds": 600
+      },
+      "on_failure": {
+        "cleanup": "回滚新规则；不得为让新规则通过而放宽既有 S-03/S-01c/S-15",
+        "cleanup_note": "新规则必须能在改动前的代码上复现出违规，否则说明规则空转"
+      },
+      "checkpoints": [
+        {
+          "step": 1,
+          "total": 4,
+          "description": "S-19：S-15 的正则扩展到 text（与 link 同为零边框形态）——核保工单「审核」正是从这个缺口漏过去的"
+        },
+        {
+          "step": 2,
+          "total": 4,
+          "description": "S-20：操作列识别口径放宽（label∈{操作,查看,动作} 或区间内含 el-button）；并把 S-01c/S-03/S-15 的锚点从 label=\"操作\" 换成该口径（policy/detail 的 label=\"查看\" 操作列当前完全不在监管内）"
+        },
+        {
+          "step": 3,
+          "total": 4,
+          "description": "S-21：TiStatusTag 调用点必须显式传 :label（allowlist 注明理由，如 maintenance/workbench 的任务状态无字典）—— 支付运营 Payment状态列未传 label、靠兜底表把字典「待缴费」说成「待处理」，正是这个缺口；同时校 COLOR_MAP 与 STATUS_TEXT 键集合一致，堵住「加了颜色却没加文案 ⇒ 彩色标签配英文码」"
+        },
+        {
+          "step": 4,
+          "total": 4,
+          "description": "S-22：「作者自己 catch 了，就别再让拦截器替用户弹一次」——凡 `<apiCall>(...).catch(` 形态（作者已决定就地兜底）的调用必须显式传 silentError: true。判据来自 R7-01：产品详情条款面板早已 .catch(() => null) 并就地显示「条款信息缺失」，却仍弹全局红条「资源不存在」，用户读作「整页加载失败」。允许 allowlist 并在该行注明理由（如确需全局提示的兜底场景）。"
+        }
+      ],
+      "completed_at": "2026-09-21T18:28+08:00",
+      "result": {
+        "summary": "ui-guard 新增 S-19~S-22 四条规则（总数 40 → 44），把既有守卫的三处盲区钉死：S-19 把 S-15 的禁用形态从 link 扩到 text（核保工单「审核」正是从这个缺口漏过去的）；S-20 给「操作列」建可核验口径并**用它替换 S-01c/S-03/S-15 的锚点**（三条件则一：ti-action-column 类 / label∈{操作,查看,动作,处理} / 列内含固定文案按钮，并排除「按钮文案是插值」与「列内含录入控件」），使 policy/detail 两处 label=\"查看\" 的操作列首次进入监管；S-21 要求 TiStatusTag 调用点显式传 :label（豁免须登记并注明理由）且 COLOR_MAP 与 STATUS_TEXT 键集合双向对账；S-22 要求凡「已就地 .catch()」的 API 调用显式传 silentError:true。新规则全部先在**改动前的代码**上复现出违规（负向对照两轮），非空转。同步修复页面侧 11 处：policy/detail 两处操作列（宽度 100 → 120 档、link → 常规按钮、挂 ti-action-column）、maintenance/workbench「冲突处理」列（按需建列 + 280 档）、dict/role 状态列补字典 label、TiStatusTag 补 GENERATED/UNKNOWN 两码色、6 处 API 调用补 silentError（其中 3 处需先给 getTemplate/getLifeProductConfig/listRuleSets 扩可选 config 参数，向后兼容）。门禁：ui-guard 44/44 全绿（原 6 条 FAIL）、契约 246/246、vue-tsc 0 错。",
+        "evidence": [
+          "规则数 40 → 44：`node scripts/ui-guard.mjs` 输出「全部 44 条规则达标」；改动前基线同一命令为 40 条中 6 条 FAIL（S-03 6 档、S-01c:178、S-15 policy/list:123、S-21 role:47、S-22 template-config:551、S-16:178 width=100 等）",
+          "S-19（禁 el-button text，与 link 同为零边框形态）实测全站 0 处违规；**负向对照**：在 policy/list:123 注入 `<el-button text :icon=\"View\">` 后立刻变红且精确指向该行 —— 证明规则有牙而非空转（注入已清理，`grep -c NEGCTL_INJECT`=0）",
+          "S-20 口径覆盖度自检：旧窄口径（label=\"操作\"）识别 46 列、新口径识别 49 列，差额 3 处正是 policy/detail:178、policy/detail:221、maintenance/workbench:141 —— 即「此前完全不在监管内」的操作列；下限 MIN_ACTION_COLS 设 48（实测 49，余量 1）",
+          "S-20 第一判据（wide ≥ narrow）在负向对照中证明是**兜底而非主力**；第二判据（wide ≥ 下限）才是**唯一能发现「所有下游规则集体空转」的哨兵**：把 blockColumns 注入成 `return []` 后实测 wide=0/narrow=0，判据一因 0<0 为假而放行，**只有 S-20 变红**，同时 S-01c/S-03/S-15/S-16/S-19 全部假绿（各自违规数都成了 0）—— 该实测结论已写入规则注释",
+          "S-20 已知边界（不声称能覆盖的）：单点漏认（如把 ACTION_LABELS 里的「查看」删掉）**不会触发任何判据**，因 policy/detail 两列被第三条「列内含固定文案按钮」判据兜住、wide 不变。规则管的是「底盘整体塌陷」，此边界已写入注释",
+          "S-21（TiStatusTag 调用点必须显式传 :label）：全站 59 个调用点，缺 label 由 3 → 0；COLOR_MAP 由 75 → 77 码（补 GENERATED=primary / UNKNOWN=info）并与 STATUS_TEXT 的 72 码做**双向**键集合对账（含「有色无文案 ⇒ 彩色标签配英文码」）",
+          "S-21 僵尸豁免校验实测生效：workbench 的豁免键写的是「文件:行号」，给该文件补 2 行注释后行号 193→195 漂移，规则立刻把过期键顶成 offender（机制按预期工作，非误报）；同步更新键值并在注释里固化「行号漂移是**有意保留的耦合**，对不上必须人工回读确认，不得改为模糊匹配静默跟随」",
+          "S-22（作者已 .catch() 的调用必须传 silentError）：8 个「<apiCall>(...).catch(」形态调用点中缺 silentError 由 6 → 0；为承接该参数给 getTemplate / getLifeProductConfig / listRuleSets 三个函数补 `config?: AxiosRequestConfig`（可选参数，向后兼容）",
+          "🔴 S-22 行为级对照实验（真机 + 路由拦截，本轮最强证据）：用 page.route 让 `products/templates/TPL-6D637E7F` 返回 500 —— (a) 带 silentError 时 `interceptedRequests:1, toastCount:0`（页面就地降级显示「模板信息缺失」）；(b) HMR 临时去掉 silentError 后同一拦截 `interceptedRequests:1, toastCount:1, toasts:[\"注入失败（负向对照）\"]`；(c) 恢复后回到 `toastCount:0`。三次均记录拦截命中数，排除「请求根本没发」的假证据",
+          "🔴 负向对照第 1 轮（页面侧回退 4 处：policy/detail:178 回旧形态 width=100 + 去 class-name + link 按钮、policy/list:123 改 text、role:47 去 :label、template-config:550 去 silentError）→ **7 条规则同时变红**：S-03 报 6 档、S-01c:178、S-15 policy/list:123、S-16:178 width=100、S-19 policy/list:123、S-21 role:47、S-22 template-config:551，逐条精确命中注入点",
+          "负向对照后工作树与备份逐文件 diff 确认只剩有意的注释/豁免键更新（备份 /tmp/negctl-r7-15.tgz 含路径、/tmp/negctl-r7-15-ui-guard.mjs）",
+          "真机复核（Playwright 驱动**已认证的浏览器会话**，全程未读取/回显任何凭据）：/system/dict 状态列显示中文「启用」（此前为英文码 ACTIVE）、console warning 0；/system/role 同；/maintenance/list 操作列「工作台」为 120 档常规按钮且不换行；/policy/detail/8b32197a-… 保全记录 tab 43 行、操作列「工作台」常规按钮带图标；点击跳 /maintenance/workbench/1d2c6cec-… 正常且流程时间线渲染，该页「拟变更值」行内编辑列同时印证 S-20 的录入控件排除条件",
+          "门禁终态：ui-guard 44/44 全绿 + `npm run test:contracts` 246/246 pass + `npx vue-tsc --noEmit` 零输出通过"
+        ],
+        "deviation": [
+          "S-20 口径比 checkpoint 字面多两处出入，均为**实探后收敛**：① label 集合多纳入「处理」（实探命中真实操作列）；② 增加两个排除条件——「按钮文案是插值 {{ }}」（名称即入口，不是动作，14 处初版误报中有 11 处属此）与「列内含录入控件」（行内编辑列，maintenance/workbench「拟变更值」3 处）。新纳入数从 14 收敛到 3",
+          "S-20 下限 MIN_ACTION_COLS 调了三档：初版 50 > 实测 49 会自触发 FAIL → 改 45；负向对照后判定 45 余量过大（漏认 4 列仍绿，违反「规则不得空转」）→ 收紧到 48（实测 − 1）",
+          "S-21 豁免键用「文件:行号」而非稳定标识，行号随同文件上下文增删而漂移（193→195）；判定为**有意保留的耦合**：行号对不上时必须人工回读该处确认「仍是同一个无从取 label 的调用点」，而非靠模糊匹配静默跟随。已同步更新键值并在规则注释中固化该判断",
+          "maintenance/workbench「冲突处理」列改为**按需建列**（v-if 有冲突行才渲染），本轮取样案件零冲突 ⇒ 该列真机未渲染，真机证据未覆盖该列；其「宽度落在档位集合内 + 挂 ti-action-column」由 S-01c/S-16 机械校验覆盖",
+          "S-22 的 6 处修复中有 3 处需先扩展 API 函数签名（getTemplate/getLifeProductConfig/listRuleSets 增加可选 config）；为可选参数，既有调用点零改动、向后兼容",
+          "dict/role 状态列的中文文案与 TiStatusTag 兜底表恰好一致，故真机证据只证明「无英文码 / 无 console 告警」，不能单独证明文案来自字典；该来源由门禁 S-21（调用点必须显式传 :label）保证",
+          "UI-REVIEW.md 未同步更新（仍记 24 条基线）：查证 R7-11 落地 S-16~S-18 时亦未更新该文档，按既有惯例处理 —— 规则真源是 scripts/ui-guard.mjs + scripts/ui-guard.config.json"
+        ],
+        "rejected_approach": [
+          "不把 S-20 写成「新纳入列数 ≥ 固定值」：那会把规则钉死到具体文件行，页面正常增删即假红。改为「口径覆盖度自检」——检查**新口径识别数不低于旧窄口径**且不低于一个宽裕下限，只声称能发现「解析器整体失效」",
+          "不给 S-21 的豁免键改用模糊匹配（如按 value 表达式匹配）：行号漂移必须人工回读确认，静默跟随等于放弃复核，恰恰会放过「豁免点已被替换成另一个无从取 label 的调用」",
+          "silentError 不做全局默认开启：写操作与主数据的失败必须让用户看见，只有「作者已就地 catch 的附属数据」才静默。故规则形态是「已 .catch() ⇒ 必须显式 silentError」而非「默认关闭 toast」",
+          "S-01c 的计数型判据不写成 `eq 总数`（原 `eq 46` 的教训）：口径放宽后 total 变 49、返回 46 ⇒ 恰好等于旧目标 ⇒ 静默假绿。已改为**违规计数 + lte 0**，凡「全部 X」语义一律如此"
+        ]
+      }
+    },
+    {
+      "id": "R7-16",
+      "title": "全站状态语义色补全：TiStatusTag.COLOR_MAP 缺键导致大量状态落灰",
+      "status": "completed",
+      "priority": "P0",
+      "depends_on": [],
+      "attempts": 1,
+      "max_attempts": 3,
+      "started_at_commit": null,
+      "repos": [
+        "titanium-admin-web"
+      ],
+      "validation": {
+        "command": "npx vue-tsc --noEmit && node scripts/ui-guard.mjs && npm run test:contracts",
+        "timeout_seconds": 600
+      },
+      "on_failure": {
+        "cleanup": "回滚 COLOR_MAP 增量；不得用「删掉 TiStatusTag 调用改手写 el-tag」绕过"
+      },
+      "checkpoints": [
+        {
+          "step": 1,
+          "total": 4,
+          "description": "按 15 个 status 类字典的 value 逐个对 COLOR_MAP 求差，确认缺键清单（不要照抄侦察报告，自己重跑一遍比对）"
+        },
+        {
+          "step": 2,
+          "total": 4,
+          "description": "补全无歧义的缺键（OVERDUE→danger、PUBLISHED→success、RETIRED→info、PENDING_APPROVAL→warning 等）；🔴 同一状态码在不同域语义不同的（如 ISSUED、APPROVED）不得全局改，走页面局部 :color"
+        },
+        {
+          "step": 3,
+          "total": 4,
+          "description": "STATUS_TEXT 同步补中文文案，避免新增 COLOR_MAP 键后仍 console.warn 裸显英文码"
+        },
+        {
+          "step": 4,
+          "total": 4,
+          "description": "真机复核重点页：/maintenance/list 生效状态列（现「已生效」与「生效失败」同灰）、/maintenance/configuration、/billing/list"
+        }
+      ],
+      "completed_at": "2026-09-21T04:32:51Z",
+      "result": {
+        "summary": "TiStatusTag 状态语义色补全：COLOR_MAP 31→74 键（+43）、STATUS_TEXT 38→69 键（+31），全站「状态落灰」从 44 个值降到 0；并按约定用页面局部 :color 处理域内歧义码（保全项配置 APPROVED 取蓝）。附带修好相邻的文案缺陷：支付运营 Payment状态列未传 label。",
+        "evidence": [
+          "普查口径与结果（自建 /tmp/census.mjs，读 DB 导出的 23 个状态类字典）：63 个去重码中，修复前 37 个「全站任何页面都落 info 灰」+ 7 个「仅一处页面局部有色」；修复后 → 全部落灰 1 个（GENERATED，document/list 有意取蓝）、全站灰 0 个、缺中文文案 0 个",
+          "🔴 普查脚本首版口径有缺陷：把「任一页面局部覆盖过」算作已覆盖，于是 FAILED（只在 notification/list 有色）被判为正常 —— 实际它在缴费/理赔/保全生效页全显示为灰。改按「全局 COLOR_MAP 是否命中」为唯一口径后复现，这正是用户「保全项配置状态没做颜色」的同源根因",
+          "不可回归校验（脚本比对 HEAD vs 工作树）：COLOR_MAP 31→74 键、**值改动 0、键删除 0**；STATUS_TEXT 38→69 键、唯一值变更 NOT_STARTED「未开始」→「未发起」（对齐字典标签）",
+          "真机（工作树经 vite:5199，先用 curl 抓 /src/components/TiStatusTag/index.vue 确认 dev server 服务的确实是当前文件，非 8888 的旧构建包）：/maintenance/configuration 已发布=绿 success（修复前灰）、已退役/草稿=灰（有意中性）；/maintenance/list 已生效=绿、生效失败=红、未发起=灰（修复前这三者连同「已生效」全是灰，无法区分）；/document/list 已生成=蓝 primary、已签署=绿（验证域内 :color 覆盖通路端到端有效）；/billing/payment-operations 收款对账页 Payment状态列 = 缴费成功(绿)/缴费失败(红)",
+          "质量门：npx vue-tsc --noEmit 0 错；node scripts/ui-guard.mjs 37/37；npm run test:contracts 229/229（含本会话新增 5 例 http 静默契约）",
+          "🔴 排除的假发现①：system/role 的 row.status 后端返回 \"0\"/\"1\"（真机确认），但 src/api/role.ts:24 的 CODE_TO_STATUS 已在 API 层归一为 ACTIVE/INACTIVE —— 该页并非裸显数字码",
+          "🔴 排除的假发现②：控制台 4 条 claim-config 500（payout-rules/document-templates/time-limit-rules/flow-templates）经现栈 curl 复核全部 HTTP 200，属陈旧会话（8888 旧构建包）残留，不计为缺陷"
+        ],
+        "deviation": "检查点 2 要求「同码跨域语义不同的不得全局改」，执行时的两处判断：① SUBMITTED 全局取 warning（不新增局部覆盖）—— 它与 regulatory/list 既有的域内选择一致，且与 PENDING_APPROVAL/PENDING_AUDIT/MANUAL_REVIEW 同族（都在等人推进）；② APPROVED 保持全局 success 不动（它会重着色理赔/保全案件的「已通过」），改在保全项配置页加 STATUS_COLOR 局部取蓝，使「已审批(蓝)」与「已发布(绿)」可辨。另 GENERATED 故意不全局收录：其唯一消费者 document/list 有意取蓝，收录 success 会在同一码上留下第二份互相矛盾的判断。",
+        "rejected_approach": [
+          "复用 useDict.ts:64-67 的 getColor()（读 item.extra.color）—— 已核实 t_dict_data 无 extra 列且该方法零调用点，是死路",
+          "为 APPLIED 补兜底文案 —— 它在 MAINTENANCE_EFFECT_STATUS 是「已生效」、在 PAYMENT_CALLBACK_STATUS 是「已应用」，取任一个都会在另一域说错话，按 STATUS_TEXT 既有判据（语义核心一致才收录）不收录，并已写入注释说明",
+          "抹平三处页面局部映射以消除「同一判断两处清单」—— 它们是页面有意的域内取舍（regulatory 的 PENDING 取灰以与已上报的橙拉开区分度），删除反而丢信息；改为在 COLOR_MAP 头部逐条写明四处覆盖各自的理由与「勿抹平」，把隐性分歧变成显式约定",
+          "按码面直译取色 —— 改为先取 DB 里每个值的真实中文标签（如 MAINTENANCE_EFFECT_STATUS.NOT_STARTED 是「未发起」而非「未开始」、CLAWED_BACK 是「已回拨」）再定色，避免凭英文码猜业务语义"
+        ]
+      }
+    },
+    {
+      "id": "R7-17",
+      "title": "保全工作台：流程任务改 el-steps 概览 + .two-column 栅格塌陷修复 + 字段变更表横向溢出",
+      "status": "completed",
+      "priority": "P1",
+      "depends_on": [
+        "R7-16"
+      ],
+      "attempts": 1,
+      "max_attempts": 3,
+      "started_at_commit": "0f667a5",
+      "repos": [
+        "titanium-admin-web"
+      ],
+      "validation": {
+        "command": "npx vue-tsc --noEmit && node scripts/ui-guard.mjs && npm run test:contracts",
+        "timeout_seconds": 600
+      },
+      "on_failure": {
+        "cleanup": "回滚；不得用 el-timeline 硬画只有 3/6 节点的时间轴（会让用户以为另外 3 步没执行）"
+      },
+      "checkpoints": [
+        {
+          "step": 1,
+          "total": 4,
+          "description": "修 .two-column：workbench/index.vue:714 的 1fr 1fr → repeat(2, minmax(0, 1fr))（grid 子项默认 min-width:auto，左卡内 el-table 列 min-width 合计 ≥560 把左列顶到 600，右卡只剩 298 ⇒ el-descriptions 标签被压到 50.5px = 1 字/行）"
+        },
+        {
+          "step": 2,
+          "total": 4,
+          "description": "流程任务区（:150-197）上方加 el-steps :direction=\"vertical\" 概览带，🔴 保留现有 TiTable（表里挂着领取/开始/更多 三类行操作，不可被 steps 取代）"
+        },
+        {
+          "step": 3,
+          "total": 4,
+          "description": "🔴 步骤时间线只能用 sequence+stepType+status 画全 6 步；时间/操作人作为「有则显示」的 description —— 实测 6 个任务里只有 seq 2/3/5 的 lastOperation 非空，案件级无审计事件源（MaintenanceCaseDetail 无 audits/history，代理无审计端点）"
+        },
+        {
+          "step": 4,
+          "total": 4,
+          "description": "字段变更表（:40-126）列 min-width 合计 1230 vs 容器 874（隐藏 356px），收敛列宽或改横滚提示；真机复核"
+        }
+      ],
+      "completed_at": "2026-09-21T06:37:36Z",
+      "result": {
+        "summary": "四处缺陷全部落地并经真机四档复核：① .two-column 栅格塌陷根治（grid 子项 min-width:auto 是根因，改 repeat(2, minmax(0,1fr))）；② 流程任务区加 el-steps 概览带（保留 TiTable 行操作）；③ stepType/mode 由裸英文码改字典本地化；④ 字段变更表列宽收敛 + 「冲突处理」列改按需建列。收尾全景扫描再发现并同批修掉三处同类缺陷：el-steps 当前步不高亮、TiStatusTag 缺 3 个保全任务状态码、「冲突」列裸渲染英文枚举码。",
+        "evidence": [
+          ".two-column 塌陷根治（1280 档实测）：两列由 689 / 115.9 变 369 / 369；右卡 el-descriptions 标签由 37px 宽 × 1553px 高（逐字竖排成一列）回到 55.8px 宽 × 63-89px 高（2-3 字/行）。1920 档 689/689、标签 79.8px × 40px —— 该缺陷在 1920 下因容器 1394 = 689×2+16 恰好够而不可见，必须降到 1280 才复现",
+          "流程概览带真机实测：1920 档 1354 × 113px、6 个节点各 259.2px、标题零溢出；768 档自动切纵向（el-steps--vertical，242px 高）",
+          "🔴 真机发现并修掉 el-steps 当前步不高亮：flowStepStatus 对未完成任务返回 'wait'，而 EP 的 status 优先级高于父级 :active 推导，把当前步压成灰。改返回空串交给 EP 按 index 推导后，实测 stepsCls = [is-finish, is-finish, is-finish, is-process, is-wait, is-wait, is-wait]",
+          "stepType / mode 由裸英文码改字典本地化（复用同一份 t_dict_data，该字典在保全项配置编辑器早已被消费）：CREATE / REQUIRED / SKIPPED → 创建保全 / 必需 / 跳过，含 UNDERWRITING → 核保",
+          "🔴 真机 console 报 TiStatusTag 缺码并逐行告警：MaintenanceWorkflowTaskStatus 10 值域中 WAITING_CONDITION / WAITING_EXTERNAL / QUOTED 三码未收录（此前只补了 READY / IN_PROGRESS / SKIPPED），按既有收录判据（只在该枚举出现、语义无歧义，文案逐字取自枚举中文 name）补 STATUS_TEXT + COLOR_MAP；修复后 console 0 错误 0 警告，taskStatusTexts 含「等待外部处理」",
+          "字段变更表：无冲突时总宽 1490 → 1060px，1920 档零横滚；1280 档横滚 346px。🔴 判据订正：EP el-table 的真滚动容器是 .el-scrollbar__wrap（overflow-x:auto），.el-table__body-wrapper 是 overflow-x:hidden —— 首轮读后者得到 scrollWidth == clientWidth 的假阴性，改用前者实测 scrollLeft 0 → 313（max 313）证明横滚可达",
+          "「冲突处理」列改按需建列：判据取 fieldEntryRows.some(isConflict) 而非 conflictCount（后者分母含被字段配置判为不可见/不可编辑的行，会造出「列在、整列全是 -」的浪费）。该列固定 min-width 260px，是这张表在 1920 以下视口必然横滚的主因",
+          "🔴 收尾全景扫描再发现一处同类缺陷并同批修复：「冲突」列原为 <el-table-column prop=\"conflictStatus\"> 裸渲染（非 TiStatusTag），会把枚举码直接印上屏。DB 实测 t_maintenance_field_change_view 共 26 行：NONE 22 行、RESOLVED 4 行、DETECTED 0 行 —— 即这 4 行的 RESOLVED 原样上屏为英文码且无任何颜色。改用页面级 CONFLICT_TAGS 映射（NONE 及未保存草稿行渲染为「-」，DETECTED → 红「待解决」、RESOLVED → 绿「已解决」）",
+          "🔴 同批收敛一处臆造码：isConflict 原匹配 ['DETECTED', 'CONFLICT']，而 CONFLICT 在保全域后端不存在（MaintenanceFieldConflictStatus 仅 NONE / DETECTED / RESOLVED；全仓 CONFLICT 字面量只用于 HTTP 状态语义）。改为 === 'DETECTED'，与展示映射共用同一值域",
+          "质量门：vue-tsc 0 错 / ui-guard 40-40 / 契约 234-234 全绿",
+          "✅ 补齐真机证据（浏览器重新登录后，SESSION-6 续）：「冲突」列色彩映射零改库验证 —— 用库内既有 RESOLVED 数据（案件 34e5dcdd-77c4-5b94-8526-936ebd1c7430）实测渲染「已解决」+ class `el-tag--success`；NONE 行（案件 0385f051-…-8fb182d8afa3）实测渲染 `-` 且无 el-tag",
+          "✅ 补齐真机证据：「冲突处理」列按需建列的**正向分支** —— 把 34e5dcdd-… 那行临时置 DETECTED 后，该列**出现**且三个按钮齐全（采用当前值 / 采用拟值 / 重新录入），单元格实测宽 267px（≥ min-width 260）；同刻「冲突」列变红「待解决」（`el-tag--danger`）；表格 1354px 零横滚。复原数据后刷新，该列**消失** —— RESOLVED 行不出处置列（它已是终态，无需处置按钮），可逆性成立",
+          "🔴 临时改库的数据已复原并核回原始分布：NONE 22 / RESOLVED 4 / DETECTED 0（改前改后逐值一致）",
+          "真机复测（1920/1280/768 三档，案件 0385f051-…）：1280 档 `.two-column` 的 gridTemplateColumns 实测 `369px 369px`、el-descriptions 标签 234.1px × 40px 单行；768 档 flow-steps 自动切 `el-steps--vertical`（269px 高）且当前步仍 `is-process`，字段变更表 8 列全部落在各自 min-width 下限（合计 1060，clientWidth 900），滚到 max 后末列右缘 924 = 表格右缘（**0px 被裁**）；console 全程 0 错误 0 警告",
+          "🔴 探针二次订正（本轮实测踩到）：① EP 的**步骤状态类挂在 `.el-step__head`**（不是 `.el-step`）——查 `.el-step` 只拿到 `is-horizontal`，看着像「组件根本没有状态类」；② EP 表头与表体是**两个独立容器**，表头靠 JS 在滚动事件里同步 scrollLeft，**发生在下一帧** —— 设 `scrollLeft` 后立刻量几何会得到「末列被裁 160px」的**假缺陷**，须 `await` 两帧再量。两条均已写入项目记忆"
+        ],
+        "deviation": "① 检查点 2 原文要求 :direction=\"vertical\"，实改为响应式 isNarrowScreen ? 'vertical' : 'horizontal' —— 宽屏 6 节点横排（各 259.2px）信息密度更高且不占纵向空间，窄屏才切纵向。② 检查点 4 的「改横滚提示」未采用：改为收敛列宽 + 冲突处理列按需建列，源头消除溢出而非提示溢出。③ 1280 档仍有 346px 横滚，根因是 .ti-page 无 max-width 而 DataPanel 固定 280px 吃掉内容区（800px），属布局固有、非本任务可解。④ 🔴 曾登记「冲突处理列正向分支」与「冲突列色彩映射」两项缺真机证据（浏览器上下文丢失、需重新登录）；**该缺口已于 SESSION-6 续作中补齐**（用户重新登录后完成，见 evidence 末四条），无遗留未验证项。",
+        "rejected_approach": "用 el-timeline 画流程任务（只有 3/6 节点非空，用户会以为另外 3 步没执行）｜ 把 NONE / DETECTED / RESOLVED 收进 TiStatusTag 全局兜底表（NONE 与 RESOLVED 是跨域通用词，在不同字典里含义不同，收进全局表会在别处说错话；按该组件注释给出的口径由页面覆盖）"
+      }
+    },
+    {
+      "id": "R7-18",
+      "title": "保全项配置：编辑表单标签由「全部竖排在上」改横排 + 表单栅格与表格溢出收敛",
+      "status": "completed",
+      "priority": "P1",
+      "depends_on": [
+        "R7-16"
+      ],
+      "attempts": 1,
+      "max_attempts": 3,
+      "started_at_commit": "0f667a5",
+      "repos": [
+        "titanium-admin-web"
+      ],
+      "validation": {
+        "command": "npx vue-tsc --noEmit && node scripts/ui-guard.mjs && npm run test:contracts",
+        "timeout_seconds": 600
+      },
+      "on_failure": {
+        "cleanup": "回滚 label-position 改动；不得改 el-descriptions 的 :column（详情抽屉实测标签 150.1px/1 行，不是问题现场）"
+      },
+      "checkpoints": [
+        {
+          "step": 1,
+          "total": 3,
+          "description": "MaintenanceConfigurationEditor.vue:3 去掉无条件 label-position=\"top\"，改照本仓既有响应式范式（pricing-plans:99 / commission-schemes:72）：useMediaQuery(MEDIA_MAX_MOBILE) 窄屏 top / 宽屏 right + label-width"
+        },
+        {
+          "step": 2,
+          "total": 3,
+          "description": "编辑器 :222 的 form-grid 与 :2 抽屉宽度、字段白名单表 10 列合计 1228px 装进 ~820px（横滚、「校验提示」列被切）一并收敛"
+        },
+        {
+          "step": 3,
+          "total": 3,
+          "description": "真机复核 1920/1440/1280/768 四档：标签与输入框同行、不折字、表格不裁列"
+        }
+      ],
+      "completed_at": "2026-09-21T06:37:36Z",
+      "result": {
+        "summary": "编辑器抽屉的无条件 label-position=\"top\" 改为响应式（窄屏 top / 宽屏 right），抽屉 860 → 1040px，字段白名单表 10 列 1228 → 986px，.form-grid 加 minmax(0,1fr)。真机四档复核全部达成「标签与输入框同行、不折字、表格不裁列」。举一反三修掉 maintenance/create 唯一一处把「宽表单」令牌反用于竖排标签的地方。",
+        "evidence": [
+          "现场定位：用户原话指向 configuration/index.vue:68 的「查看」抽屉（标题字面就是「保全项配置详情」），但实测该处 label 150.1px 宽 / 1 行 / writing-mode horizontal-tb —— 其中 178px 高的是**值区多行文本撑高的单元格**、标签被垂直居中，**不是**问题现场",
+          "真现场是编辑器抽屉 MaintenanceConfigurationEditor.vue:3 的无条件 label-position=\"top\"：实测 18/18 个 form-item 的 labelTop 94 vs contentTop 124（标签全部排在输入框上方）。标签文字本身横排，故用户说的「竖向」指标签与字段上下堆叠这一排布",
+          "修复：抽屉 size 860 → 1040px；标签改响应式 isNarrowScreen ? 'top' : 'right' + label-width isNarrowScreen ? 'auto' : '110px'（范式抄自本仓既有的 product/pricing-plans:99 与 channel/commission-schemes:72）",
+          "字段白名单表 10 列由 1228px 收敛到 986px：原列宽 210/130/160/190/180/70/70/80/80/58 中，四个纯 checkbox 列各占 70-80px 却只需容下 3 字表头，统一压到 68px；可输入的列按控件真实所需给到能看见内容的宽度",
+          ".form-grid 由 1fr 1fr 改 repeat(2, minmax(0, 1fr))（grid 子项默认 min-width:auto 会把内容最小宽度变成列宽下限）",
+          "真机四档（:5199 vite dev）：1920 / 1440 / 1280 → 抽屉宽 1040、label-right、18/18 标签与输入框同行、表格零横滚；768 → 抽屉 737.3、label-top、单列、输入框 683px、表格横滚 313px 可达且列宽零裁切",
+          "举一反三：maintenance/create/index.vue:21 是全站唯一把 ti-form-width--wide 令牌**反着用**的地方 —— 该令牌在 variables.scss:242 的注释写着「宽表单：含 520px 级宽控件（标签 140 + 控件 520 = 660，640 放不下）」，即它本来就是为横向标签准备的，同令牌另 4 处（product/template-config:50/138/196/266）也都配 label-width=\"140px\"。一并改响应式：真机 1920 档 5/5 标签与输入框同行、输入框 566px；768 档 top、输入框 676px",
+          "🔴 全站 9 处 label-position 的处置判据（不一刀切）：精算工作台 4 处在 640/720px 抽屉里跑双列栅格，横向标签会把输入框挤到约 190px，top 反而合适，故保留；只改本处 860px（→1040px）抽屉",
+          "质量门：vue-tsc 0 错 / ui-guard 40-40 / 契约 234-234 全绿"
+        ],
+        "deviation": "检查点 2 只要求「装进 ~820px」，实际同时做了加宽与收敛：单靠把表格列宽压到 986px 仍大于 860px 抽屉的内容区，且 20 余个字段改用横向标签后需要 label(110px) + 控件的横向空间，只收敛不加宽会在宽屏仍然横滚。抽屉加宽与列宽收敛必须同批做。",
+        "rejected_approach": "给 ui-guard 加「禁无条件 label-position=top」规则（会把 640/720px 窄抽屉里合理的 top 一并判违规）｜ 改 configuration/index.vue:68 详情抽屉的 el-descriptions :column（实测标签 150.1px / 1 行，不是问题现场，改了是误伤）"
+      }
+    },
+    {
+      "id": "R7-19",
+      "title": "账单查询分页：第 1 页无分页器 + 第 2 页 total 虚高造出幻影第 3 页",
+      "status": "completed",
+      "priority": "P0",
+      "depends_on": [],
+      "attempts": 1,
+      "max_attempts": 3,
+      "started_at_commit": "7e3e599a3",
+      "repos": [
+        "titanium-billing",
+        "titanium-admin"
+      ],
+      "validation": {
+        "command": "cd /Users/sunwei/titanium-project/titanium-billing && mvn -q test",
+        "timeout_seconds": 900
+      },
+      "on_failure": {
+        "cleanup": "回滚；🔴 不得改前端 useTable.ts:66-70 的 page/pageNum 双写（注释已说明是后端参数命名不统一的兼容层，单改会让别的域翻页失效）"
+      },
+      "checkpoints": [
+        {
+          "step": 1,
+          "total": 4,
+          "description": "确认根因两段：① 第 1 页 total 恒 null；② 第 2 页 total 虚高。先自己重跑 p1/p2/p3 三页对拍并核 DB 真值（侦察报的是 真值 35 / UI 55 / 幻影第 3 页）"
+        },
+        {
+          "step": 2,
+          "total": 4,
+          "description": "根治：titanium-billing BillController 的 /web/v1/bills/search 由裸数组改为带 total 的分页体（candidates 在 skip 之前已完整存在，total = candidates.size() 是 O(1)，无需额外查询）"
+        },
+        {
+          "step": 3,
+          "total": 4,
+          "description": "🔴 同步改 tests/total-unknown-contracts.test.mjs —— 它把「total 为 null 时降级成分页控件」钉成契约，改成第 1 页也显示正常分页器后该用例必红"
+        },
+        {
+          "step": 4,
+          "total": 4,
+          "description": "补 BFF 侧对 resolveBareArrayTotal 页码基准的测试（现无任何覆盖）；同源受害者 /billing/commission-payables 一并复核"
+        }
+      ],
+      "completed_at": "2026-09-21T05:25:00Z",
+      "result": {
+        "summary": "账单查询分页两段根因均已根治：下游 titanium-billing 的 /web/v1/bills/search 由裸数组改为 {list,total} 分页体（total 取 candidates.size()，O(1) 无额外查询），BFF 侧 Feign 契约同步强类型化为 BillPageMirror；幻影第 3 页消失（第 2 页不再虚报 55）。🔴 收尾时在真机复核现场发现更大缺陷类：BFF 有 13 个列表端点把前端 1 起页码原样透传给「认 0 起 page」的下游，首屏整体错位一页；其中账单页的同源受害者「佣金应付」与两处首屏完全空白的页面（渠道 3 条、监管 1 条）已一并修复并另立 R7-21 全站收口。",
+        "evidence": [
+          "真机对拍：第 1 页 .el-pagination **不存在**（退化成「当前页 20 条，总数未知 + 上一页/下一页」）；第 2 页显示「共 55 条」并造出可点的第 3 页（点进去 0 行）",
+          "接口实测同一会话：pageNum=1 → {list:20, total:null}；pageNum=2 → {list:15, total:55, totalPages:3}；pageNum=3 → {list:0, total:60}；**DB 真值 35（2 页）**",
+          "根因① 下游 BillController.searchBills 返回**裸数组** ResponseEntity<List<BillVO>>（内部 .skip(page*size).limit(size)，不返回 total）→ ProxyResponseBodyAdvice.isRootCollectionList 命中 → resolveBareArrayTotal：本页已满(20==20) ⇒ 返回 null ⇒ **只有第 1 页才出问题**",
+          "根因② 公式 page * size + currentPageSize，形参注释写明「当前页码（从 0 开始）」，但 requestIntValue 读的是**原始 HTTP 请求参数**，而前端 useTable.ts:66-70 双写的 page 是 1-based；BillingProxyController.toBillingPageParams:59 的 Math.max(pageNum-1,0) 换算 advice 看不到 ⇒ 2×20+15=55（虚高 20）",
+          "BillingProxyControllerTest:72 已把「pageNum=1 → 下游 page=0」钉成契约，可证 0-based 是下游语义",
+          "同源受害者实测：/billing/commission-payables 同一批 8 行，第 1 页 total 28、第 2 页 total 48，DB 真值 8",
+          "隔离证据：8 个列表页同法对拍 p1/p2 的 total，**只有这两个 billing 端点不稳定**（maintenance 43→43、policies 30→30、claims 12→12、underwriting 36→36、products 31→31、customers 34→34 全部稳定）",
+          "既有守卫对本案空转：G-01 只管 el-pagination 出现次数、S-06 只管固定表头，**没有一条管 total 对不对**",
+          "下游直连对拍（容器 titanium-policy/billing，绕开 BFF）：/billing/web/v1/bills/search page0→20 行/total 35、page1→15 行/total 35；/billing/web/v1/commission-payables page0→8 行/total 8、page1→0 行/total 8。真源核对（titanium-mysql :13306）：t_bill_view=35、t_billing_commission_payable=8，与下游自报 total 一致",
+          "真机 UI 复核（vite:5199 服务工作树）：/billing/list 第 1 页「共 35 条 · 20条/页 · 1 2」20 行；第 2 页 15 行且页码只有 1、2（**幻影第 3 页消失**，修复前第 2 页虚报「共 55 条」并造出可点第 3 页）；/billing/commission-payables 8 行「共 8 条 · 1」",
+          "🔴 回归修复（本轮自查发现，非原报告）：CommissionPayableProxyController 原先原样透传分页参数——下游此前忽略分页故长期不可见，我让下游如实分页后立即暴露为「分页器报共 8 条、表格却空」（前端 1 起 page=1 被下游按 0 起解释 ⇒ 切到第 21 条之后）。接入共享 ProxyQueryParamAdapter 后真机恢复 8 行",
+          "消除私有副本：BillingProxyController 原有一份私有 toBillingPageParams（全站唯一一处 1 起→0 起换算），已删除并改走共享适配器 —— 同一判断两处各写一份清单必漂移（见 lessons.md）",
+          "质量门：titanium-billing Tests run: 42 全绿；titanium-admin-application 85 全绿；titanium-admin-bootstrap Tests run: 130 / Failures: 0（含本会话新增 4 例分页契约守卫）；前端 vue-tsc 0 错 / ui-guard 37-37 / 契约 229-229"
+        ],
+        "deviation": "检查点 3 的前提被证伪：原文断言「必须同步改 tests/total-unknown-contracts.test.mjs，否则该用例必红」。实读该文件通篇守卫的是「未知总数如实表达为未知」的**通用机制**（无一条涉及账单列表页），账单端点改自报 total 后它依旧全绿（契约 229/229）。故未做该文件改动 —— 按检查点原文照改反而会把「未知总数降级」这一仍然正确的契约破坏掉。检查点 4 的「补 resolveBareArrayTotal 页码基准测试」由 R7-21 的分页契约守卫以更强形式覆盖：不测 advice 内部公式（会随实现漂移），而断言下游客户端实际收到的参数形态。",
+        "rejected_approach": "直接改全站共用的 ProxyResponseBodyAdvice:172 把 page 取成 pageNum-1（会连带影响其它把 page 当 1-based 传的域） ｜ 全局统一换算所有代理端点的分页参数 —— 下游基准并不统一（product 认 0 起 pageNum、clause/payment 认 1 起 pageNum、claim 同域内 /search 与 listClaims 各认一种），一刀切会把本来正确的端点改坏；必须逐端点适配（R7-21 的登记表即此判据的固化）"
+      }
+    },
+    {
+      "id": "R7-20",
+      "title": "标的风险等级（riskLevel）无字典、无文案、无颜色：字段回填后 /policy/detail 将裸显英文码",
+      "status": "completed",
+      "priority": "P3",
+      "depends_on": [],
+      "attempts": 1,
+      "max_attempts": 3,
+      "started_at_commit": "0f667a5",
+      "repos": [
+        "titanium-admin-web"
+      ],
+      "validation": {
+        "command": "npx vue-tsc --noEmit && npm run test:contracts",
+        "timeout_seconds": 300
+      },
+      "on_failure": {
+        "cleanup": "回滚 policy/detail 的风险等级渲染改动"
+      },
+      "checkpoints": [
+        {
+          "step": 1,
+          "total": 3,
+          "description": "复核现状：src/views/policy/detail/index.vue:77 渲染 <TiStatusTag :value=\"subject.riskLevel\" /> 未传 label；值域取自 metadata UnderwritingEnum.RiskLevel = STANDARD/SUB_STANDARD/HIGH_RISK/UNINSURABLE（中文 标准体/次标准体/高风险体/不可保体），t_dict_data 中无对应字典"
+        },
+        {
+          "step": 2,
+          "total": 3,
+          "description": "方案二选一（先定夺）：① 建 RISK_LEVEL 字典 + 调用点改用 TiDictSelect/useDict；② 页面局部常量映射（枚举无字典时可就地定义，但需与后端枚举同源登记）"
+        },
+        {
+          "step": 3,
+          "total": 3,
+          "description": "补颜色语义：不可保体/高风险体须为负向色（现全站仅 STANDARD 因与核保结论同码而恰好命中 success，其余三值灰色）"
+        }
+      ],
+      "completed_at": "2026-09-21T17:22+08:00",
+      "result": {
+        "summary": "风险等级（riskLevel）治理：① 四值文案收敛为唯一真源（删掉核保列表页与详情页两份逐字相同的本地副本，新建 src/constants/underwriting.ts 的 RISK_LEVEL_TEXT）；② policy/detail 的 TiStatusTag 显式传 :label，堵住「标准体」被静默显示成「标准承保」；③ TiStatusTag 补 SUB_STANDARD/HIGH_RISK/UNINSURABLE 三色（此前全落 info 灰）。新增 tests/risk-level-contracts.test.mjs（5 例）。",
+        "evidence": [
+          "SELECT risk_level, COUNT(*) FROM policy_db.t_policy_subject GROUP BY risk_level → 单个分组 NULL=73，字段从未回填",
+          "metadata UnderwritingEnum.RiskLevel 值域 STANDARD/SUB_STANDARD/HIGH_RISK/UNINSURABLE，中文名 标准体/次标准体/高风险体/不可保体；t_dict_data 中 LIKE '%RISK%' 无匹配字典",
+          "src/views/policy/detail/index.vue:77 未传 :label，一旦回填将由 TiStatusTag 兜底表兜底并 console.warn 裸显英文码；且 STANDARD 恰好与 UNDERWRITING_STATUS.STANDARD 同码而显示为绿，其余三值为灰，语义误导",
+          "🔴 缺陷比登记时更严重：TiStatusTag 的 STATUS_TEXT.STANDARD =「标准承保」，属核保**结论**（UnderwritingStatus）；而 policy/detail 渲染的是标的**风险等级**（RiskLevel），正确文案是「标准体」。不传 label 时会**静默显示成「标准承保」**——一句看起来合理、实则说错的话，且**不触发任何告警**（另三码不在兜底表内会 console.warn）。于是出现最坏组合：三个值报错、一个值说错话。故本条的危害不止于「裸显英文码」",
+          "收敛：删除 underwriting/list:117-122 与 underwriting/detail:123-128 两份**逐字相同**的内联 riskLevelLabel 副本（含「无字典故本地映射」与「对齐 metadata」两条不同措辞的注释），改引共享真源；两页原已 import @/constants/underwriting（canDecideUnderwriting），仅扩展导入列表，模板零改动",
+          "🔴 为何四值**整组**不进 STATUS_TEXT：同枚举拆开处理（三码入兜底表、STANDARD 留在核保结论文案上）会得到「三个值漏传 label 时告警、STANDARD 静默说错话」的最坏组合。故整组一律不入，文案全部由调用点显式指定",
+          "补色：TiStatusTag 的 COLOR_MAP 新增 SUB_STANDARD(warning)/HIGH_RISK(danger)/UNINSURABLE(danger) 三码，STANDARD 复用已有的 success（与核保结论同码不同义但同为正向）。收录判据经全仓核实——四码只属 UnderwritingEnum.RiskLevel，无第二枚举复用",
+          "新增 tests/risk-level-contracts.test.mjs（5 例全绿）：① RISK_LEVEL_TEXT 与后端 UnderwritingEnum.RiskLevel 逐条对账（双向差集 + 文案逐字相等）；② riskLevelLabel 语义；③ 凡渲染 riskLevel 的 TiStatusTag 必须传 :label；④ 四值文案只得有一处定义；⑤ 四值在 COLOR_MAP 内都有语义色",
+          "🔴 反向对照 6 组全部命中且文件字节级还原：① 文案改措辞→①②变红；①b 后端枚举常量**被整行注释**→①变红；③ policy/detail 删 :label→③变红；④ 页面再写副本→④变红；④b 副本**被注释掉**→保持绿（不误报）；⑤ COLOR_MAP 整行注释掉色→⑤变红",
+          "🔴 反向对照抓到本用例自身的恒绿断言：⑤ 原实现用正则直接匹配 COLOR_MAP 原文，把 `HIGH_RISK: 'danger',` 整行注释成 `/* … */` 后**依旧通过**（正则命中了注释里的文本）。已改为「先剔注释（stripComments）+ 收键集合」，并对①同步加剔注释——**源码扫描型断言必须先剔注释，否则「注释掉的代码」会被当作「存在」**",
+          "真机（:5199 Vite dev）：核保列表页 20 行四值全部渲染为正确中文（标准体 6 / 次标准体 7 / 高风险体 1 / 不可保体 1 / - 5），rawCodes 与 broken 均为空；核保详情页（高风险体案 221595120426811392）「风险等级 | 高风险体」；policy/detail 临时置值三色全覆盖——STANDARD→「标准体」+ el-tag--success、HIGH_RISK→「高风险体」+ el-tag--danger、SUB_STANDARD→「次标准体」+ el-tag--warning，三轮 rawCodes 均为空、saysStandardUnderwriting:false、**console 全程 0 错误 0 警告**（未修复时此处会逐行告警「状态码无中文文案」）",
+          "🔴 临时改库数据已复原并回读确认：t_policy_subject 全表回到 73 行 NULL（造值前后各查一次）",
+          "门禁：vue-tsc 0 错 / 契约 243-243（238 + 5 新增）"
+        ],
+        "deviation": "🔴 **本条推翻了自己原先的 rejected_approach**：彼时以「三码不是字典码而是领域枚举值」与「该列当前不可能渲染」为由，否决往 COLOR_MAP 补色。本轮核实两点均有误：① COLOR_MAP 本就大量收录非字典码（CONFLICTED / READY / SKIPPED / WAITING_CONDITION / QUOTED 等，均为既往批次为解决同类「裸显英文码+灰色」而补），其注释明写的收录判据是「该码在所有引用它的字典中语义核心一致」——四码只属 RiskLevel 已全仓核实，符合判据；② 「不可达」只对 policy/detail 成立（t_policy_subject 全 NULL），而**核保视图四值全有真实数据**（STANDARD 69 / SUB_STANDARD 7 / HIGH_RISK 1 / UNINSURABLE 1），核保域两处调用点一直在渲染 —— 原判断只看了 policy/detail 一页，未覆盖核保域两处已可达的调用点。且检查点 3 本就明确要求补色。教训：判「字段不可达」必须逐调用点核数据，不能由一个页面的 NULL 分布外推到全站。【方案选择】选就地映射（constants 收敛）而非新建 RISK_LEVEL 字典：后者需动 Liquibase id 水位 + 后端 dml + useDict 接线，而该字段在保单侧不可达、核保侧已有可用文案，收益与改动面不匹配。【遗留·另立】policy 详情接口 GET /api/web/v1/proxy/policies/b8e00acb-8710-4042-b764-a8459e1ae386 返回 404「资源不存在」，而该 policy_id **确实存在**于 t_policy_view（POL202608280000012）且能在列表页看到。对照能正常打开的 POL202609070000002 后呈反直觉分布：404 的那条**关联更全**（有 insurance_id / proposal_id）、租户为 TEST-TENANT-001；能打开的那条关联两字段均 NULL、租户为 1。疑似详情按当前租户过滤而列表未过滤 —— 与用户点名的「点详情报资源不存在」同类，属多租户隔离范畴，不在本条范围，建议另立任务。",
+        "rejected_approach": [
+          "新建 RISK_LEVEL 字典（Liquibase 种子 + 后端 dml + 前端 useDict）：需占用新的字典 id 水位，而字段在保单侧不可达、核保侧已有可用文案，收益与改动面不匹配（YAGNI）",
+          "（原记的「直接往 COLOR_MAP 加三码」已被本轮采纳并实施，理由见 deviation —— 该否决作废）"
+        ]
+      }
+    },
+    {
+      "id": "R7-21",
+      "title": "BFF 分页基准未换算（13 个列表端点首屏错位一页）+ 分页契约守卫门禁",
+      "status": "completed",
+      "priority": "P0",
+      "depends_on": [
+        "R7-19"
+      ],
+      "attempts": 1,
+      "max_attempts": 3,
+      "started_at_commit": "7e3e599a3",
+      "repos": [
+        "titanium-admin",
+        "titanium-admin-web"
+      ],
+      "validation": {
+        "command": "cd /Users/sunwei/titanium-project/titanium-admin && mvn -pl titanium-admin-bootstrap test",
+        "timeout_seconds": 900
+      },
+      "on_failure": {
+        "cleanup": "回滚对应端点的适配器接入；🔴 不得改为全局统一换算（下游基准不统一，会误伤 product 0 起 pageNum 与 clause/payment 1 起 pageNum）"
+      },
+      "checkpoints": [
+        {
+          "step": 1,
+          "total": 4,
+          "description": "全站普查：逐端点探明下游分页基准（哪个键、几起），产出「需换算 / 现状正确」两张清单，不得凭域推断"
+        },
+        {
+          "step": 2,
+          "total": 4,
+          "description": "逐端点接入共享 ProxyQueryParamAdapter.toSpringDataPage（BFF 是前后端契约的唯一转换点），不动的端点逐个写明理由"
+        },
+        {
+          "step": 3,
+          "total": 4,
+          "description": "新增分页契约守卫：登记表 + 双向完整性校验 + 表驱动行为断言（驱动真实链路，断言下游客户端实际收到的参数）"
+        },
+        {
+          "step": 4,
+          "total": 4,
+          "description": "🔴 负向验证：故意重现缺陷，确认守卫变红且失败信息点名到端点；真机 13 端点探针 + 真实页面渲染复核"
+        }
+      ],
+      "completed_at": "2026-09-21T05:25:00Z",
+      "result": {
+        "summary": "全站普查确认 13 个 BFF 列表端点把前端 1 起的 pageNum/page 原样透传给「认 0 起 page」的下游 —— 每个列表首屏都整体错位一页（越过前 pageSize 条），记录少于一页的页面首屏直接空白。13 处逐端点接入共享 ProxyQueryParamAdapter；另新增「分页契约守卫」全端点门禁：24 个 GET+Map 端点强制登记下游基准，并按登记基准驱动真实链路断言下游客户端实际收到的参数形态。",
+        "evidence": [
+          "真机探针（:5199 页面上下文内发请求，前端真实四键双写 pageNum=1&pageSize=20&page=1&size=20）13/13 全部返回第一页数据：channels 3 行/total 3（修复前 **0 行 + 「共 3 条」**）、regulatory/reports 1 行/total 1（修复前空白）、policies 20/30、policies/maintenance 20/78、policies/by-customer/{id} 1 行、customers 20、customers/page 20/34、claims/search 12/12、insurances 19/19、proposals 17/17、maintenance/cases 20/43、maintenance/configurations 17/17、underwriting 20/36",
+          "真机页面渲染复核（vite:5199 工作树）：/channel/list **3 行 + 「共 3 条」+ 页码 1**（修复前同页面 0 行 + 「共 3 条」）；/policy/list 20 行「共 30 条」页码 1、2，点第 2 页得 10 行（30-20，证明第 2 页换算同样正确）；/underwriting/list 20 行「共 36 条」页码 1、2",
+          "下游基准实测（不以域推断，逐端点探）：policy by-customer 端点 page=0 → 1 行、page=1 → **空**、pageNum=1 与 pageNum=2 返回同一条首行（下游完全不认 pageNum）⇒ 确证下游认 0 起 page，且前端双写的 page=1 会被读成第 2 页（该客户保单恰好 1 条 ⇒ 首屏空白）",
+          "🔴 负向验证①：把 PolicyProxyController#listPolicies 改回原样透传 → 守卫变红，失败信息精确点名「PolicyProxyController#listPolicies 必须把前端 pageNum=2 换算为下游 0 起 page=1」并打印错误的出口形态 {\"page\"=\"2\",\"pageNum\"=\"2\",...}",
+          "🔴 负向验证②：给 ClaimProxyController#listClaims 误加换算（模拟「顺手统一」）→ 守卫变红，点名「ClaimProxyController#listClaims 的下游认 1 起页码，必须原样透传 pageNum/page」",
+          "🔴 负向验证第一次**没有变红**——原因：守卫测试跑的是本地仓库里已 install 的 titanium-admin-web 旧 JAR，改源码未重装，门禁看到的是旧字节码。重装 web 模块后才复现。这正是「复测可信度＝被测物与我所改的工作树一致」的又一实例，已写入守卫类注释的适用范围说明",
+          "守卫覆盖：24 个端点登记（20 个 Spring Data 0 起 page、2 个对端自有 1 起透传、2 个产品域 0 起 pageNum）；登记完整性双向比对（漏登记的新端点与被删除的旧登记都会失败）",
+          "质量门：titanium-admin-bootstrap Tests run: 130 / Failures: 0 / Skipped 19（既有 @Disabled ArchUnit）/ BUILD SUCCESS"
+        ],
+        "deviation": "① 未改 claims/listClaims、clauses、payment-operations、products：实测其下游基准分别是 1 起 page、1 起 pageNum、1 起 pageNum（payment 服务层自行换算）、0 起 pageNum，现状正确，改动反而破坏翻页。四者均已登记进守卫表并带理由。② claim 域两个列表端点基准不同（/search 0 起 page、listClaims 1 起 page），易被后人误统一，已在类注释显式写明。③ 前端 useTable.ts 的四键双写未动（它是后端参数命名不统一的兼容层，单改会让别的域失效）——本轮的判据是「BFF 作为唯一转换点」，兼容层保留、换算收敛到 BFF。",
+        "rejected_approach": [
+          "全局统一换算所有代理端点的分页参数 —— 下游基准不统一，会误伤 product（0 起 pageNum）、clause/payment（1 起 pageNum）与 claim listClaims（1 起 page）",
+          "在守卫里一刀切要求「所有列表端点都必须调用 toSpringDataPage」—— 同上，会把正确端点改坏；改为「登记基准 + 按基准断言出口形态」",
+          "只断言控制器字段/是否调用了适配器（静态检查）—— 换成「驱动真实链路、断言下游客户端实际收到的参数」，使「接了适配器但没接到调用点」这类改动同样被抓",
+          "为每个端点各写一个测试方法 —— 用登记表作为唯一事实源驱动，避免「同一个判断两处各写一份清单 ⇒ 必漂移」"
+        ]
+      }
+    },
+    {
+      "id": "R8-01",
+      "title": "R7-02 遗留收口：条款绑定写入侧门禁（仅 ACTIVE 可绑定 + 更新路径接校验 + 判据收敛）",
+      "status": "completed",
+      "priority": "P1",
+      "depends_on": [],
+      "attempts": 1,
+      "max_attempts": 3,
+      "started_at_commit": "0f667a5",
+      "repos": [
+        "titanium-product"
+      ],
+      "validation": {
+        "command": "cd /Users/sunwei/titanium-project/titanium-product && JAVA_HOME=/Users/sunwei/Library/Java/JavaVirtualMachines/corretto-21.0.4/Contents/Home mvn -q test",
+        "timeout_seconds": 900
+      },
+      "on_failure": {
+        "cleanup": "按方法回滚；ClauseExistencePort 的签名变更须与 Adapter、单测同批还原，否则编译不过"
+      },
+      "checkpoints": [
+        {
+          "step": 1,
+          "total": 4,
+          "description": "定规则：条款绑定须 ACTIVE（用户 2026-09-22 裁定）。查库证据：STD-PRD-* 种子产品全绑 ACTIVE；V2A 系列产品绑 DRAFT（本规则会使其重存失败，属用户已接受的代价）"
+        },
+        {
+          "step": 2,
+          "total": 4,
+          "description": "扩展 ClauseExistencePort 一次往返同时回答「不存在」与「状态不可绑定」；Adapter 复用 ClauseResponse.status"
+        },
+        {
+          "step": 3,
+          "total": 4,
+          "description": "UpdateProductClauseRelCommand 补 tenantId（对齐 CreateProductCommand 与规约 §5.1），路径接同一校验；application 抽共用校验协作类，避免两处各写一份编排"
+        },
+        {
+          "step": 4,
+          "total": 4,
+          "description": "收敛「非空/不重复」判据的第二份实现（创建路径内联 if vs validateClauseRels 私有方法）"
+        }
+      ],
+      "completed_at": "2026-09-22T10:15+08:00",
+      "result": {
+        "summary": "条款绑定门禁收口：R7-02 只把门禁接在**创建**路径，而 UI 上唯一可达的改绑定入口是**修订**（POST /web/v1/products/{id}/revise）——门禁当时守的是休眠路径，整体替换路径（updateProductClauseRel）更是零生产调用方。三项收口：① 三条写入路径收敛到同一实现（ProductCommandAppService.clauseIdsOf + validateClauseBindable），条款绑定要求 ACTIVE（用户裁定「最严」，与 validateTemplateActive 对称），「不存在」与「未生效」文案保持可区分；② ReviseProductCommand 补 tenantId（末位，共 20 分量）——跨域校验发生在命令到达聚合之前，那时聚合内继承的 this.tenantId 取不到，该字段缺失正是修订路径完全绕开门禁的根因；③ newClauseRels 的 null 语义定为**继承原绑定**（与 newSalesChannels/newRateTableRef/newActuarialBasis 同规则），此前 null 原样落库 ⇒ 修订一次静默清空新版本的全部条款绑定；继承路径不重跑 ACTIVE 校验（clauseIdsOf(null) 返回空列表 ⇒ 端口短路），否则存量绑 DRAFT 条款的产品永久无法修订。validateClauseRels 参数化 commandName，避免修订路径报错误点名替换路径的命令。单测：产品域 275 例全绿（+10）；负向注入 17 例逐个精确变红核销（domain 4 / application 5+8 两轮，应用层判定点与 adapter 判定点分开注入以绕开 multi-module reactor 的 Skipping 传播）。",
+        "evidence": [
+          "真机（镜像 product-acceptance-20260922-v1，容器已切新镜像并确认 /actuator/health=200）：创建路径 A1 不存在→400/60000006「不存在」、A2 DRAFT→400「未生效」、A3′ ACTIVE→200 落库（productId 227974877598973952）；成对对照 A2′ 与 A3′ 请求体仅条款不同，排除「门禁漏跑」",
+          "真机 修订路径：B1 不存在→400，且错误文案正确点名 ReviseProductCommand（参数化 commandName 的实测证据）；B2 DRAFT→400「未生效」；B3 ACTIVE→200，新版本 R801-B3-101032 落地并绑定 STD-CLS-AUTO",
+          "真机 存量绑 DRAFT 产品：C1 带条款块→400「未生效」（用户知情接受的代价实测成立）；C2 不带条款块→200，新版本 R801-C2-101032 **继承到原 DRAFT 绑定 85d8d452**（旧代码此处会清空）",
+          "真机 零写入证明：产品表 tenant1 31→34、条款关联表 31→34，恰为 3 个正向用例各 1 条绑定 ⇒ 5 个负向用例全部未落库",
+          "🔴 代价量化：租户 1 恰有 4 个 EFFECTIVE 产品绑 DRAFT 条款（V2A-GROUP-001/V2A-AUTO-001/V2A-LIFE-001/V2A-SHORT-001）；且成因是 UI 必然行为而非偶发——revise/index.vue:536 onMounted 回填 clauseRels、:502 buildPayload 无条件带出 newClauseRels，前端发不出 null ⇒ 「继承」这条后路对 UI 不可用。种子产品 STD-PRD-* 九个全绑 ACTIVE，零受影响",
+          "替换路径休眠性经重新检索确认（不沿用旧结论）：UpdateProductClauseRelCommand/updateProductClauseRel 在 product 域外零引用，域内仅「定义 + handler + 应用层方法」，无端点/Provider/前端调用 ⇒ 真机不可达，覆盖依赖单测",
+          "admin 侧契约同步（仅注释，无行为变更）：GuardedField「三个块」→「四个块」并入 newClauseRels 并注明其旧 null 语义；FieldWriteGuardTest:320-322 注释同步。newClauseRels 不在受字段级权限守卫的字段清单内 ⇒ 不改 null 语义不触发守卫断言",
+          "登记：titanium-product/CLAUDE.md §7.14（三条路径接入表 + null 继承语义 + tenantId 根因 + commandName 参数化 + 代价量化 + 真机结论），版本头 V1.4→V1.5",
+          "制品：titanium-product-bootstrap jar 重建（132120248 bytes）→ docker/jars/ 覆盖；docker-compose.acceptance-patch.yml tag product-acceptance-20260921-v1→20260922-v1；镜像重建成功并已 up -d 切换"
+        ]
+      }
+    },
+    {
+      "id": "R8-02",
+      "title": "R7-13 遗留(a)：system/dict 左侧字典类型列表无失败态",
+      "status": "completed",
+      "priority": "P2",
+      "depends_on": [],
+      "attempts": 1,
+      "max_attempts": 3,
+      "started_at_commit": "0f667a5",
+      "repos": [
+        "titanium-admin-web"
+      ],
+      "validation": {
+        "command": "npx vue-tsc --noEmit && node scripts/ui-guard.mjs && npm run test:contracts",
+        "timeout_seconds": 600
+      },
+      "on_failure": {
+        "cleanup": "按文件回滚；不得改 useTable/useTableError 的既有语义"
+      },
+      "checkpoints": [
+        {
+          "step": 1,
+          "total": 3,
+          "description": "定位 loadTypes 加载链与 .dict-type-item 渲染；确认左栏与右侧表格是两条独立加载链（右侧已接入失败态）"
+        },
+        {
+          "step": 2,
+          "total": 3,
+          "description": "左栏补失败态 + 重试；注意左栏失败时右侧应保持「未选类型」而非渲染空表格"
+        },
+        {
+          "step": 3,
+          "total": 3,
+          "description": "补契约用例；反向对照证明用例非恒绿"
+        }
+      ],
+      "completed_at": "2026-09-22T10:25+08:00",
+      "result": {
+        "summary": "system/dict 左栏字典类型列表补失败态。缺陷：本页有**两条互相独立的加载链**——左栏 loadTypes() 取字典类型、右栏 selectType() 按类型码取字典项；R7-13 的扫查口径是「每个 TiTable 实例」（用例①）+「整页共用一份 load 的页面」（PAGE_LEVEL_EXEMPT），而左栏是自定义 el-scrollbar + v-for 列表、根本没有 TiTable ⇒ 落在两口径之间。左栏原本无 try/catch，onMounted(loadTypes) 失败后 typeList 保持 []，渲染成**空白面板**，与「系统里一个字典类型都没有」在屏幕上完全同形——正是 R7-13 要消灭的那类断言。修复三处：① 左栏独立声明 typeListError（useTableError() 的第二个实例，与右栏 tableError 各持一份，互不串扰）；② loadTypes 包 try/catch，失败清列表 + 置错，成功分支清错；③ 模板成 el-alert（失败，含重试）→ el-empty（空态，区分「搜不到」与「一个都没有」）→ <template v-else>（列表）的同一条 if 链，失败态**先于**空态。契约新增 ⑤⑥⑦ 三例（⑤ 行为断言两个 useTableError 实例互不串扰；⑥ ⑥⑦ 钉左栏结构事实）。反向对照 7 向逐条精确命中、零误伤邻例；其中 I6b **实证了一个真漏洞**：stripComments 只剥 JS 注释时，把整个失败态块用 <!-- --> 包起来仍判绿（模板注释是 HTML 形态）⇒ 已把 HTML 注释一并纳入剥离。",
+        "evidence": [
+          "定位：src/views/system/dict/index.vue 两条独立加载链——左栏 loadTypes() 走自定义 el-scrollbar + v-for（无 TiTable），右栏 selectType() 走 TiTable（R7-13 已接 :error/@refresh）。R7-13 的用例①按 TiTable 实例扫、PAGE_LEVEL_EXEMPT 按「整页共用一份 load」列，左栏两边都不沾",
+          "修复①（脚本）：左栏新增独立失败态声明，与右栏的 `const { tableError, clearTableError, setTableError } = useTableError()` 是**两个实例**（行为实测：左栏置错不影响右栏、右栏清错不抹掉左栏）",
+          "修复②（脚本）：loadTypes 包 try/catch——成功分支 clearTypeListError()（清错**只在成功分支**，写进 finally 会把刚置上的错误立刻抹掉，同 useTable 用例④的坑）；失败分支 typeList.value = [] + setTypeListError(err)。原实现无 catch，接口 500 会变成未捕获拒绝且界面静默留空",
+          "修复③（模板）：el-alert(v-if=\"typeListError\"，含 @click=\"loadTypes\" 重试) → el-empty(v-else-if=\"!filteredTypes.length\") → <template v-else>(v-for)。失败态必须先于空态判定：接口挂掉时 filteredTypes 同样为空，只判空会让界面断言「没有字典类型」",
+          "checkpoint 2 的「左栏失败时右侧应保持未选类型」：**有意不清 selectedType**——右侧是另一条加载链，其数据由 selectType 单独取；且首屏失败时 selectedType 本就是 null ⇒ 右栏自然显示「请选择字典类型」，无需额外代码（清它反而会误伤「重试成功后自动恢复选中」的路径）",
+          "契约用例：tests/table-error-state-contracts.test.mjs 新增 ⑤⑥⑦（246→249 例）。沿用本仓 `stripComments` + 源码结构断言的既有风格（tests/sfc-render.mjs 无模块 mock 能力，全页渲染会真调 API）",
+          "🔴 反向对照 7 向，逐条精确命中、零误伤邻例（脚本 /tmp/r802-reverse.py，跑完自动还原并校验 sha256 一致）：I1 注释掉 setTypeListError ⇒ 仅⑥红；I2 清错挪进 finally ⇒ 仅⑥红；I3 失败态排到空态之后 ⇒ 仅⑦红；I4 左栏复用右栏失败态（合并回一份）⇒ 仅⑦红；I5 useTableError 改共享单例 ⇒ 仅⑤红",
+          "🔴 I6a/I6b 成对：I6a 把失败态块用 <!-- --> 包起来 ⇒ ⑦红（不被注释骗过）；I6b **先撤掉 stripComments 里的 HTML 剥离那行**、同样注入 ⇒ ⑦**仍绿** ⇒ 实证「只剥 JS 注释 ⇒ 模板注释被当成存在」是真漏洞，该补丁有牙（而非防御性冗余）",
+          "未写成「全站扫自定义列表」的通用规则，理由已写入用例注释：判「一段加载逻辑是否算独立加载链」需要理解语义（下拉选项、懒加载块、可降级的附属数据各不相同），机械口径必然大量误报，误报多了会被塞进白名单 ⇒ 规则空转（R8-01 的教训：守卫的可信度取决于能否核实其覆盖面）",
+          "门禁：npx vue-tsc --noEmit EXIT=0；node scripts/ui-guard.mjs 全部 44 条规则达标；npm run test:contracts 249/249 pass / 0 fail（新增 3 例，原 246 例无回归）"
+        ]
+      }
+    },
+    {
+      "id": "R8-06",
+      "title": "risk-level 契约③未剥注释：覆盖量下限恒绿（唯一调用点被注释掉仍判「口径正常」）",
+      "status": "completed",
+      "priority": "P2",
+      "depends_on": [],
+      "attempts": 1,
+      "max_attempts": 3,
+      "started_at_commit": "0f667a5",
+      "repos": [
+        "titanium-admin-web"
+      ],
+      "validation": {
+        "command": "npx vue-tsc --noEmit && node scripts/ui-guard.mjs && npm run test:contracts",
+        "timeout_seconds": 600
+      },
+      "on_failure": {
+        "cleanup": "还原 stripComments 与 ③ 的调用；该文件其余用例（①②④⑤）依赖 stripComments 原语义"
+      },
+      "checkpoints": [
+        {
+          "step": 1,
+          "total": 3,
+          "description": "量化影响面：全仓 stripComments 副本逐份检查是否剥 HTML 注释"
+        },
+        {
+          "step": 2,
+          "total": 3,
+          "description": "stripComments 补 HTML 剥离 + ③ 的 readFile 套 stripComments"
+        },
+        {
+          "step": 3,
+          "total": 3,
+          "description": "四向反向对照（含「不误报」方向），证明改动有牙且不过度敏感"
+        }
+      ],
+      "completed_at": "2026-09-22T10:25+08:00",
+      "result": {
+        "summary": "R8-02 反向对照的副产品。tests/risk-level-contracts.test.mjs 用例③（凡渲染 riskLevel 的 TiStatusTag 必须显式传 :label）第 187 行 `await readFile(file, 'utf8')` **完全没剥注释**（连 JS 注释都没剥），而它用 `callSites >= 1` 做覆盖量下限——全站恰好只有 1 个调用点（src/views/policy/detail/index.vue:150），下限卡得刚刚好 ⇒ 把那一行整行用 <!-- --> 注释掉，tiStatusTags 仍会扫到它、callSites 不降 ⇒ 守卫报「口径正常」，而风险等级列实际上已无人渲染。这正是「源码扫描型断言必须先剔注释」那条判据的教科书形态。修两处：① stripComments 补 HTML 注释剥离（并更新注释说明为何）；② ③ 的 readFile 套上 stripComments。影响面先量化后动手：全仓 11 份 stripComments 副本**逐份实测**，10 份已剥 HTML 注释、仅本文件漏 ⇒ 是孤例不是共性（若不动手查而按「大概率是共性问题」外推，会去改 10 个不该改的文件）。四向反向对照：R1/R3 验修完后「注释掉调用点⇒红」「注释里的假调用点⇒不误报」；R2/R4 撤掉补丁后从**两个相反方向**证明那一行改动的必要性。门禁 249/249。",
+        "evidence": [
+          "真实漏洞：③ 用 tiStatusTags(source) 扫 .vue，但第 187 行未剥注释（tiStatusTags 自身也不剥）；grep 确认全站 `:value=\"[^\"]*riskLevel` 调用点**只有 1 处**（policy/detail/index.vue:150），恰好等于断言下限 callSites >= 1",
+          "影响面量化（先查后动）：`grep -ln \"stripComments\\s*=\" tests/*.mjs` 得 11 份副本，逐份检查含 `<!--` 与否 ⇒ claim-settlement / field-level-permission / maintenance-field-rule / policy-lifecycle-gate / policy-advanced-search / permission-gate / product-revise / table-error-state / pricing-preview / version-history **共 10 份已剥 HTML 注释**，仅 risk-level-contracts 漏 ⇒ 孤例，收敛为单文件修复（避免按「共性问题」猜测去动 10 个文件）",
+          "修复①：stripComments 增加 .replace(/<!--[\\s\\S]*?-->/g, '')，并在 javadoc 里写明「模板注释是 <!-- --> 而非 //」与恒绿机理，注明「本仓其余 10 份扫 .vue 的契约文件都已剥，此处对齐」",
+          "修复②：③ 内改为 const source = stripComments(await readFile(file, 'utf8'))",
+          "🔴 四向反向对照（脚本 /tmp/r806-reverse.py，跑完自动还原并校验 sha256 一致）：R1 注释掉唯一调用点 ⇒ ③红 ✅；R2 同样注入但先撤掉 ③ 的 stripComments ⇒ ③**绿**（证明那一行改动有牙、漏洞真实存在）；R3 在模板注释里放一个「缺 :label」的假 TiStatusTag ⇒ ③绿（修完后不误报，即不过度敏感）；R4 同样注入但撤掉 patch ⇒ ③**红**（证明漏剥注释会把注释里的文本当成存在，产生假红）",
+          "R2 与 R4 从两个相反方向（一个「真调用点被注释掉仍算存在」，一个「注释里的假调用点被算成存在」）共同证明同一行改动的必要性——只做单向会漏掉另一半",
+          "门禁：npx vue-tsc --noEmit EXIT=0；node scripts/ui-guard.mjs 全部 44 条规则达标；npm run test:contracts 249/249 pass / 0 fail（该文件 5 例 ①②③④⑤ 全绿）"
+        ]
+      }
+    },
+    {
+      "id": "R8-03",
+      "title": "R7-13 遗留(b)：maintenance_id 与 caseId 口径不一致（详情代理报资源不存在）",
+      "status": "completed",
+      "priority": "P2",
+      "depends_on": [],
+      "attempts": 1,
+      "max_attempts": 3,
+      "started_at_commit": "0f667a5",
+      "repos": [
+        "titanium-maintenance"
+      ],
+      "validation": {
+        "command": "mvn -B -f /Users/sunwei/titanium-project/titanium-maintenance/pom.xml clean install",
+        "timeout_seconds": 900
+      },
+      "on_failure": {
+        "cleanup": "按文件回滚；口径统一须前后端同批，单改一侧会造成新的错配"
+      },
+      "checkpoints": [
+        {
+          "step": 1,
+          "total": 3,
+          "description": "查库 t_maintenance_view 实况：maintenance_id（雪花）与 UI row.caseId（UUID）分别是什么列、哪一列是详情端点的入参"
+        },
+        {
+          "step": 2,
+          "total": 3,
+          "description": "确证口径：是真错配还是两条不同的业务标识（案件号 vs 保全单号）"
+        },
+        {
+          "step": 3,
+          "total": 3,
+          "description": "按确证结论修复并补契约/单测"
+        }
+      ],
+      "completed_at": "2026-09-22T10:43+08:00",
+      "result": {
+        "summary": "**题面证伪：不存在 maintenance_id / caseId 的口径错配**。逐环取证：① 前端 `src/api/maintenance.ts:384` 用 caseId 拼 `/web/v1/proxy/maintenance/cases/{id}`；② BFF `MaintenanceServiceClient.getCase` 原样透传；③ 维护域 `MaintenanceCaseQueryWebMapper:85,89` 列表与详情**都是** `@Mapping(target=\"caseId\", source=\"maintenanceId\")` ⇒ 两侧映射逐字一致；④ 库中 `maintenance_id` 是 **UUID 形态 varchar(128)**（`1d2c6cec-525d-559f-9920-b41dddb50011`），**不是雪花**，且表里**没有 `case_id` 列** ⇒ 原记录的「雪花 id」是误判；⑤ 可见性条件**对称**（列表 specification 的 `tenantId + independentCase=true + initializationCompleted=true` 与详情 repository 派生方法名同构），§7.11 双通道治理的既定设计。真机闭环（成对同体、只换被测变量）：`1d2c6cec-…`（independent_case=1, init=1）→ **200**，响应 `caseId` 与请求 path **逐字相同**；`02505bf7-…`（0,0）→ **404 / 71000000「保全记录不存在」**。404 的唯一来源是**可见性边界**（历史案件走旧通道），而这类行**在列表里根本不显示** ⇒ UI 走不到「点了却 404」的路径。真正值得收敛的两点：① **404 文案不可诊断**（「保全记录不存在」与「不在独立案件可见范围」不可区分）——**并入 R8-05 处理**，不新造第二处独立的文案改动；② 「**列表/详情可见性条件必须对称**」这对不变式**此前无任何机械守卫**，一旦有人只改一侧即重现该症状 —— 本任务补上 `MaintenanceCaseVisibilitySymmetryTest`。守卫**两侧各取一次真值再互比**（列表侧真跑 `search` 用 mock 的 CriteriaBuilder 捕获下发的 `isTrue` 谓词；详情侧真跑 `findDetail` 从被调用的 repository 方法取方法名再解析 `True` 段），**不写死字段清单**——写死清单的守卫会把「两侧一致改动」也判红，且证明不了出货物里确实有那两项。",
+        "evidence": [
+          "逐环口径取证（证伪路径）：前端 `src/api/maintenance.ts:384` `getMaintenanceCaseDetail(caseId)` → BFF `MaintenanceServiceClient.getCase` → 维护域 `MaintenanceCaseQueryWebMapper:85,89` `@Mapping(target=\"caseId\", source=\"maintenanceId\")`（**列表与详情两条路径都是这一条映射**）⇒ 前后端 caseId 与 maintenance_id 是同一个标识，不存在两套口径",
+          "库实况（推翻原记录的前提）：`t_maintenance_view.maintenance_id` 为 **UUID 形态 varchar(128)**（实样 `1d2c6cec-525d-559f-9920-b41dddb50011`），**非雪花**；表中**无 `case_id` 列** ⇒ 「maintenance_id 是雪花 id、与 UI 的 caseId（UUID）不是一回事」这一题面前提不成立",
+          "可见性条件对称（结构实证）：列表 `MaintenanceCaseQueryServiceImpl.specification:145-147` 为 `equal(tenantId) + isTrue(independentCase) + isTrue(initializationCompleted)`；详情走 `findByMaintenanceIdAndTenantIdAndIndependentCaseTrueAndInitializationCompletedTrue`（`MaintenanceViewRepository:31`）⇒ 两侧条件同构，且 §7.11 已把该边界登记为既定设计（历史案件 `independent_case=0` 走旧通道）",
+          "真机双向对照（成对同体、只换被测变量）：带齐 `X-Internal-Token` + `X-Operator-Id` + `X-Authorities` 三头（缺任一即 401，`MaintenanceLocalAuthenticationFilter:103-119`）后，`1d2c6cec-…`（1,1）→ **200** 且响应 `caseId` 与请求 path **逐字相同**；`02505bf7-…`（0,0）→ **404 / 71000000**。单看 200 无法排除「详情端点其实按别的列查、只是恰好命中」；配上 404 才把「查的就是 maintenance_id 且结论由可见性决定」钉死",
+          "库分布（证明 UI 到不了 404 路径）：`independent_case=0,init=0` **41 行**；`1,0` **1 行**；`1,1` **43 行**。不可见的 41 行走的是列表 specification 之外 ⇒ **不出现在列表中**，用户在 UI 上无从点击 ⇒ 「点了却 404」的路径不存在",
+          "🔴 守卫设计：**两侧各取真值再互比，不对照写死清单**（用户级 lessons「断言里引用了内联副本 ⇒ 门禁量错对象」）。列表侧真跑 `search` 并用 mock 的 `CriteriaBuilder` 捕获 `isTrue` 所指字段名（口径取 `isTrue` 而非 `equal`，因 `equal` 同时承担租户等值与业务过滤）；详情侧真跑 `findDetail`，用 `mock(Class, Answer)` 从 `invocation.getMethod().getName()` 取**被调用的那个方法**再解析 `True` 段 ⇒ 写死清单会被「两侧一致改名」触发误报，本实现不会。另设两条自检断言（捕获为空即失败）防守卫自身空转",
+          "🔴 六向反向对照（脚本 `/tmp/r803-reverse.py`，跑完自动还原并校验 sha256，25 个文件全部一致）：R1 列表侧删一项 ⇒ RED ✅；R2 列表侧多一项 ⇒ RED ✅；R3 详情侧退化为 `findByMaintenanceIdAndTenantId` ⇒ RED ✅；R5 列表侧两项全删 ⇒ RED ✅；R6 两侧同时退化为空（专验下限断言 `MIN_VISIBILITY_CONDITIONS=2`）⇒ RED ✅；**R4 两侧同时加 `archived` ⇒ GREEN ✅**（对照组，唯一期望绿的一条，证明守卫不对齐写死清单、不误报）",
+          "🔴 R4 **首轮是编译失败而非断言失败**，暴露了注入点的真实规模：该派生方法名全仓有 **39 处调用点 / 25 个文件**（生产 12 + 测试 27）。只改 repository 声明与一个调用点 ⇒ `MaintenanceCaseQueryServiceImplTest` 的两处 stub 编译不过。修法改为**全仓改名**而非逐点写锚（漏一处即编译失败，逐点锚反而脆弱）。⇒ 判据：注入必须只动目标机理，连带打断编译即注入不纯（R8-02 I6 同源）；而「改一个派生方法名要动 25 个文件」本身也是「详情侧条件漂移不可能静默」（编译期强制）的证据——真正会逃逸的方向只有「只动列表侧」，正是守卫锁定的方向",
+          "门禁：维护域 `mvn -B clean install` **600 例**（594 有效 + 6 skipped，0 失败 0 错误）**BUILD SUCCESS**，8 个模块全绿。⚠️ 与域 CLAUDE.md 记载的 597 基线相差 3（本任务 +1 为新守卫），已查证**差额来自统计口径而非代码变更**：597 之后的 5 个 commit（387d277 / 3b2717f / b4a6c83 / a856c61 / 554ce62）**改动测试文件数全为 0**，且本次 surefire 报告时间戳全部为本轮生成（无旧产物残留）；分模块实测 application 152 / bootstrap 121 / domain 191 / infrastructure 95 / query 38 / web 3 ⇒ 597 + web 模块 3 例 = 600，历史统计最可能漏算了 web 模块。分模块基准已补入域 CLAUDE.md，下次比对可立即定位到模块"
+        ]
+      }
+    },
+    {
+      "id": "R8-04",
+      "title": "R7-13 遗留(c)：失败态命名不齐（rule-engine 用 error，其余 29 处用 tableError）",
+      "status": "completed",
+      "priority": "P3",
+      "depends_on": [],
+      "attempts": 1,
+      "max_attempts": 3,
+      "started_at_commit": "0f667a5",
+      "repos": [
+        "titanium-admin-web"
+      ],
+      "validation": {
+        "command": "npx vue-tsc --noEmit && node scripts/ui-guard.mjs && npm run test:contracts",
+        "timeout_seconds": 600
+      },
+      "on_failure": {
+        "cleanup": "按文件回滚；改名不得改变行为（仅标识符统一）"
+      },
+      "checkpoints": [
+        {
+          "step": 1,
+          "total": 3,
+          "description": "全站普查失败态变量命名与来源（useTable 自带 / useTableError 组合式 / 本地 ref）"
+        },
+        {
+          "step": 2,
+          "total": 3,
+          "description": "收敛为 useTableError 的 tableError/clearTableError/setTableError 三件套；保留各页既有注释理由"
+        },
+        {
+          "step": 3,
+          "total": 3,
+          "description": "增补守卫规则：失败态变量名不得自起（防再漂移），并做反向对照"
+        }
+      ],
+      "completed_at": "2026-09-22T12:51:08+08:00",
+      "result": "失败态收敛到 useTableError 唯一实现（rule-engine/list 原手写 error ref，绕过 normalizeError 会吞掉后端文案）；补两条互补守卫（⑧结构层可追溯 / ⑨行为层禁手写 ref<Error>，各带防口径失效计数断言）",
+      "evidence": "全站取证仅此 1 处手写（另 29 处已走 useTableError）；反向对照三组：A 只改绑定名→⑧红⑨绿、B 完整旧写法→双红、C 重命名但可追溯→全绿；门禁 vue-tsc 0 错 / ui-guard 44 条 / test:contracts 251-251；注入后逐文件 diff 还原一致",
+      "notes": "反向对照三组精确命中；未提交（基线 0f667a5）"
+    },
+    {
+      "id": "R8-05",
+      "title": "R7-20 收口：租户错配被伪装成「资源不存在」（诊断缺陷）",
+      "status": "completed",
+      "priority": "P1",
+      "depends_on": [],
+      "attempts": 1,
+      "max_attempts": 3,
+      "started_at_commit": "0f667a5",
+      "repos": [
+        "titanium-policy",
+        "titanium-admin"
+      ],
+      "validation": {
+        "command": "cd /Users/sunwei/titanium-project/titanium-policy && JAVA_HOME=/Users/sunwei/Library/Java/JavaVirtualMachines/corretto-21.0.4/Contents/Home mvn -q test",
+        "timeout_seconds": 900
+      },
+      "on_failure": {
+        "cleanup": "按文件回滚；不得放宽租户隔离本身（隔离行为是对的，只修诊断）"
+      },
+      "checkpoints": [
+        {
+          "step": 1,
+          "total": 3,
+          "description": "复核调查结论：404 = PolicyController.java:118 空 body；请求头租户 ≠ 行租户即 404，与 insurance_id/proposal_id 无关（伪相关已证伪）"
+        },
+        {
+          "step": 2,
+          "total": 3,
+          "description": "修两个诊断缺陷：① 404 空 body ⇒ 带业务码与可诊断信息；② 缺租户头走 @ExceptionHandler(Exception.class) 兜成 500 ⇒ 应 400（同文件 :121 已有 TENANT_HEADER_MISSING 映射但走不到）"
+        },
+        {
+          "step": 3,
+          "total": 3,
+          "description": "真机复核：同一 policy_id 用匹配租户 → 200、错配租户 → 可诊断的拒绝（非「资源不存在」）"
+        }
+      ],
+      "completed_at": "2026-09-22T12:51:08+08:00",
+      "result": "① 4 处「按 id 取详情」由空 body 404 改为 notFoundInTenant 抛 DomainException（404 + 业务码 + 可诊断文案，两种成因合并不分开报以杜绝侧信道）；② 新增 @ExceptionHandler(MissingRequestHeaderException)，补上 /web/v1/** 无租户头准入门导致缺头被兜成 500 的缺口；③ admin 侧 handleFeignNotFound 透传下游文案与 downstreamCode（D-501-55 漏网第五个）、缺租户头改用 TENANT_HEADER_MISSING 与下游同码",
+      "evidence": "真机 v2 镜像整栈实测：policy 匹配租户 200/1162B；错配 404/152B + code 20000000 + 「保单不存在，或不在当前租户可见范围内: {id}」（改前 404/0B）；缺头 400/145B + 10002003（改前 500/10000000）。admin BFF：不存在 id → 404 + downstreamCode 20000000 + 文案透传；真实 id → 200/1051B；/web/v1/dashboard/stats 无头 → 400 + 10002003（可达性对账）。测试：policy-web 新增 DetailEndpointNotFoundContractTest 4 例 + PolicyExceptionHandlerTest 6→10；admin GlobalExceptionHandlerTest 10→13。反向验证 3 组精确命中 1/2/1 红并逐字节还原。门禁 policy 域 mvn -q test 463 例 0 失败 0 错误 5 跳过",
+      "notes": "两处实测教训：① titanium-common 不在 admin-web 编译类路径（dependency-tree 证实）⇒ 常量只能留有意的副本；② mvn -pl <bootstrap> test 不带 -am 会加载本地仓库旧 jar，正向改动看似「没生效」时先查被测物。🔴 equalsIgnoreCase 是必需的：admin 侧一律 X-Tenant-ID（大写 D），policy 侧 X-Tenant-Id"
+    },
+    {
+      "id": "R9-01",
+      "title": "重新部署·全量构建：aggregator reactor 出全部 bootstrap jar 并刷新 docker/jars",
+      "status": "completed",
+      "priority": "P0",
+      "depends_on": [],
+      "attempts": 1,
+      "max_attempts": 2,
+      "started_at_commit": "7e3e599a3",
+      "repos": [
+        "docker"
+      ],
+      "validation": {
+        "command": "bash -c 'n=$(ls /Users/sunwei/titanium-project/docker/jars/*-bootstrap-1.0.0-SNAPSHOT.jar | wc -l | tr -d \" \"); [ \"$n\" -ge 18 ] && echo \"jars=$n OK\" || { echo \"jars=$n FAIL\"; exit 1; }'",
+        "timeout_seconds": 1800
+      },
+      "on_failure": {
+        "cleanup": "保留原 docker/jars 备份；不覆盖旧 jar 即不影响运行中的容器"
+      },
+      "checkpoints": [
+        {
+          "step": 1,
+          "total": 3,
+          "description": "构建前记录 docker/jars 全部 jar 的 sha256 与 mtime，作为「变更了哪些域」的对照基线"
+        },
+        {
+          "step": 2,
+          "total": 3,
+          "description": "mvn -f docker/aggregator-pom.xml clean install -DskipTests（编译测试但不运行）产出 18 域 bootstrap jar"
+        },
+        {
+          "step": 3,
+          "total": 3,
+          "description": "cp 各域 bootstrap jar 覆盖 docker/jars/，逐域 sha256 对比列出真正发生变化的域清单"
+        }
+      ],
+      "completed_at": "2026-09-22T11:32+08:00",
+      "result": {
+        "summary": "docker/aggregator-pom.xml 全量构建 BUILD SUCCESS（3 分 29 秒，22 域），18 个 bootstrap jar 刷新到 docker/jars/。",
+        "evidence": [
+          "mvn -f docker/aggregator-pom.xml clean install -DskipTests -Dcheckstyle.skip -Dspotless.check.skip -Denforcer.skip → BUILD SUCCESS，Total time 03:29 min，Finished 11:10:21",
+          "find 全仓 bootstrap jar 得 18 个（mtime Sep 22 11:07），全部 cp 到 docker/jars/",
+          "sha256 逐域对比：18 个全部变化——但这是 fat jar 内嵌构建时间戳所致，不能用以判断语义变化；语义变化由「mtime∪commit 两个真值 vs jar 构建时刻」判据给出（11 需重建 / 7 已含）",
+          "🔴 zsh 陷阱：for d in $domains 不做单词分割 ⇒ 首轮 cp 全部报「缺失」；改用 find -exec 一次复制"
+        ]
+      }
+    },
+    {
+      "id": "R9-02",
+      "title": "重新部署·后端整栈：一个补丁镜像覆盖 18 域 jar + 全栈切换 + 健康检查",
+      "status": "completed",
+      "priority": "P0",
+      "depends_on": [
+        "R9-01"
+      ],
+      "attempts": 1,
+      "max_attempts": 2,
+      "started_at_commit": "7e3e599a3",
+      "repos": [
+        "docker"
+      ],
+      "validation": {
+        "command": "bash -c 'for p in 8080 8081 8082 8083 8084 8085 8086 8087 8088 8089 8090 8188; do c=$(curl -s -o /dev/null -w \"%{http_code}\" -m 5 http://localhost:$p/actuator/health); echo \"$p:$c\"; done'",
+        "timeout_seconds": 900
+      },
+      "on_failure": {
+        "cleanup": "docker compose up -d --no-deps <旧 tag> 回退；旧镜像 tag 保留不删"
+      },
+      "checkpoints": [
+        {
+          "step": 1,
+          "total": 3,
+          "description": "新建 Dockerfile.full-acceptance：FROM 当前运行基线镜像 + COPY 全部 18 个 bootstrap jar（沿用 admin-acceptance 补丁模式）"
+        },
+        {
+          "step": 2,
+          "total": 3,
+          "description": "docker build 出 titanium-backend:full-acceptance-20260922-v1"
+        },
+        {
+          "step": 3,
+          "total": 3,
+          "description": "compose 覆盖文件指向新 tag，up -d --no-deps 18 个服务，逐服务 actuator/health 探活"
+        }
+      ],
+      "completed_at": "2026-09-22T11:32+08:00",
+      "result": {
+        "summary": "单镜像覆盖 18 域（Dockerfile.full-acceptance）→ titanium-backend:full-acceptance-20260922-v1 → 19 个容器 up -d --no-deps → 18 个后端服务 actuator/health 全 UP。",
+        "evidence": [
+          "为什么用整栈而非逐域补丁：Dockerfile.backend 本就是单镜像承载全部服务的形态（SERVICE_JAR 选择启动），逐域补丁正是本轮缺口的成因——14 个容器停在 c1dfaa473eb3(2026-09-16)、3 个停在 09-21/09-22 单域补丁镜像",
+          "镜像内 sha256 与宿主机 docker/jars/ 逐域比对：18/18 一致",
+          "健康检查 18/18 UP（context-path 实测：clause=/titanium-clause、billing=/billing、claim=/claim、maintenance=/maintenance，其余无前缀）",
+          "排查过程中一次全部 404 系脚本 bug（URL 漏 /actuator/health 后缀）而非服务故障——修正后全 UP"
+        ]
+      }
+    },
+    {
+      "id": "R9-03",
+      "title": "重新部署·前端：dist 重建（含 R8-02/R8-06 改动）+ 前端镜像重建 + 8888 切换",
+      "status": "completed",
+      "priority": "P0",
+      "depends_on": [],
+      "attempts": 1,
+      "max_attempts": 2,
+      "started_at_commit": "7e3e599a3",
+      "repos": [
+        "titanium-admin-web",
+        "docker"
+      ],
+      "validation": {
+        "command": "bash -c 'docker exec titanium-admin-web stat -c \"%y %n\" /usr/share/nginx/html/index.html; curl -s -o /dev/null -w \"8888=%{http_code}\\n\" -m 5 http://localhost:8888/'",
+        "timeout_seconds": 900
+      },
+      "on_failure": {
+        "cleanup": "旧 admin-web 镜像 tag 保留可回退；dist 目录保留上一版"
+      },
+      "checkpoints": [
+        {
+          "step": 1,
+          "total": 3,
+          "description": "npm run build（含 vue-tsc + ui-guard + contracts 门禁），产物须包含 dist 目录当前缺失的 3 个源文件改动（useTable.ts / policy/detail / system/dict）"
+        },
+        {
+          "step": 2,
+          "total": 3,
+          "description": "rsync -a --delete dist/ → docker/admin-web-dist/（.dockerignore 排除 **/dist/ 故需中转）"
+        },
+        {
+          "step": 3,
+          "total": 3,
+          "description": "build Dockerfile.admin-web-patch 出新 tag，up -d --no-deps titanium-admin-web，确认容器内 index.html 为本次产物"
+        }
+      ],
+      "completed_at": "2026-09-22T11:32+08:00",
+      "result": {
+        "summary": "dist 重建（含此前缺失的 3 个源文件改动）→ rsync 中转 → titanium-admin-web:acceptance-20260922-v1 → 8888 切换，容器内 index.html 为本次产物。",
+        "evidence": [
+          "npm run build ✓ built in 15.17s；构建前已单独跑门禁：vue-tsc ✓ / ui-guard 44 条全达标 / contracts 249 例通过",
+          "dist 此前缺失：useTable.ts(+29)、policy/detail/index.vue(+553/-85)、system/dict/index.vue(+137/-37)",
+          "容器 Mounts=[]（dist 烤进镜像）⇒ 必须重建镜像而非只 up -d；中转目录 docker/admin-web-dist/（.dockerignore 排除 **/dist/ 故需中转）",
+          "8888 → 200；容器内 /usr/share/nginx/html/index.html mtime = 2026-09-22 03:21 UTC = 11:21 CST（本次构建）"
+        ]
+      }
+    },
+    {
+      "id": "R9-04",
+      "title": "重新部署·一致性验证：镜像内 jar ↔ 宿主机 jar ↔ 源码三方对齐 + Liquibase 变更执行确认",
+      "status": "completed",
+      "priority": "P0",
+      "depends_on": [
+        "R9-02",
+        "R9-03"
+      ],
+      "attempts": 1,
+      "max_attempts": 2,
+      "started_at_commit": "7e3e599a3",
+      "repos": [
+        "docker",
+        "titanium-maintenance",
+        "titanium-customer"
+      ],
+      "validation": {
+        "command": "bash -c 'docker exec titanium-maintenance sh -c \"ls -la /app/jars/titanium-maintenance-bootstrap-1.0.0-SNAPSHOT.jar\"'",
+        "timeout_seconds": 600
+      },
+      "on_failure": {
+        "cleanup": "只读校验，无副作用；不一致则回到 R9-02 重建"
+      },
+      "checkpoints": [
+        {
+          "step": 1,
+          "total": 3,
+          "description": "逐域对比「容器内 /app/jars/<域>.jar 的 sha256」与「宿主机 docker/jars/<域>.jar 的 sha256」，18 个必须全等"
+        },
+        {
+          "step": 2,
+          "total": 3,
+          "description": "确认 maintenance 的 Liquibase 变更（changelog-master + maintenance_view_backfill_no DML）在容器启动日志中执行成功——该提交 554ce62 从未部署过，回填此前未跑"
+        },
+        {
+          "step": 3,
+          "total": 3,
+          "description": "抽样验证新代码生效：任取一个 09-20 之后提交的改动（如 customer 列表默认排序 a23352a）在真机响应中可见"
+        }
+      ],
+      "completed_at": "2026-09-22T11:32+08:00",
+      "result": {
+        "summary": "三方一致性：镜像内 jar ↔ 宿主机 jar ↔ 源码，18/18 逐字节一致；Liquibase 澄清——maintenance backfill 的 changeset 已于 2026-09-20 14:08:42 EXECUTED（早于提交时间 15:25，系开发期手工执行），本次无新 changeset 可跑（42=42）。",
+        "evidence": [
+          "18/18 jar sha256 镜像内=宿主机",
+          "titanium_maintenance.databasechangelog: maintenance-no-backfill-1 / maintenance_view_backfill_no_202609201148_weisun_dml.sql / 2026-09-20 14:08:42 / EXECUTED；总数 42",
+          "🔴 更正：我在此前 checkpoint 中推断「该 Liquibase 变更从未执行 ⇒ 数据回填也没跑过」——不成立，回填 SQL 早已执行；仍成立的是 maintenance 的 5 个 java 主源码（详情链路/列表分页）从未进过运行镜像，本次才生效",
+          "docker logs 里 ERROR/Exception 计数为误报（匹配到 LoggingQueryInvocationErrorHandler 等类名），无真实启动错误"
+        ]
+      }
+    },
+    {
+      "id": "R9-05",
+      "title": "重测·页面清单与口径：路由 → 页面 → 依赖 BFF 端点，产出可勾选清单",
+      "status": "completed",
+      "priority": "P0",
+      "depends_on": [
+        "R9-03"
+      ],
+      "attempts": 1,
+      "max_attempts": 2,
+      "started_at_commit": "7e3e599a3",
+      "repos": [
+        "titanium-admin-web"
+      ],
+      "validation": {
+        "command": "bash -c 'test -f /Users/sunwei/titanium-project/docs/ui-audit/R9-PAGE-INVENTORY.md && wc -l /Users/sunwei/titanium-project/docs/ui-audit/R9-PAGE-INVENTORY.md'",
+        "timeout_seconds": 300
+      },
+      "on_failure": {
+        "cleanup": "纯产出物，无副作用"
+      },
+      "checkpoints": [
+        {
+          "step": 1,
+          "total": 2,
+          "description": "从 src/router 提取全部静态/动态路由，映射到 views 下页面文件，标注每个页面依赖的 BFF 端点"
+        },
+        {
+          "step": 2,
+          "total": 2,
+          "description": "产出 docs/ui-audit/R9-PAGE-INVENTORY.md：页面清单 + 重测判据（渲染/无 console error/关键元素/数据非空）"
+        }
+      ],
+      "completed_at": "2026-09-22T11:09+08:00",
+      "result": {
+        "summary": "产出 docs/ui-audit/R9-PAGE-INVENTORY.md：44 个业务页分 6 组（G1 保单链路5 / G2 产品条款精算11 / G3 保全4 / G4 计费理赔核保7 / G5 客户渠道支撑8 / G6 文档规则系统9），含 J1~J6 重测判据（J4 失败态/J5 操作列/J6 视觉 对应用户原始主诉）与重测口径（8888 为主、5199 对照、详情页取真实 id）。",
+        "evidence": [
+          "路由解析：dynamicRoutes.ts 58 条 path → 45 个有组件的页面，与 find src/views -name *.vue 的 49 个（减 claim/config/ConfigPanel.vue、maintenance/configuration/MaintenanceConfigurationEditor.vue 两个子组件）交叉核对一致",
+          "判据采集逻辑已在 /dashboard 预演成功：DOM 采集 tables=1 rows=[5] alerts=[] empties=[] loadingMasks=0，标题正确",
+          "浏览器登录态已确认存在（navigate 8888 直接落到 /dashboard 未跳登录），重测无需触碰凭据"
+        ]
+      }
+    },
+    {
+      "id": "R9-06",
+      "title": "全站重测 G1：核心保单链路（dashboard/policy list·detail·intention·application，5 页）",
+      "status": "completed",
+      "priority": "P0",
+      "depends_on": [
+        "R9-03",
+        "R9-05"
+      ],
+      "attempts": 0,
+      "max_attempts": 2,
+      "started_at_commit": "7e3e599a3",
+      "repos": [
+        "titanium-admin-web"
+      ],
+      "validation": {
+        "command": "npx vue-tsc --noEmit && node scripts/ui-guard.mjs && npm run test:contracts",
+        "timeout_seconds": 900
+      },
+      "on_failure": {
+        "cleanup": "重测为只读走查，无代码副作用；发现问题登记到 R9-FINDINGS 而非就地改"
+      },
+      "checkpoints": [
+        {
+          "step": 1,
+          "total": 3,
+          "description": "跑 r9-smoke G1 分组，逐页采集 console error / 失败态 / 空数据 / 截图"
+        },
+        {
+          "step": 2,
+          "total": 3,
+          "description": "对异常页逐个人工复核，区分「真缺陷」「数据为空导致的正常空态」「权限导致的 403」"
+        },
+        {
+          "step": 3,
+          "total": 3,
+          "description": "按 J1~J6 判据登记 findings（路径+判据号+现象+首条 error），无问题页勾选通过"
+        }
+      ],
+      "completed_at": "2026-09-22",
+      "result": "G1 五页全部走查完毕（dashboard / policy list·detail / policy intention·application）。零 console error、零 403、零失败态缺失。用户主诉「意向单→投保单→保单 状态跳转」专项验证**三跳全通**：意向单 PRP202608290000007 --查看投保单--> /policy/application?insuranceId=1e176723… --查看保单--> /policy/detail/3f510688…，两跳落点均与桥 /proxy/issuances/{bizNo} 返回的 insuranceId / policies[0].policyId 逐一一致，且第二跳自动展开该单详情（非死入口）。登记 finding 1 条：F-01 /dashboard「最新保单」产品列 5 行全空 + 列宽 720px(占 53%)，根因是前端未做 productName→productCode 降级（同类列在 policy/list、customer/detail、policy/detail 三处均有降级，dashboard 唯一漏网）。",
+      "evidence": "docs/ui-audit/R9-FINDINGS.md（F-01 根因链 + G1 逐页判据表 + 三跳链路表）；截图 r9-g1-policy-detail.png / r9-g1-intention-detail-jump.png / r9-g1-application-detail-jump.png / r9-g1-dashboard-product-col-empty.png；接口取证 /api/web/v1/proxy/policies?page=0&size=5 响应 productName 全为 null；桥取证 /api/web/v1/proxy/issuances/BIZ-STD-ENT-MANUAL-20260829 200",
+      "notes": "🔴 走查方法学更正：首采集曾把意向单详情判为「无跳转入口」，实为**时序假阴性**——跳转入口依赖第二跳请求(getIssuanceProgress)返回后才条件渲染，且该页无 loading 蒙层，故「看蒙层」判据在此失效。已改为轮询等待并回报 waitedMs/timeout，详见 R9-FINDINGS.md §二。"
+    },
+    {
+      "id": "R9-07",
+      "title": "全站重测 G2：产品·条款·精算（product 8 页 + clause 3 页，11 页）",
+      "status": "completed",
+      "priority": "P0",
+      "depends_on": [
+        "R9-03",
+        "R9-05"
+      ],
+      "attempts": 0,
+      "max_attempts": 2,
+      "started_at_commit": "7e3e599a3",
+      "repos": [
+        "titanium-admin-web"
+      ],
+      "validation": {
+        "command": "npx vue-tsc --noEmit && node scripts/ui-guard.mjs && npm run test:contracts",
+        "timeout_seconds": 900
+      },
+      "on_failure": {
+        "cleanup": "重测为只读走查，无代码副作用；发现问题登记到 R9-FINDINGS 而非就地改"
+      },
+      "checkpoints": [
+        {
+          "step": 1,
+          "total": 3,
+          "description": "跑 r9-smoke G2 分组，逐页采集 console error / 失败态 / 空数据 / 截图"
+        },
+        {
+          "step": 2,
+          "total": 3,
+          "description": "对异常页逐个人工复核，区分「真缺陷」「数据为空导致的正常空态」「权限导致的 403」"
+        },
+        {
+          "step": 3,
+          "total": 3,
+          "description": "按 J1~J6 判据登记 findings（路径+判据号+现象+首条 error），无问题页勾选通过"
+        }
+      ],
+      "completed_at": "2026-09-22",
+      "result": "G2 全部 11 页走查完毕（product 8 + clause 3）。判定：9 页 J1~J6 全绿；发现 F-02a（稳定·J4 失败态缺失）、F-02b（偶发·首次并发竞态 500）、F-03（低·主条款 danger 语义色误用 2 处）。用户主诉专项全部复核：账务类型/司法辖区字典下拉已实现、产品详情无「资源不存在」、条款编辑页表单标题非竖排。",
+      "evidence": {
+        "findings": "docs/ui-audit/R9-FINDINGS.md §一（F-02/F-03 行）+ §三 G2 表 + G2 探针陷阱三条",
+        "validation_gate": "npx vue-tsc --noEmit && node scripts/ui-guard.mjs && npm run test:contracts → exit 0（全绿）",
+        "key_proofs": [
+          "下游直连 /titanium-clause/web/v1/clauses/STD-CLS-AUTO/coverages → 200 + 真实数组",
+          "BFF 同路由会话内 3/3 → 200（F-02b 不可稳定复现）",
+          "容器 b54c54437b30 启动 11:25:01，报错 11:43:35.740 在其生命周期内，全日志仅 1 次",
+          "全站 danger 用法对照：除 2 处「主条款」外全部为破坏性动作（删除/移除/退役）"
+        ]
+      },
+      "notes": "🔴 本轮新增三条探针陷阱（已写入 R9-FINDINGS §三 G2）：① 就绪条件不适配 ⇒ 白等 12s（详情页无 .el-form-item）；② ElMessage 是 2~3s toast ⇒ 采得太晚会误判「静默无提示」，实测 /product/revise 草稿产品确有 ElMessage.warning（revise:530-534）；③ 产品列表分页参数是 pageNum/pageSize 非 page/size，传错不报错只返回默认前 10 条 ⇒ 曾误得「34 条全 DRAFT」（实为 15 DRAFT + 17 EFFECTIVE + 2 AUDITING）。④ 本轮另一处探针 bug：helper 丢容器参数 ⇒ 列内元素探测实为全文档（haystack 过宽）。另：22 个 0x0 隐藏按钮经查为 mobile-case-list 移动端卡片在桌面视口被 display:none，非缺陷。"
+    },
+    {
+      "id": "R9-08",
+      "title": "全站重测 G3：保全工作台（maintenance list/create/workbench/configuration，4 页）",
+      "status": "completed",
+      "priority": "P0",
+      "depends_on": [
+        "R9-03",
+        "R9-05"
+      ],
+      "attempts": 0,
+      "max_attempts": 2,
+      "started_at_commit": "7e3e599a3",
+      "repos": [
+        "titanium-admin-web"
+      ],
+      "validation": {
+        "command": "npx vue-tsc --noEmit && node scripts/ui-guard.mjs && npm run test:contracts",
+        "timeout_seconds": 900
+      },
+      "on_failure": {
+        "cleanup": "重测为只读走查，无代码副作用；发现问题登记到 R9-FINDINGS 而非就地改"
+      },
+      "checkpoints": [
+        {
+          "step": 1,
+          "total": 3,
+          "description": "跑 r9-smoke G3 分组，逐页采集 console error / 失败态 / 空数据 / 截图"
+        },
+        {
+          "step": 2,
+          "total": 3,
+          "description": "对异常页逐个人工复核，区分「真缺陷」「数据为空导致的正常空态」「权限导致的 403」"
+        },
+        {
+          "step": 3,
+          "total": 3,
+          "description": "按 J1~J6 判据登记 findings（路径+判据号+现象+首条 error），无问题页勾选通过"
+        }
+      ],
+      "completed_at": "2026-09-22",
+      "result": "G3 全部 4 页走查完毕。用户三条主诉：①「配置状态没做颜色」✅已修复（ti-status-tag，草稿=info/已发布=success/已退役=info）；②「配置详情表单标题竖排」✅已修复（el-drawer 内 el-descriptions，10 个 label 全部 150px 固定宽，竖排 label=0，存证 r9-g3-config-detail-drawer.png）；③「工作台流程任务引入 timeLine」→ F-04 视觉增强建议（现为 el-steps，且与「保全项×步骤」矩阵表维度不同、非重复信息）。其余 J1~J6 判据 4 页全绿（0 console error、0 失败态、操作列 120/280px 均为实体按钮）。",
+      "evidence": {
+        "findings": "docs/ui-audit/R9-FINDINGS.md §一（F-04 行）+ §三 G3 表 + G3 探针陷阱",
+        "screenshot": "r9-g3-config-detail-drawer.png",
+        "key_proofs": [
+          "状态列 el-tag 类含 ti-status-tag",
+          "el-descriptions__label ×10 全部 150×40、table-cell、word-break:normal",
+          "el-steps 6 步，description 含时间戳+操作人",
+          "0×0 隐藏按钮 22 个经查为 mobile-case-list 在桌面视口被 display:none，非缺陷"
+        ]
+      },
+      "notes": "🔴 本轮新增探针陷阱（第三种假阴性）：**选择器假阴性** —— 详情面板用 el-descriptions 而探针查 .el-form-item__label ⇒ 恒为空、恰好漏掉用户点名的那个问题。判据：凡「计数为 0 即判通过」的探针必须同时回报分母，分母为 0 判 N/A 而非 PASS。另修一处探针 bug：helper 丢容器参数 ⇒ 列内元素探测实为全文档（haystack 过宽）。"
+    },
+    {
+      "id": "R9-09",
+      "title": "全站重测 G4：计费·理赔·核保（billing 4 页 + claim 3 页，7 页）",
+      "status": "completed",
+      "priority": "P0",
+      "depends_on": [
+        "R9-03",
+        "R9-05"
+      ],
+      "attempts": 1,
+      "max_attempts": 2,
+      "started_at_commit": "7e3e599a3",
+      "repos": [
+        "titanium-admin-web"
+      ],
+      "validation": {
+        "command": "npx vue-tsc --noEmit && node scripts/ui-guard.mjs && npm run test:contracts",
+        "timeout_seconds": 900
+      },
+      "on_failure": {
+        "cleanup": "重测为只读走查，无代码副作用；发现问题登记到 R9-FINDINGS 而非就地改"
+      },
+      "checkpoints": [
+        {
+          "step": 1,
+          "total": 3,
+          "description": "跑 r9-smoke G4 分组，逐页采集 console error / 失败态 / 空数据 / 截图"
+        },
+        {
+          "step": 2,
+          "total": 3,
+          "description": "对异常页逐个人工复核，区分「真缺陷」「数据为空导致的正常空态」「权限导致的 403」"
+        },
+        {
+          "step": 3,
+          "total": 3,
+          "description": "按 J1~J6 判据登记 findings（路径+判据号+现象+首条 error），无问题页勾选通过"
+        }
+      ],
+      "completed_at": "2026-09-22",
+      "result": "7/7 页走查完毕。新增 F-05（系统性列宽，升级为全站 16 处，其中 5 处需修）、F-06（claim/detail 状态色逐码漂移）、F-07（claim/config 分页裸 9999）、O-04（billing/detail 同页空态文案不统一）。F-02b 由「偶发一次」升级为「系统性首次并发竞态」（第二复现点 claim/config）。用户两条主诉：分页问题在 /billing/list 未复现、但在 /claim/config 找到同族真问题；高级搜索参照样板已完整提取成规格表。",
+      "evidence": {
+        "screenshots": [
+          "docs/ui-audit/after-20260922/r9-g4-billing-list-f05-colwidth.png",
+          "docs/ui-audit/after-20260922/r9-g4-billing-detail.png",
+          "docs/ui-audit/after-20260922/r9-g4-commission-payables.png",
+          "docs/ui-audit/after-20260922/r9-g4-payment-operations-advanced-search.png",
+          "docs/ui-audit/after-20260922/r9-g4-claim-list.png",
+          "docs/ui-audit/after-20260922/r9-g4-claim-detail.png",
+          "docs/ui-audit/after-20260922/r9-g4-claim-config-pagination.png",
+          "docs/ui-audit/after-20260922/r9-g4-claim-config-j4-errorstate.png"
+        ],
+        "key_proofs": [
+          "F-05 算法闭环：element-plus table-layout.mjs:96 起 flexColumns = filter(!isNumber(width))；恰 1 个弹性列则 realWidth = minWidth + (bodyWidth - bodyMinWidth)。billing 180+(1368-920)=628 实测 628；claim 190+(1368-960)=598 实测 598；dashboard 80+(1360-720)=720 实测 720 —— 三处精确命中",
+          "F-05 修正 F-01 修复口径：min-width 不加 width 的列仍是弹性列 ⇒ 原写法的 min-width=150 仍会独吞，改后仍 720px",
+          "F-06 逐码对账：字典 CLAIM_PAYMENT_STATUS 5 码，FAILED/REJECTED_CLOSED 在 TiStatusTag.COLOR_MAP 为 danger，claim/detail:45 内联三元渲染为 info，实测页面标签确为 info",
+          "F-07 根因：TiTable/index.vue:58 硬编码 page-sizes=[10,20,50,100]，ConfigPanel.vue:13 传 page-size=9999 ⇒ Element Plus 匹配不到 option，selectedLabel 回落原始值 ⇒ 渲染裸 9999。全站精确扫描 :page-size=\"数字\" 字面量仅此 1 处",
+          "F-02b 第二复现点：claim/config 首屏并发 7 个 tab 请求，time-limit-rules 与 quick-pay-rules 同时 500；随后同路由复测 4/4 全 200",
+          "J4 天然验证：claim/config 时限规则 tab 显示「系统内部错误，请稍后重试 [重试]」，由 TiTable 自研 .ti-table-error[role=alert] 渲染（非 el-alert）"
+        ]
+      },
+      "notes": "三条探针判据（累计第六种）：① 多 tab 页面必须按活动 pane 限定查询并先过可见性 —— 隐藏面板的 rect 宽为 0，与「竖排 label」同形，本次假阳性 18 条；② J4 选择器集合须含 [role=alert]/.ti-table-error，只查 el-alert/el-empty 会漏自研失败态；③ 静态扫描只覆盖它建模的那一种实现形态，维护工作台未接 :error 经源码核实为有意设计（页面级已有失败态），假阳性 —— 同一语义换实现即对扫描器不可见，与「问题不存在」同形。另：列宽静态扫描初版用 \\bwidth=\"(\\d+)\" 误匹配 min-width 导致全站漏报，靠「已实测两页未出现在结果中」这个已知真值锚发现。"
+    },
+    {
+      "id": "R9-10",
+      "title": "全站重测 G5：客户·渠道·支撑域（customer/underwriting/channel/regulatory/notification，8 页）",
+      "status": "completed",
+      "priority": "P0",
+      "depends_on": [
+        "R9-03",
+        "R9-05"
+      ],
+      "attempts": 1,
+      "max_attempts": 2,
+      "started_at_commit": "7e3e599a3",
+      "repos": [
+        "titanium-admin-web"
+      ],
+      "validation": {
+        "command": "npx vue-tsc --noEmit && node scripts/ui-guard.mjs && npm run test:contracts",
+        "timeout_seconds": 900
+      },
+      "on_failure": {
+        "cleanup": "重测为只读走查，无代码副作用；发现问题登记到 R9-FINDINGS 而非就地改"
+      },
+      "checkpoints": [
+        {
+          "step": 1,
+          "total": 3,
+          "description": "跑 r9-smoke G5 分组，逐页采集 console error / 失败态 / 空数据 / 截图"
+        },
+        {
+          "step": 2,
+          "total": 3,
+          "description": "对异常页逐个人工复核，区分「真缺陷」「数据为空导致的正常空态」「权限导致的 403」"
+        },
+        {
+          "step": 3,
+          "total": 3,
+          "description": "按 J1~J6 判据登记 findings（路径+判据号+现象+首条 error），无问题页勾选通过"
+        }
+      ],
+      "completed_at": "2026-09-22",
+      "result": "8/8 页走查完毕。用户两条主诉专项复核：①「核工单操作列太宽」已由 R7 修复——/underwriting/list 操作列 width=200 渲染恒等于声明值（源码注释记录了改前 368px@1920 / 1008px@2560 的实测）；②「审核没做成按钮样式」亦已修复——原带 text 属性造成同列「详情」带边框/「审核」纯文字（全站唯一混用形态），去掉 text 后同为平铺按钮，探针实测 el-button--primary--small，非 link。新增 F-08（分页 total 恒偏大 20 的跨四层根因闭环）、F-09（操作列宽度与按钮形态全站普查，400/320/280/200/120 五档分布）；F-05 整体撤销（16 处候选中 5 处原判「需修」经逐处读源码 5/5 证伪，含一处 310px 假值——静态扫描把 640px 非全宽表的容器宽当成 1368px）；F-06 修复范围收窄（descriptions 内「状态」15 处纯文本 vs 1 处 tag ⇒ 纯文本才是有意风格，只改 claim/detail 1 个文件）。新增三条探针判据（累计 8 种）。",
+      "evidence": {
+        "screenshots": [
+          "docs/ui-audit/after-20260922/r9-g5-customer-list.png",
+          "docs/ui-audit/after-20260922/r9-g5-customer-detail.png",
+          "docs/ui-audit/after-20260922/r9-g5-underwriting-list.png",
+          "docs/ui-audit/after-20260922/r9-g5-underwriting-detail.png",
+          "docs/ui-audit/after-20260922/r9-g5-channel-list.png",
+          "docs/ui-audit/after-20260922/r9-g5-commission-schemes-f08-pagination.png",
+          "docs/ui-audit/after-20260922/r9-g5-regulatory-list.png",
+          "docs/ui-audit/after-20260922/r9-g5-notification-list.png"
+        ],
+        "key_proofs": [
+          "F-08 四层闭环：前端 src/composables/useTable.ts:98-99 把 1-based pageNum 赋给 0-based page 参数；wire 实测 ?pageNum=1&pageSize=20&page=1&size=20；admin ProxyResponseBodyAdvice.java:172 requestIntValue(request,0,\"page\",\"pageNum\",\"current\") 优先取 page；:215-229 resolveBareArrayTotal 按「本页未满即末页」推断 total = page*size + 本页条数 = 1*20+0 = 20。响应实测 {\"list\":[],\"page\":1,\"pageNum\":2,\"pageSize\":20,\"size\":20,\"total\":20,\"totalPages\":1}——pageNum=2 是 PageVO.getPageNum()=page+1 的二次指纹。下游 channel 经容器内 curl 实证无辜（裸列表非分页），镜像与工作树一致。",
+          "F-09 用户主诉修复实证：src/views/underwriting/list/index.vue:67-86 三段源码注释——「操作列必须写数字 width 而非 min-width：EP 把无数字 width 的列判为 flex 列(table-layout.mjs:96-107)，全表唯一 flex 列时会吸走表格剩余宽——实测该列渲染 368px(@1920)/1008px(@2560)，而列内按钮实需仅 128px」；「形态修正：原带 text 属性 ⇒ 同列详情带边框、审核为文字按钮，是全站唯一一列内混用两种形态的反例」；「每张表必须保留至少 1 个只写 min-width 的数据列承接剩余宽……本页改操作列前是全站唯一此类表，1920 下留白 848px」。",
+          "F-05 撤销依据：product/revise/index.vue:224 条款表 style=\"width: 640px\"（非全宽）⇒ 原静态扫描假设容器恒为 1368px，1038px 为假值（真值 310px），误差 3.3 倍；其余 4 处（billing/claim/policy-application/underwriting）均有源码注释显式声明为有意承接，claim 版与 billing 版注释字句几乎相同（『选账单号承接——内容是长度不定的编码』）。5/5 判定假阳性率 100%。",
+          "弹性列公式三次独立复算全部命中：billing 180+(1368−920)=628 实测 628；customer 140+(1368−1260)=248 实测 242；channel 220+(1368−1250)=338 实测 338（精确）。⇒ 算法模型可信，但模型可信 ≠ 结论正确（F-05 教训：模型没错、判据错了）。",
+          "探针陷阱⑦：探针数到的按钮数 ≠ 模板按钮数上限——/regulatory/list 探针见 1 个（当前行已批准），模板 2 个（提交带 v-if=\"row.status === 'PENDING'\"）；/product/rate-tables 探针见 2 个，模板 5 个（后 3 个带状态门）。若按探针判定会误判 280px/400px 过宽。",
+          "探针陷阱⑧：J4 的 [role=alert] 把 /channel/commission-schemes 的 <el-alert type=\"info\"> 引导文案（『请选择渠道和产品，佣金方案属于具体渠道合同与产品的组合。』）收成失败态 ⇒ role=alert 是可达性语义、不等于失败。"
+        ]
+      },
+      "notes": "G5 全程只读走查，零代码改动，故验收门禁（vue-tsc + ui-guard + test:contracts）结果等同于 R9-09 的 exit 0 全绿，本轮未重复执行。处置策略延续 DECISION：R9-06~11 为「重测」语义，发现问题只登记不即改——依据是 **/dist/ 在 .dockerignore、单镜像承载 18 域 jar，补丁最小单位是整份 dist / 整个镜像，即改即测的成本远高于批次化。F-05 的撤销是本轮最重要的方法论修正：写进 R9-FINDINGS §三 作为一般化判据（容器宽必须取真值；同一模式 ≥3 处且每处带注释 ⇒ 既定设计；扫描结论与源码注释冲突时注释赢），防未来重犯。"
+    },
+    {
+      "id": "R9-11",
+      "title": "全站重测 G6：文档·规则·系统管理（document/rule-engine/system 7 页，9 页）",
+      "status": "completed",
+      "priority": "P0",
+      "depends_on": [
+        "R9-03",
+        "R9-05"
+      ],
+      "attempts": 1,
+      "max_attempts": 2,
+      "started_at_commit": "7e3e599a3",
+      "repos": [
+        "titanium-admin-web"
+      ],
+      "validation": {
+        "command": "npx vue-tsc --noEmit && node scripts/ui-guard.mjs && npm run test:contracts",
+        "timeout_seconds": 900
+      },
+      "on_failure": {
+        "cleanup": "重测为只读走查，无代码副作用；发现问题登记到 R9-FINDINGS 而非就地改"
+      },
+      "checkpoints": [
+        {
+          "step": 1,
+          "total": 3,
+          "description": "跑 r9-smoke G6 分组，逐页采集 console error / 失败态 / 空数据 / 截图"
+        },
+        {
+          "step": 2,
+          "total": 3,
+          "description": "对异常页逐个人工复核，区分「真缺陷」「数据为空导致的正常空态」「权限导致的 403」"
+        },
+        {
+          "step": 3,
+          "total": 3,
+          "description": "按 J1~J6 判据登记 findings（路径+判据号+现象+首条 error），无问题页勾选通过"
+        }
+      ],
+      "completed_at": "2026-09-22",
+      "result": "9/9 页走查完毕，R9 全部 11 个任务收官。新增 F-10（admin 本地分页 page 的 1-based 原值回填进 0-based 的 PageVO.page，3 处缺陷 + 1 处正例 DictController），并据此把 F-08 因果链精化为「A 层元数据（本地 controller）/ B 层总数（proxy 裸数组）」——实测证明 proxy + 下游真分页的 /proxy/documents、/proxy/policies 响应 page:0/pageNum:1 **完全正确**，推翻了原表述隐含的「所有 proxy 接口都错」。J6 弹窗表单专项：6 弹窗 × 38 label 全部单行，竖排 0。R8-04 取证确认（rule-engine 用 error，其余 8 页用 tableError）。9 页控制台 0 error。",
+      "evidence": {
+        "screenshots": [
+          "docs/ui-audit/after-20260922/r9-g6-document-list.png",
+          "docs/ui-audit/after-20260922/r9-g6-system-config.png"
+        ],
+        "key_proofs": [
+          "F-10 自证矛盾证据（无需外部参照即可判错）：/web/v1/logs?pageNum=3&pageSize=20（末页）→ {total:45, totalPages:3, page:3, pageNum:4}——pageNum=4 > totalPages=3，且 page=3 越出合法 0-based 区间 [0,2]；/web/v1/tenants?pageNum=2&pageSize=1 → {total:2, totalPages:2, page:2, pageNum:3} 同型。首两页亦偏移：logs/tenants/users 的 pageNum 恒 = 请求 pageNum + 1。",
+          "F-10 根因逐行：OperationLogController.java:52-67（TenantController:62-68 / AdminUserController:68-76 同型）——int pageIndex = Math.max(0, page - 1) 用于查数据（0-based ✅），但回填 return PageVO.of(vos, total, page, size) 传的是 1-based 原值 ❌；而 PageVO 契约是 0-based（字段注释「从0开始」+ getPageNum()=page+1）。正例对照 DictController.java:68-72：page = Math.max(pageNum-1, 0) 后切片与回填用同一个 0-based 值，实测 /dicts/types?pageNum=1&pageSize=200 → {total:94, page:0, pageNum:1, first:'JURISDICTION'} 全对，pageNum=2 → {page:1, pageNum:2, listLen:0} 全对。",
+          "可见性归因（F-10 为何不可见、F-08 为何可见）：src/api/pageResult.ts 的 toPageResult(payload, pageNum, pageSize) 中 pageNum/pageSize 取自**入参**，只有 total 取自 payload（payload?.total ?? null）⇒ 前端只采信 list + total。故污染 total 的 F-08 用户可见（「共 20 条」+ 0 行），只污染 page/pageNum/size/pageSize 的 F-10 不可见（实测分页器显示 pager:'1' 正常）。分类判据：问「它污染的是 list/total，还是其余四个元数据字段」。",
+          "F-08 精化证据（推翻原表述）：/proxy/documents?pageNum=1&pageSize=20&page=1&size=20 → {total:2, page:0, pageNum:1} ✅；/proxy/policies → {total:30, page:0, pageNum:1, listLen:20} ✅；/proxy/rules?type=PRICING → {total:11, page:0, pageNum:1} ✅。原因：ProxyResponseBodyAdvice.toPage 第 2 分支取值顺序是 firstIntValue(map,'pageNum','number','current')——优先读响应体，requestIntValue 只在 page<0 时兜底；下游 Page 带 number:0 ⇒ 拿到 0。原表述引用的 :172 那行只在第 1 分支（body instanceof Collection）执行。",
+          "J6 弹窗专项：6 个弹窗（tenant 520/user 480/role 440/menu 520/dict 440/rule-engine 620）共 38 个 label 全部 100×32 或 120×32 单行，竖排 0；system/config 为 tabs 三段式，label-width=120px 显式声明，10 label 全竖排 0。⇒ 判据修正：「有没有用 label-position=top」不是判据（G6 九页无一使用 top，竖排仍全 0），判据是「有没有显式 label-width」+「最长 label 文本是否宽于该值」。",
+          "弹性列公式第 4 次独立验证：G6 共 14 个弹性列全部命中（document 319/319、rule-engine 404/404、tenant 308、user 328、role 373/465、menu 558、dict(884) 234、log 398），外加 rule-engine 详情内表(1342) 四列 238/299/331/284 按 150:190:210:180 比例分摊 422 全中。累计 4 组 26 列，误差 ≤2px。",
+          "F-09⑥ 上限判定补充：/rule-engine/list 操作列模板有 3 个 el-button（查看规则/激活/停用），但激活条件是 status==='DRAFT'、停用是 status==='ACTIVE'——**互斥，永不同现** ⇒ 真实上限 88+64=152 ≤ 200 ✅。若停在「3 个按钮」会得 236>200 的假阳性。判据链：数模板按钮总数 → 判 v-if 是否互斥 → 取可同时成立的最大子集。",
+          "两处假阳性拦截：① /rule-engine/list 默认 ruleSetType='PRICING' + :clearable=false 看似「无法看跨类型总览」，读下游后证伪——RuleEngineController.java:143-151 与 admin RuleEngineProxyController.java:31-34 均 @RequestParam(required=false, defaultValue=\"PRICING\")，且下游实现是 findByType（唯一方法，传 null 也走它）⇒ 前端如实反映契约；② /system/dict 首屏探针报 el-table=0、label=0，实为 master-detail 引导态，空态文案业务化且指路（「请从左侧选择字典类型」），左栏已渲染 94 个类型，点选后右栏 6 列 11 行正常。",
+          "R8-04 取证：rule-engine/list/index.vue:32,163,249,255 用 const error = ref<Error|null>(null) + :error=\"error\"，其余 8 页用 useTable 的 tableError（如 tenant/index.vue:33,153）⇒ 命名不齐 1:8 属实。该页未复用 useTable（手工管 rows/visibleRows/loading/error，因需前端二次过滤）——属有理由的例外，但命名应对齐。",
+          "静态扫描陷阱⑨⑩：`<el-table\\b` 的 \\b 在 '-' 前成立 ⇒ 也匹配 `<el-table-column`，产出幻影表（document/list 一个真表被报成 7 张、列数 7/6/5/4/3/2/1 严格递减）；修法 `<el-table(?![-\\w])`。同类第 3 次（前两次：\\bwidth 误匹配 min-width）。陷阱⑩：8/9 页的表在 <TiTable> 包装组件内，<el-table> 标签不在页面源码中 ⇒ 按标签扫描一页都扫不到；<TiSearchForm> 使 <el-form> 缺席（document/list 报 el-form=0 却有 3 个 el-form-item）。判据：扫描前先用一页实测结果校准口径。"
+        ]
+      },
+      "notes": "G6 全程只读走查、零代码改动。本轮实测跑过验收门禁作为收官证据（非推定）：`npx vue-tsc --noEmit && node scripts/ui-guard.mjs && npm run test:contracts` → EXIT=0，ui-guard「全部 44 条规则达标」，test:contracts 249/249 pass / 0 fail。🔴 本轮最重要的方法论产出是把 F-08 从「一行代码的解释」修正为「分支级解释」——同一行 requestIntValue 只在需要重建 PageVO 的分支执行，proxy 透传路径不走它；读一行代码必须同时确认它所在的分支是否会被执行。这与 §三「容器宽必须取真值」同族。另新增第 4 类判据：静态模式匹配抓不住语义（DictController 变量名叫 page 但已是 0-based，与三处真缺陷在模式上完全同形）。"
+    }
+  ],
+  "session_count": 9,
+  "last_session": "2026-09-22T11:07+08:00"
+}

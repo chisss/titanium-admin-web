@@ -30,6 +30,8 @@
       :max-height="'var(--ti-table-max-height-default)'"
       @page-change="onPageChange"
       @size-change="onSizeChange"
+      :error="tableError"
+      @refresh="retry"
     >
       <el-table-column prop="username" label="用户名" width="140" />
       <el-table-column prop="nickname" label="昵称" width="120" />
@@ -50,7 +52,7 @@
         <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
       </el-table-column>
       <!-- @vue-generic {UserListItem} -->
-      <el-table-column label="操作" min-width="200" fixed="right" class-name="ti-action-column">
+      <el-table-column label="操作" width="280" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
           <el-button size="small" :icon="Edit" v-permission="'system:user:edit'" @click="openDialog(row)">编辑</el-button>
           <el-button size="small" v-permission="'system:user:reset-pwd'" :loading="rowPending === actionKey(row.id, 'reset-pwd')" @click="handleResetPwd(row)">重置密码</el-button>
@@ -126,7 +128,7 @@ const { getLabel: commonStatusLabel } = useDict('COMMON_STATUS')
 
 const queryParams = reactive({ username: '', nickname: '', status: undefined as string | undefined })
 
-const { tableData, tableLoading, pagination, fetchData, handleSearch, handleReset, onPageChange, onSizeChange } =
+const { tableData, tableLoading, tableError, pagination, fetchData, handleSearch, handleReset, onPageChange, onSizeChange, retry } =
   useTable<UserListItem, typeof queryParams>((params) => getUserList(params), queryParams)
 
 fetchData()

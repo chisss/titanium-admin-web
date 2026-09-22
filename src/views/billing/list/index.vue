@@ -33,9 +33,13 @@
       :max-height="'var(--ti-table-max-height-default)'"
       @page-change="onPageChange"
       @size-change="onSizeChange"
+      :error="tableError"
+      @refresh="retry"
     >
       <!-- 🔴 账单无独立业务单号，主键 billId 即账单号（D-501-47：此前读遗留字段 billNo，20/20 恒 '-'） -->
-      <el-table-column prop="billId" label="账单号" width="180" class-name="ti-code-column">
+      <!-- 🔴 本表唯一的 flex 列（只写 min-width）：EP 无 flex 列时把表格宽设为「各列宽之和」
+           （table-layout.mjs:123-131），整表会比容器窄、右侧留白。选账单号承接——内容是长度不定的编码 -->
+      <el-table-column prop="billId" label="账单号" min-width="180" class-name="ti-code-column">
         <template #default="{ row }">
           <TiCopyText :text="row.billId || '-'" />
         </template>
@@ -57,7 +61,7 @@
         <!-- 时间列统一走全局日期工具，避免直出后端 ISO 串（2026-09-18 全站实测 7 页 8 列） -->
         <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
       </el-table-column>
-      <el-table-column label="操作" min-width="100" fixed="right" class-name="ti-action-column">
+      <el-table-column label="操作" width="120" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
           <el-button size="small" :icon="View" @click="toDetail(row.billId || row.id)">详情</el-button>
         </template>
@@ -93,7 +97,7 @@ const queryParams = reactive({
   dateRange: undefined as string[] | undefined,
 })
 
-const { tableData, tableLoading, pagination, fetchData, handleSearch, handleReset, onPageChange, onSizeChange } =
+const { tableData, tableLoading, tableError, pagination, fetchData, handleSearch, handleReset, onPageChange, onSizeChange, retry } =
   useTable<BillVO, typeof queryParams>((params) => {
     const { dateRange, ...rest } = params
     return getBillList({ ...rest, dateRange }) as Promise<PageResult<BillVO>>

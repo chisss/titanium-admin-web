@@ -10,7 +10,14 @@
         <el-input v-model="queryParams.productCode" placeholder="精确查询" clearable style="width: 160px" />
       </el-form-item>
       <el-form-item label="意向状态">
-        <TiDictSelect v-model="queryParams.status" dict-type="POLICY_INTENT_STATUS" placeholder="请选择" style="width: 140px" />
+        <!-- 🔴 剔除字典中的历史死码（读侧 IntentStatus 独有、投影从不写入）：选中它们只会得到 0 条 -->
+        <TiDictSelect
+          v-model="queryParams.status"
+          dict-type="POLICY_INTENT_STATUS"
+          :exclude-values="POLICY_INTENT_STATUS_DEAD_CODES"
+          placeholder="请选择"
+          style="width: 140px"
+        />
       </el-form-item>
       <el-form-item label="创建日期">
         <el-date-picker
@@ -50,6 +57,8 @@
       row-key="proposalId"
       @page-change="onPageChange"
       @size-change="onSizeChange"
+      :error="tableError"
+      @refresh="retry"
     >
       <el-table-column type="index" label="序号" width="60" align="center" fixed="left" />
       <el-table-column prop="proposalNo" label="意向单号" width="160" fixed="left">
@@ -81,9 +90,9 @@
         </template>
       </el-table-column>
       <!-- @vue-generic {ProposalVO} -->
-      <el-table-column label="操作" min-width="100" fixed="right" class-name="ti-action-column">
+      <el-table-column label="操作" width="120" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
-          <el-button size="small" :icon="View" @click="handleDetail(row)">详情</el-button>
+          <el-button size="small" :icon="View" @click="openDetail(row.proposalId)">详情</el-button>
         </template>
       </el-table-column>
     </TiTable>
@@ -127,15 +136,31 @@
           <el-descriptions-item label="更新时间">{{ formatDateTime(proposalDetail.updateTime) }}</el-descriptions-item>
         </el-descriptions>
       </div>
+
+      <!-- 🔴 footer 为新增：跳转入口需要落点，且关闭按钮此前只能靠右上角 ×。
+           按钮**仅在真有下游单据时**出现 —— 状态对但拿不到 ID 时不显示，
+           否则会造出「点进去无目标」的死入口（详见 linkedInsuranceId 的注释）。 -->
+      <template #footer>
+        <el-button @click="detailVisible = false">关闭</el-button>
+        <el-button
+          v-if="canGoToInsurance"
+          type="primary"
+          :icon="Right"
+          @click="goToInsurance"
+        >
+          查看投保单
+        </el-button>
+      </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Download, View } from '@element-plus/icons-vue'
-import { getProposalDetail, getProposalList, type ProposalVO } from '@/api/insurance'
+import { Download, Right, View } from '@element-plus/icons-vue'
+import { getIssuanceProgress, getProposalDetail, getProposalList, type ProposalVO } from '@/api/insurance'
 import { useTable } from '@/composables/useTable'
 import { formatDateTime } from '@/utils/date'
 import TiTable from '@/components/TiTable/index.vue'
@@ -145,7 +170,11 @@ import TiCopyText from '@/components/TiCopyText/index.vue'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
 import { useDetailColumns } from '@/composables/useDetailColumns'
 import { useDict } from '@/composables/useDict'
+import { POLICY_INTENT_STATUS_DEAD_CODES, PROPOSAL_STATUS_CONVERTED } from '@/constants/policy'
 import { formatAmount } from '@/utils/format'
+
+const router = useRouter()
+const route = useRoute()
 
 /** 意向单查询参数 */
 const queryParams = reactive({
@@ -161,7 +190,7 @@ const { getLabel: salesChannelLabel } = useDict('SALES_CHANNEL')
 const getChannelLabel = (channel?: string): string => channel ? salesChannelLabel(channel) : '-'
 
 /** 表格数据 */
-const { tableData, tableLoading, pagination, fetchData, handleSearch, handleReset, onPageChange, onSizeChange } =
+const { tableData, tableLoading, tableError, pagination, fetchData, handleSearch, handleReset, onPageChange, onSizeChange, retry } =
   useTable<ProposalVO, typeof queryParams>((params) => {
     const { dateRange, ...rest } = params
     // 注意：后端暂不支持日期范围查询，先去掉 dateRange
@@ -178,19 +207,70 @@ const detailVisible = ref(false)
 const detailLoading = ref(false)
 const proposalDetail = ref<ProposalVO>()
 
-/** 查看详情 */
-const handleDetail = async (row: ProposalVO) => {
+/**
+ * 下游投保单 ID（跳转入口的落点）。
+ *
+ * <p>🔴 **不能只靠状态判定入口是否显示**：三张单据在读模型里互缺外键
+ * （意向单视图无 `insurance_id` 列，见 `t_proposal_view`），投保单 ID 只能经 `bizNo` 桥
+ * 从出单进度取（`getIssuanceProgress`）。状态为「已转投保单」但桥没给出 ID 时
+ * （历史数据无进度行、或跨租户）**不显示按钮** —— 否则是「点进去无目标」的死入口。</p>
+ */
+const linkedInsuranceId = ref<string>()
+
+/** 取下游投保单 ID；拿不到一律返回 undefined 而非抛出（辅助请求，失败不影响主视图） */
+const loadLinkedInsuranceId = async (bizNo?: string): Promise<string | undefined> => {
+  if (!bizNo) return undefined
+  try {
+    return (await getIssuanceProgress(bizNo))?.insuranceId || undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** 跳转入口可见性：状态「已转投保单」**且**桥返回了目标 ID —— 两者缺一不可 */
+const canGoToInsurance = computed(
+  () => proposalDetail.value?.status === PROPOSAL_STATUS_CONVERTED && !!linkedInsuranceId.value,
+)
+
+/**
+ * 打开意向单详情（🔴 单一入口）。
+ * 列表行点击与「从保单详情带 proposalId 跳入」共用同一路径 —— 两套打开逻辑必然漂移。
+ */
+const openDetail = async (proposalId: string) => {
+  if (!proposalId) return
   detailVisible.value = true
   detailLoading.value = true
   proposalDetail.value = undefined
+  linkedInsuranceId.value = undefined
   try {
-    proposalDetail.value = await getProposalDetail(row.proposalId)
+    proposalDetail.value = await getProposalDetail(proposalId)
   } catch {
+    // 详情自身失败：拦截器已弹业务消息，关闭空对话框即可（与改动前口径一致）
     detailVisible.value = false
-  } finally {
     detailLoading.value = false
+    return
   }
+  detailLoading.value = false
+  linkedInsuranceId.value = await loadLinkedInsuranceId(proposalDetail.value.bizNo)
 }
+
+/** 跳投保单页并直接展开该单详情（投保单页读 query.insuranceId 自动打开） */
+const goToInsurance = () => {
+  detailVisible.value = false
+  router.push({ path: '/policy/application', query: { insuranceId: linkedInsuranceId.value } })
+}
+
+/**
+ * 从其它页面带 `?proposalId=` 跳进来时直接打开详情
+ * （保单详情页的「查看意向单」入口走此路径，因意向单详情是对话框、无独立路由）。
+ */
+watch(
+  () => route.query.proposalId,
+  async (proposalId) => {
+    if (typeof proposalId === 'string' && proposalId) await openDetail(proposalId)
+  },
+  { immediate: true },
+)
 
 /** 导出意向单 */
 const handleExport = () => {

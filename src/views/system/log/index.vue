@@ -31,6 +31,8 @@
       :max-height="'var(--ti-table-max-height-default)'"
       @page-change="onPageChange"
       @size-change="onSizeChange"
+      :error="tableError"
+      @refresh="retry"
     >
       <el-table-column prop="username" label="操作用户" width="120" />
       <el-table-column prop="module" label="功能模块" width="120" />
@@ -55,7 +57,7 @@
         </template>
       </el-table-column>
       <!-- @vue-generic {OperationLog} -->
-      <el-table-column label="操作" min-width="100" fixed="right" class-name="ti-action-column">
+      <el-table-column label="操作" width="120" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
           <el-button size="small" :icon="View" @click="viewDetail(row)">详情</el-button>
         </template>
@@ -109,7 +111,7 @@ const queryParams = reactive({
   dateRange: undefined as string[] | undefined,
 })
 
-const { tableData, tableLoading, pagination, fetchData, handleSearch, handleReset, onPageChange, onSizeChange } =
+const { tableData, tableLoading, tableError, pagination, fetchData, handleSearch, handleReset, onPageChange, onSizeChange, retry } =
   useTable<OperationLog, typeof queryParams>((params) => {
     const { dateRange, ...rest } = params
     return getOperationLogs({ ...rest, dateRange }) as Promise<PageResult<OperationLog>>

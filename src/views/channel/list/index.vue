@@ -33,6 +33,8 @@
       :max-height="'var(--ti-table-max-height-default)'"
       @page-change="onPageChange"
       @size-change="onSizeChange"
+      :error="tableError"
+      @refresh="retry"
     >
       <el-table-column prop="channelCode" label="渠道代码" width="150" class-name="ti-code-column">
         <template #default="{ row }">
@@ -59,7 +61,7 @@
         <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
       </el-table-column>
       <!-- @vue-generic {ChannelVO} -->
-      <el-table-column label="操作" min-width="200" fixed="right" class-name="ti-action-column">
+      <el-table-column label="操作" width="280" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
           <el-button size="small" :icon="View" @click="handleView(row)">详情</el-button>
           <el-button size="small" :icon="Edit" v-permission="'channel:edit'" @click="openDialog(row)">
@@ -149,7 +151,7 @@ const queryParams = reactive({
   status: undefined as string | undefined,
 })
 
-const { tableData, tableLoading, pagination, fetchData, handleSearch, handleReset, onPageChange, onSizeChange } =
+const { tableData, tableLoading, tableError, pagination, fetchData, handleSearch, handleReset, onPageChange, onSizeChange, retry } =
   useTable<ChannelVO, typeof queryParams>((params) => getChannelList(params), queryParams)
 
 fetchData()

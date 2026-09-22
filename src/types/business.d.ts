@@ -7,18 +7,24 @@ export type InsuranceCategory = 'AUTO' | 'LIFE' | 'PET' | 'ACCIDENT' | 'HEALTH' 
 export type ProductStatus = 'DRAFT' | 'AUDITING' | 'EFFECTIVE' | 'INVALID'
 
 /** 保单状态（含寿险生命周期全状态） */
+/**
+ * 保单状态码 —— 与**读侧** `PolicyEnum.PolicyStatus` 枚举**逐一对应**（7 个）。
+ *
+ * 🔴 2026-09-21 二次收敛：前一轮把真源认成了**写侧** `PolicyStatusCode`，于是这里写着
+ * `NOT_EFFECTIVE` —— 而 `PolicyVO.status` 来自查询侧投影，写侧码在投影时已被映射为读侧码
+ * （`NOT_EFFECTIVE` → `PENDING_EFFECTIVE`，见 `PolicyProjectionEventHandler.java:284-292`），
+ * 读侧数据里根本没有 `NOT_EFFECTIVE`。直接后果：保单详情页「撤销保单」判 `NOT_EFFECTIVE`
+ * ⇒ 该功能全站不可达（详见 `constants/policy.ts` 的 cancel 条目）。
+ * 类型域必须与**实际流通的**值域一致，否则类型检查对这类缺陷完全无感——幻码在编译期是合法字符串。
+ */
 export type PolicyStatus =
-  | 'PROPOSAL'
-  | 'PENDING'
-  | 'PENDING_PAYMENT'
-  | 'ACTIVE'
   | 'PENDING_EFFECTIVE'
   | 'EFFECTIVE'
   | 'SUSPENDED'
-  | 'LAPSED'
-  | 'EXPIRED'
-  | 'CANCELLED'
   | 'TERMINATED'
+  | 'EXPIRED'
+  | 'LAPSED'
+  | 'CANCELLED'
 
 /** 理赔状态 */
 export type ClaimStatus = 'REPORTED' | 'INVESTIGATING' | 'APPROVING' | 'SETTLED' | 'REJECTED'
@@ -139,6 +145,34 @@ export interface PolicyVO {
   expiryDate: string
   createTime: string
   updateTime?: string
+  /**
+   * 总保费（各险种段保费之和）。
+   * 🔴 与上面的 `premium`（年缴保费）**不同口径**，二者不可互相替代：
+   * `premium` 是年缴口径、`totalPremium` 是整单保费合计。分期缴费的保单两者可以不等。
+   */
+  totalPremium?: number
+  /** 险种段数量 */
+  lineCount?: number
+  /** 收费方式（policy 域 `PremiumCollectionMode`：OFFLINE/ONLINE/FREE/PAY_AFTER_USE/WITHHOLD） */
+  collectionMode?: string
+  /**
+   * 保费收讫状态（policy 域 `PremiumCollectionStatus`：UNCOLLECTED/PARTIALLY_COLLECTED/COLLECTED/DEFERRED/OVERDUE）。
+   * 🔴 **不是** billing 域的单笔缴费流水状态（PAID/PENDING/FAILED）——同名不同义，
+   * 库中 `PAYMENT_COLLECTION_STATUS` 字典与真实数据只有 `PENDING` 一个值重合，误用会裸显英文码。
+   */
+  collectionStatus?: string
+  /** 已收讫金额（对应 `totalPremium` 口径的实收数） */
+  collectedAmount?: number
+  /** 销售渠道（走 `SALES_CHANNEL` 字典，与意向单页同源） */
+  salesChannel?: string
+  /** 等待期止期 */
+  waitingPeriodEndDate?: string
+  /** 犹豫期止期 */
+  hesitationPeriodEndDate?: string
+  /** 意向单 ID（后端 PolicyDetailVO 已返回，用于「保单 → 意向单」跳转；🔴 投保单 ID 后端不返回） */
+  proposalId?: string
+  /** 核保单 ID（后端 PolicyDetailVO 已返回，用于「保单 → 核保单」跳转） */
+  underwritingId?: string
 }
 
 /** 客户信息 */

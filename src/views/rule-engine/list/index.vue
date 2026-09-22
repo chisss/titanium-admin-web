@@ -29,7 +29,7 @@
     <TiTable
       :data="visibleRows"
       :loading="loading"
-      :error="error"
+      :error="tableError"
       :max-height="'var(--ti-table-max-height-default)'"
       @refresh="load"
     >
@@ -44,7 +44,7 @@
       <el-table-column label="规则数" width="80"><template #default="{ row }">{{ row.rules?.length ?? 0 }}</template></el-table-column>
       <el-table-column label="状态" width="90"><template #default="{ row }"><TiStatusTag :value="row.status" :label="statusLabel(row.status)" /></template></el-table-column>
       <!-- @vue-generic {RuleSet} -->
-      <el-table-column label="操作" fixed="right" min-width="200" class-name="ti-action-column">
+      <el-table-column label="操作" fixed="right" width="200" class-name="ti-action-column">
         <template #default="{ row }">
           <!-- 🔴 激活/停用的 v-if 与后端状态机**逐一对应**（不是照状态名顺手写的）：
                RuleSet 聚合的 ActivateRuleSetCommand 只接受 DRAFT/ACTIVE，DeactivateRuleSetCommand 只接受 ACTIVE，
@@ -52,8 +52,12 @@
                故 INACTIVE 行只留只读的「查看规则」，不给一个点了必报错的按钮。
                颜色依 COLOR-CONTRACT：激活属状态推进 → success，停用属破坏性 → danger，查看为中性导航 → 不加 type -->
           <el-button size="small" :icon="View" :loading="detailLoading === row.ruleSetId" @click="showDetail(row)">查看规则</el-button>
-          <el-button v-if="row.status === 'DRAFT'" size="small" type="success" :icon="Select" v-permission="'rule-engine:toggle'" :loading="rowPending === actionKey(row.ruleSetId, 'toggle')" @click="toggle(row, true)">激活</el-button>
-          <el-button v-if="row.status === 'ACTIVE'" size="small" type="danger" :icon="SwitchButton" v-permission="'rule-engine:toggle'" :loading="rowPending === actionKey(row.ruleSetId, 'toggle')" @click="toggle(row, false)">停用</el-button>
+          <!-- B2：核保类规则集的启停需 underwriting:config:edit（后端按 ruleSetType 分流，同码） -->
+          <el-button v-if="row.status === 'DRAFT' && writableRuleSet(row.ruleSetType)" size="small" type="success" :icon="Select" v-permission="'rule-engine:toggle'" :loading="rowPending === actionKey(row.ruleSetId, 'toggle')" @click="toggle(row, true)">激活</el-button>
+          <el-button v-if="row.status === 'ACTIVE' && writableRuleSet(row.ruleSetType)" size="small" type="danger" :icon="SwitchButton" v-permission="'rule-engine:toggle'" :loading="rowPending === actionKey(row.ruleSetId, 'toggle')" @click="toggle(row, false)">停用</el-button>
+          <el-tooltip v-if="(row.status === 'DRAFT' || row.status === 'ACTIVE') && !writableRuleSet(row.ruleSetType)" content="核保规则集需要「维护核保配置（underwriting:config:edit）」权限" placement="top">
+            <el-tag type="info" size="small" effect="plain">只读</el-tag>
+          </el-tooltip>
         </template>
       </el-table-column>
       <template #empty><el-empty :description="emptyText"><el-button type="primary" :icon="Plus" v-permission="'rule-engine:create'" @click="openCreate">新建规则集</el-button></el-empty></template>
@@ -68,7 +72,20 @@
         <el-form-item label="类型" prop="ruleSetType"><TiDictSelect v-model="form.ruleSetType" dict-type="RULE_SET_TYPE" :clearable="false" /></el-form-item>
         <el-form-item label="描述"><el-input v-model="form.description" type="textarea" /></el-form-item>
       </el-form>
-      <template #footer><el-button @click="createVisible = false">取消</el-button><el-button type="primary" :loading="saving" @click="submitCreate">创建并配置规则</el-button></template>
+      <template #footer>
+        <el-button @click="createVisible = false">取消</el-button>
+        <!-- B2：类型选中「核保」后需要 underwriting:config:edit（后端 createRuleSet 直接按请求体的 ruleSetType 分流）。
+             按钮的 disabled 图标下不给 tooltip 的写法在这里行不通（禁用态不触发鼠标事件），故套一层 span -->
+        <el-tooltip
+          :disabled="writableRuleSet(form.ruleSetType)"
+          content="核保规则集需要「维护核保配置（underwriting:config:edit）」权限"
+          placement="top"
+        >
+          <span>
+            <el-button type="primary" :loading="saving" :disabled="!writableRuleSet(form.ruleSetType)" @click="submitCreate">创建并配置规则</el-button>
+          </span>
+        </el-tooltip>
+      </template>
     </el-dialog>
 
     <el-drawer v-model="detailVisible" title="规则集详情" size="72%">
@@ -82,7 +99,7 @@
         <el-descriptions-item label="描述" :span="3">{{ detail?.description || '-' }}</el-descriptions-item>
         <el-descriptions-item v-if="detail?.artifactHash" label="工件哈希" :span="3"><span class="hash-text">{{ detail.artifactHash }}</span></el-descriptions-item>
       </el-descriptions>
-      <div class="rule-toolbar"><el-divider content-position="left">规则定义</el-divider><el-button v-if="detail?.status === 'DRAFT'" type="primary" size="small" v-permission="'rule-engine:edit'" @click="openRuleDialog">追加规则</el-button></div>
+      <div class="rule-toolbar"><el-divider content-position="left">规则定义</el-divider><el-button v-if="detail?.status === 'DRAFT' && writableRuleSet(detail?.ruleSetType)" type="primary" size="small" v-permission="'rule-engine:edit'" @click="openRuleDialog">追加规则</el-button></div>
       <!-- 抽屉内的规则明细表：局部数据、无分页，不收编 TiTable，只统一视觉语言
            （全站主表格语言 = 斑马纹 + 无纵向边框，与 TiTable 默认一致）。
            它不需要 v-loading：详情是**先取到再开抽屉**（见 showDetail），抽屉一打开数据就在手上，
@@ -123,7 +140,9 @@ import TiTable from '@/components/TiTable/index.vue'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
 import { useDetailColumns } from '@/composables/useDetailColumns'
 import { useDict } from '@/composables/useDict'
+import { usePermission } from '@/composables/usePermission'
 import { useRowAction, actionKey, confirmAction } from '@/composables/useRowAction'
+import { useTableError } from '@/composables/useTable'
 import { showErrorIfUnhandled } from '@/api/http'
 import { activateRuleSet, addRule, createRuleSet, deactivateRuleSet, getRuleSet, listRuleSets, type RuleSet } from '@/api/rule-engine'
 
@@ -141,12 +160,33 @@ const visibleRows = ref<RuleSet[]>([])
 /** 本次生效的检索条件里是否含前端项（决定空态文案是「没匹配上」还是「确实没有」） */
 const filtersApplied = ref(false)
 const loading = ref(false)
-/** 接口失败的对象；非空即进入失败态（TiTable 的失败态优先于空态） */
-const error = ref<Error | null>(null)
+/**
+ * 接口失败态。🔴 必须走 `useTableError`（本页未复用 `useTable`：检索条件里只有 `ruleSetType`
+ * 后端认，其余三项靠前端过滤，拿不到 useTable 的分页契约）。
+ *
+ * <p>此前这里手写 `const error = ref<Error | null>(null)`，与其余 29 处 `tableError` 命名不一，
+ * 更实质的差异是**它绕过了 `normalizeError`**：拦截器 reject 的未必是 Error（可能是后端原始字符串），
+ * 旧写法对非 Error 值一律套硬编码文案，把后端给的原因吞掉；`setTableError` 会保留原始文案。</p>
+ */
+const { tableError, clearTableError, setTableError } = useTableError()
 
 const { getLabel: statusLabel } = useDict('RULE_SET_STATUS')
 const { getLabel: typeLabel } = useDict('RULE_SET_TYPE')
 const { getLabel: actionLabel } = useDict('RULE_ACTION')
+
+/**
+ * 字段级权限（B2）：核保规则集的写入归 `underwriting:config:edit` 管，与后端类型分流闸同码。
+ *
+ * <p>后端 `BusinessProxyService` 对三处写入口（新建/加规则/启停）按 `ruleSetType` 分流：
+ * UNDERWRITING 类型要求该码。前端此处必须同源，否则运营点得动、后端 74008000 报错，
+ * 用户只能看到「没有权限」却不知道自己碰的是哪一类规则集。</p>
+ *
+ * <p>判据落在**类型**上而非按钮上：同一个「激活」按钮，定价类规则集不需要这个码。</p>
+ */
+const { hasPermission } = usePermission()
+const canWriteUnderwriting = computed(() => hasPermission('underwriting:config:edit'))
+/** 该规则集当前角色是否可写（仅核保类型受字段权限约束，其余类型沿用端点权限） */
+const writableRuleSet = (ruleSetType?: string) => ruleSetType !== 'UNDERWRITING' || canWriteUnderwriting.value
 
 const createVisible = ref(false); const detailVisible = ref(false); const detail = ref<RuleSet | null>(null); const ruleVisible = ref(false)
 /**
@@ -214,13 +254,13 @@ async function load() {
   try {
     const result = await listRuleSets(query.ruleSetType)
     rows.value = result.list || []
-    error.value = null
+    clearTableError()
     applyFilter()
   } catch (e) {
     // 失败与「确实没有数据」必须可区分：清空数据并置错误，界面才会说「加载失败」而不是「暂无规则集」
     rows.value = []
     visibleRows.value = []
-    error.value = e instanceof Error ? e : new Error('规则集加载失败')
+    setTableError(e)
   } finally { loading.value = false }
 }
 

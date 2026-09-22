@@ -199,15 +199,37 @@
         <!-- 条款与保障责任（电子保单形态） -->
         <el-divider content-position="left">条款与保障责任</el-divider>
         <div v-loading="clauseLoading">
-          <el-empty v-if="!clauseLoading && clauseGroups.length === 0" description="该产品暂无绑定条款" :image-size="80" />
+          <!-- 🔴 失败态必须排在空态之前（R9-F02a）：接口挂掉时 clauseGroups 同样为空，
+               空态若排在前面，界面会向用户断言「该产品暂无绑定条款」——而真相是这次没查成，
+               二者在屏幕上完全同形。全局红条不构成兜底：它是瞬时的，这句断言却是持久的
+               （同判据已在 system/dict 左栏、rule-engine/list 上成立，本处是漏网的第三条链）。 -->
+          <el-alert
+            v-if="!clauseLoading && clauseError"
+            class="clause-error"
+            type="error"
+            :closable="false"
+            show-icon
+            :title="`条款与保障责任加载失败：${clauseError.message}`"
+          >
+            <el-button text type="primary" size="small" @click="reloadClauses">重试</el-button>
+          </el-alert>
+          <el-empty
+            v-else-if="!clauseLoading && clauseGroups.length === 0"
+            description="该产品暂无绑定条款"
+            :image-size="80"
+          />
           <el-collapse v-else v-model="activeClauses">
             <el-collapse-item v-for="group in clauseGroups" :key="group.clauseId" :name="group.clauseId">
               <template #title>
                 <div class="clause-title">
-                  <el-tag v-if="group.mainClause" type="danger" size="small" effect="plain">主条款</el-tag>
+                  <!-- 🔴 分类标记不得借用动作保留色（R9-F03）：`danger` 全站只用于破坏性动作
+                       （删除/移除/退役）。「主条款」是**分类**、不是状态更不是动作，故用品牌色 primary
+                       （先例：actuarial-workbench 金额通道 = warning/primary、rule-engine「只读」= info）；
+                       「附加条款」保持次级灰 info，一主一次层级才成立。 -->
+                  <el-tag v-if="group.mainClause" type="primary" size="small" effect="plain">主条款</el-tag>
                   <el-tag v-else type="info" size="small" effect="plain">附加条款</el-tag>
                   <span class="clause-name">{{ group.clauseName }}</span>
-                  <span class="clause-meta">{{ group.clauseCode }} · {{ group.clauseVersion || '-' }} · {{ group.coverages.length }} 项保障</span>
+                  <span class="clause-meta">{{ group.clauseCode }} · {{ group.clauseVersion || '-' }} · {{ coverageCountText(group) }}</span>
                 </div>
               </template>
 
@@ -216,7 +238,10 @@
                 <el-table-column prop="coverageName" label="保障责任" min-width="180" show-overflow-tooltip>
                   <template #default="{ row }">
                     {{ row.coverageName }}
-                    <el-tag v-if="row.isAdditional" size="small" type="warning" effect="plain" style="margin-left: 6px">附加</el-tag>
+                    <!-- 🔴 同族误用（R9-F03 举一反三）：`warning` 是「可逆但需注意」的**纠正性动作**
+                         保留色（全站仅 1 例：佣金发起回拨），此处却是静态分类标记；且同一页里
+                         「附加条款」用的是 info，同一概念两种颜色。统一为次级灰 info。 -->
+                    <el-tag v-if="row.isAdditional" size="small" type="info" effect="plain" style="margin-left: 6px">附加</el-tag>
                   </template>
                 </el-table-column>
                 <el-table-column label="责任类型" width="90">
@@ -231,7 +256,17 @@
                 <el-table-column label="赔付/给付细则" min-width="240" show-overflow-tooltip>
                   <template #default="{ row }">{{ coverageSummary(row) }}</template>
                 </el-table-column>
-                <template #empty>该条款暂未配置保障责任</template>
+                <!-- 🔴 空态必须分两种（R9-F02a）：接口 500 与「确实没配」原本都渲染成
+                     「该条款暂未配置保障责任」——后者是对数据的断言，前者是没查成，
+                     而全局提示在这条路径上根本不触发（detail 取到了 ⇒ resolved≠0，见 loadClauses）。
+                     故失败态要就地、持久、可重试，与「没配」严格区分。 -->
+                <template #empty>
+                  <div v-if="group.coverageError" class="coverage-error" role="alert">
+                    <span class="coverage-error__text">保障责任加载失败：{{ group.coverageError.message }}</span>
+                    <el-button text type="primary" size="small" @click="reloadClauses">重试</el-button>
+                  </div>
+                  <span v-else>该条款暂未配置保障责任</span>
+                </template>
               </el-table>
 
               <p v-if="group.description" class="clause-desc">{{ group.description }}</p>
@@ -246,6 +281,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { Setting, Edit, QuestionFilled } from '@element-plus/icons-vue'
 import {
   getProductDetail,
@@ -258,6 +294,7 @@ import {
 import { getClauseDetail, getCoverages, type CoverageVO } from '@/api/clause'
 import { listRuleSets, type RuleSet } from '@/api/rule-engine'
 import { useDict } from '@/composables/useDict'
+import { useTableError, normalizeError } from '@/composables/useTable'
 import { useDetailColumns } from '@/composables/useDetailColumns'
 import { formatDateTime, formatDate } from '@/utils/date'
 import { formatAmount } from '@/utils/format'
@@ -394,23 +431,62 @@ interface ClauseGroup {
   mainClause?: boolean
   description?: string
   coverages: CoverageVO[]
+  /**
+   * 该条款的保障责任取数结果（🔴 R9-F02a）：`null` = 取数成功，此时 `coverages` 为空
+   * 才代表「该条款确实没配保障责任」；非 null = 这次没查成，界面必须说「加载失败」
+   * —— 二者在屏幕上原本完全同形（都渲染成空表）。
+   */
+  coverageError: Error | null
 }
+
+/**
+ * 条款头部「N 项保障」文案：失败时**不得**显示「0 项保障」
+ * —— 那是「确实没配」的断言，与「这次没查成」是两件事。
+ */
+const coverageCountText = (group: ClauseGroup): string =>
+  group.coverageError ? '保障责任加载失败' : `${group.coverages.length} 项保障`
 
 const clauseGroups = ref<ClauseGroup[]>([])
 const clauseLoading = ref(false)
 const activeClauses = ref<string[]>([])
+/**
+ * 条款面板（本页第二条独立加载链）的失败态。
+ * 🔴 必须走 `useTableError`（归一非 Error 拒绝值，否则 `clauseError.message` 取到 undefined，
+ * 失败块渲染成一片空白，比不显示更迷惑）；🔴 也不得与页面其它链共用一个实例——共用会让
+ * 一方成功清错顺手抹掉另一方的失败态（table-error-state-contracts 用例 ⑤）。
+ */
+const { tableError: clauseError, clearTableError: clearClauseError, setTableError: setClauseError } =
+  useTableError()
 
 /** 加载产品绑定条款，并对每条并行取条款详情与保障责任，主条款排在前 */
 const loadClauses = async (productId: string) => {
   clauseLoading.value = true
   try {
     const rels = await getProductClauses(productId)
+    /** 条款详情取到的条数：用于区分「单条绑定悬空」与「条款服务整体不可用」（见下方注释） */
+    let resolved = 0
     const groups = await Promise.all(
       rels.map(async (rel): Promise<ClauseGroup> => {
+        // 🔴 这里必须静默：条款面板是本页的**从属面板**，产品主信息已经加载成功了。
+        // 一条绑定的 clauseId 悬空（实测 CL-MED-ZYES-V2，是条款编码被写进了 id 字段）时，
+        // 拦截器默认弹的全局红条是「资源不存在」——用户看到的是整页加载失败，
+        // 而真相只是这一条条款取不到；面板内已有的「（条款信息缺失）」才是准确的就地提示。
         const [detail, coverages] = await Promise.all([
-          getClauseDetail(rel.clauseId).catch(() => null),
-          getCoverages(rel.clauseId).catch(() => [] as CoverageVO[]),
+          getClauseDetail(rel.clauseId, { silentError: true }).catch(() => null),
+          // 🔴 保障责任同样静默，但**不能静默吞错**（R9-F02a）：后端 BFF 对
+          // `listCoverages` 解码失败（首次并发竞态 500）时，原先 `.catch(() => [])`
+          // 把失败直接抹成空数组，表格的 #empty 槽照常渲染「该条款暂未配置保障责任」——
+          // 向用户断言「该条款确实没配」，而真相是这次没查成；且因 detail 取到了
+          // （resolved=1）连下方那条全局提示都不触发，整条链**完全静默**。
+          // 故此处把失败原因保留下来，交给表格的失败态渲染。
+          getCoverages(rel.clauseId, { silentError: true }).then(
+            (rows) => ({ rows: rows ?? [], error: null as Error | null }),
+            // 归一走 normalizeError 而非就地 new Error：非 Error 的拒绝值（后端原始字符串）
+            // 会被吞成无文案的失败块，全站只有这一个实现
+            (err: unknown) => ({ rows: [] as CoverageVO[], error: normalizeError(err) }),
+          ),
         ])
+        if (detail) resolved += 1
         return {
           clauseId: rel.clauseId,
           clauseCode: detail?.code ?? rel.clauseId,
@@ -418,32 +494,52 @@ const loadClauses = async (productId: string) => {
           clauseVersion: rel.clauseVersion ?? detail?.version,
           mainClause: rel.mainClause,
           description: detail?.description,
-          coverages: coverages ?? [],
+          coverages: coverages.rows,
+          coverageError: coverages.error,
         }
       }),
     )
+    // 静默不等于吞错：**全部**条款都取不到时不再是个别绑定悬空，而是条款服务不可用，
+    // 此时整块面板会清一色显示「（条款信息缺失）」却不给任何解释，必须补一条提示。
+    if (rels.length && resolved === 0) {
+      ElMessage.error('条款信息加载失败，请稍后重试')
+    }
     // 主条款优先展示
     groups.sort((a, b) => (b.mainClause ? 1 : 0) - (a.mainClause ? 1 : 0))
     clauseGroups.value = groups
     // 默认展开主条款（无主条款则展开首条）
     const main = groups.find((g) => g.mainClause) ?? groups[0]
     activeClauses.value = main ? [main.clauseId] : []
+    // 🔴 清错必须在**成功分支**，不能进 finally：失败路径同样经过 finally，
+    // 会把刚置上的失败态立刻抹掉，失败态永远不显示（table-error-state-contracts 用例 ④）。
+    clearClauseError()
+  } catch (err) {
+    // 🔴 失败与「该产品确实没绑条款」必须可区分：清空数据并置失败态，面板才会说
+    // 「加载失败」而不是替用户断言「暂无绑定条款」（R9-F02a：BFF 首次并发调用 500 时，
+    // 该面板整块消失且不带任何失败痕迹——失败态元素探测全空）。
+    clauseGroups.value = []
+    activeClauses.value = []
+    setClauseError(err)
   } finally {
     clauseLoading.value = false
   }
 }
 
+/** 失败态里的「重试」：重试必须真的重新拉取，否则按钮点了界面纹丝不动 */
+const reloadClauses = () => loadClauses(route.params.id as string)
+
 // 寿险线判定（与配置编辑器一致），决定是否加载寿险规格
 const LIFE_LINES = ['LIFE', 'ANNUITY', 'UNIVERSAL', 'PARTICIPATING', 'INVESTMENT_LINKED']
 
 /** 加载模板行为配置与寿险规格（独立于主信息，失败不阻断展示） */
+// 🔴 两处都带 silentError：调用方已 `.catch(() => null)` 就地降级，缺了它拦截器会为同一次失败弹全局红条
 const loadTemplateConfig = async (productId: string) => {
   const templateId = product.value?.templateId
   if (templateId) {
-    template.value = await getTemplate(templateId).catch(() => null)
+    template.value = await getTemplate(templateId, { silentError: true }).catch(() => null)
   }
   if (product.value?.insuranceType && LIFE_LINES.includes(product.value.insuranceType)) {
-    lifeSpec.value = await getLifeProductConfig(productId).catch(() => null)
+    lifeSpec.value = await getLifeProductConfig(productId, { silentError: true }).catch(() => null)
   }
 }
 
@@ -459,7 +555,8 @@ onMounted(async () => {
   await Promise.all([
     loadTemplateConfig(id),
     loadClauses(id),
-    listRuleSets('UNDERWRITING').then((res) => (underwritingRuleSets.value = res.list ?? [])).catch(() => {}),
+    // 规则集仅用于把绑定规则集 code 映射成名称，取不到不阻断详情展示 ⇒ 走 silentError
+    listRuleSets('UNDERWRITING', { silentError: true }).then((res) => (underwritingRuleSets.value = res.list ?? [])).catch(() => {}),
   ])
 })
 </script>
@@ -496,6 +593,23 @@ onMounted(async () => {
 
 .coverage-table {
   margin-top: 4px;
+}
+
+/* 条款面板的加载失败态（R9-F02a）：与「暂无绑定条款」的空态在视觉上必须一眼可分 */
+.clause-error {
+  margin-bottom: $space-2;
+}
+
+/* 表内失败态：与「该条款暂未配置保障责任」同槽但观感明显不同（错误色 + 可重试） */
+.coverage-error {
+  display: inline-flex;
+  align-items: center;
+  gap: $space-2;
+  color: $danger-text;
+
+  &__text {
+    font-size: $font-size-md;
+  }
 }
 
 .clause-desc {

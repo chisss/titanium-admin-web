@@ -54,7 +54,13 @@
         <template #empty>暂无保单数据</template>
         <el-table-column prop="policyNo" label="保单号" width="160" />
         <el-table-column prop="policyHolderName" label="投保人" width="100" />
-        <el-table-column prop="productName" label="产品" />
+        <el-table-column prop="productName" label="产品" min-width="180" show-overflow-tooltip>
+          <!-- 🔴 必须自带降级链（R9-F01）：保单**列表**读模型 t_policy_view 只有 product_code/product_id，
+               没有 product_name —— 产品名只在详情路径由 enrichDetail 装配（policy 域源码明写
+               「仅详情查询执行，避免列表查询产生 N+1」）。故此处只绑 prop 会 5 行全空。
+               降级形态与 policy/list 同列保持一致（productName || productCode || '-'），改一处须同改另一处。 -->
+          <template #default="{ row }">{{ row.productName || row.productCode || '-' }}</template>
+        </el-table-column>
         <el-table-column prop="premium" label="保费" width="120" align="right">
           <template #default="{ row }">{{ formatAmount(row.premium) }}</template>
         </el-table-column>

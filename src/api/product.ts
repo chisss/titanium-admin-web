@@ -1,5 +1,6 @@
 // 产品相关接口
 import http from './http'
+import type { AxiosRequestConfig } from 'axios'
 import type { ProductVO, ProductDetailVO } from '@/types/business.d'
 import type { PageParams, PageResult } from '@/types/api.d'
 
@@ -148,6 +149,40 @@ export async function getProductDetail(id: string): Promise<ProductDetailVO> {
  */
 export async function getProductDetailRaw(id: string): Promise<Record<string, any>> {
   return http.get<unknown, Record<string, any>>(`/web/v1/proxy/products/${id}`)
+}
+
+/** 产品版本条目（对齐后端 ProductVersionVO）。**刻意不含配置块**：配置对比由 `getProductDetailRaw` 逐版本取。 */
+export interface ProductVersionVO {
+  /** 产品ID（版本线内唯一，取详情用） */
+  productId: string
+  /** 产品编码（版本线的归组键） */
+  productCode: string
+  /** 版本号（如 V1.0 / V2.0，修订递增） */
+  version: string
+  productName: string
+  /** 状态枚举名：DRAFT/AUDITING/EFFECTIVE/INVALID */
+  status: string
+  /** 父版本产品ID（首个版本为空）——「本版由哪一版修订而来」 */
+  originalProductId?: string
+  effectiveTime?: string
+  saleStartTime?: string
+  saleEndTime?: string
+  createdBy?: string
+  createdAt?: string
+}
+
+/**
+ * 查询同一产品编码下的全部版本（版本历史）。
+ * <p>版本线归组键是 **productCode** 而非 productId：修订不改写当前生效版本，而是继承编码派生
+ * 新 productId ⇒「同编码的全部行」即该产品的整条版本线。后端按创建时间倒序返回（新版在前）。</p>
+ * <p>返回裸数组：BFF 侧的 `productVersions` 刻意不以 `list` 开头，未被归一化为 PageVO
+ * （版本线是一次取全的有限集合，造出分页语义是错的）。</p>
+ */
+export async function listProductVersions(productCode: string): Promise<ProductVersionVO[]> {
+  const list = await http.get<unknown, ProductVersionVO[]>('/web/v1/proxy/products/versions', {
+    params: { productCode },
+  })
+  return list ?? []
 }
 
 /** 产品绑定的条款关联（前端视图模型，对齐后端 ProductClauseQueryResult） */
@@ -341,6 +376,33 @@ export function createProduct(form: CreateProductForm): Promise<string> {
 }
 
 /**
+ * 产品修订载荷 = 详情原始载荷 ⊕ 表单映射。
+ *
+ * <p>后端约定（见 {@link getProductDetailRaw} 与 BFF `/revise` 端点注释）：修订需带出**全量**配置，
+ * 表单只覆盖用户实际改动的那部分，其余（保障期间/缴费/出单/保单形态/定价合并字段等）
+ * 由详情原始载荷**原样回传**，否则新版本会把这些值清空。</p>
+ *
+ * <p>🔴 必须剔除值为 `undefined` 的键，不能直接 `{ ...rawDetail, ...payload }`：
+ * `toCreateProductPayload` 在「未配置文档材料」「无核保规则集」等情况下会产出
+ * `documentConfig: undefined`。展开时该键**依然存在**（值为 undefined），
+ * 于是覆盖掉 rawDetail 里的真实配置；再经 `JSON.stringify` 序列化时 undefined 键被丢弃，
+ * 最终后端收到的载荷里该字段**凭空消失** —— 表现为「修订一次，原版本的文档配置被静默清空」。</p>
+ *
+ * @param form 向导表单（用户本次修改的新版本值）
+ * @param rawDetail 被修订产品的详情原始 JSON（{@link getProductDetailRaw} 的返回值）
+ */
+export function toReviseProductPayload(
+  form: CreateProductForm,
+  rawDetail: Record<string, unknown>,
+): Record<string, unknown> {
+  const formPayload = toCreateProductPayload(form)
+  const defined = Object.fromEntries(
+    Object.entries(formPayload).filter(([, value]) => value !== undefined),
+  )
+  return { ...rawDetail, ...defined }
+}
+
+/**
  * 修订产品（后端 BFF POST /{id}/revise → 下游 POST /{id}/revise）。
  * 仅 EFFECTIVE 产品可修订：不改写当前生效版本，以新版本 DRAFT 独立聚合落地（版本号递增）。
  * 修订表单承载新版本完整配置（新名称/描述/核保配置/投保条件/条款关联等），
@@ -497,9 +559,15 @@ export function getTemplatesByCategory(category: string): Promise<ProductTemplat
   return getTemplatesByType(type)
 }
 
-/** 查询产品模板详情 */
-export function getTemplate(templateId: string): Promise<ProductTemplateVO> {
-  return http.get(`/web/v1/proxy/products/templates/${templateId}`)
+/**
+ * 查询产品模板详情
+ *
+ * <p>`config` 用于承接 `silentError: true` —— 模板是产品详情的**附属信息**，
+ * 调用方（product/detail、product/template-config）已就地 `.catch()` 兜底，
+ * 不传时拦截器仍会为一次「附属信息没取到」弹全局红条，与页面自身的降级策略矛盾。</p>
+ */
+export function getTemplate(templateId: string, config?: AxiosRequestConfig): Promise<ProductTemplateVO> {
+  return http.get(`/web/v1/proxy/products/templates/${templateId}`, config)
 }
 
 /** 创建产品模板 */
@@ -550,7 +618,7 @@ export function configureLifeProduct(productId: string, data: ConfigureLifeProdu
   return http.post(`/web/v1/proxy/products/${productId}/life-config`, data) as Promise<void>
 }
 
-/** 查询寿险产品规格（未配置时后端返回 null） */
-export function getLifeProductConfig(productId: string): Promise<ConfigureLifeProductRequest | null> {
-  return http.get(`/web/v1/proxy/products/${productId}/life-config`) as Promise<ConfigureLifeProductRequest | null>
+/** 查询寿险产品规格（未配置时后端返回 null）；`config` 用途同 {@link getTemplate} */
+export function getLifeProductConfig(productId: string, config?: AxiosRequestConfig): Promise<ConfigureLifeProductRequest | null> {
+  return http.get(`/web/v1/proxy/products/${productId}/life-config`, config) as Promise<ConfigureLifeProductRequest | null>
 }

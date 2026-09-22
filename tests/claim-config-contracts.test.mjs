@@ -21,19 +21,30 @@ test('配置面板存在独立的「编辑」入口，与「新建」分离', ()
   // 弹窗标题区分两种语义，避免用户在编辑态误以为是新建
   assert.match(panelSource, /:title="`\$\{editingId \? '编辑' : '新建'\}\$\{title\}`"/)
 
-  // 行级操作列宽度须容得下「编辑 + 删除」
+  // 行级操作列宽度须容得下「编辑 + 删除 + 行级动作」
   // 🔴 ui-102 起改锁「意图」而非自算公式：原来断言 `Math.max(230, 180 + extraCount * 90)`，
   // 那是为「编辑 + 删除 + N 个行级动作」手算的 min-width；S-03 要求全站操作列宽度收敛到 5 档，
-  // 自算宽度必须让位。保护力不降反升——min-width 是下限（列可被表格余宽撑开、只在受挤时生效），
-  // 配合 .ti-action-column 的 nowrap 保证按钮既不换行也不裁切。
-  const actionColumnTag = panelSource.match(/<el-table-column label="操作"[^>]*>/)?.[0]
+  // 自算宽度必须让位。
+  // 🔴 R7-11（2026-09-21）起判据属性由 `min-width` 改为**数字 `width`**：EP 把「无数字 width」
+  // 的列判为 flex 列（table-layout.mjs:96-107），操作列若当表内唯一 flex 列会吸走表格全部余宽
+  // （核保工单实测 368px@1920 / 1008px@2560，列内按钮实需仅 128px）。故全站操作列一律声明
+  // 数字 width，宽度由「同时可见的动作数」查档（真源 src/constants/table.ts）。
+  // 本列最坏 3 个动作（编辑 + 删除 + 该面板唯一的行级动作「暂停」/「撤销」，均无图标 ⇒ 各 48px）
+  // = 24 + 48×3 + 8×2 = 184px ⇒ 2 档 200px。阈值 160 是「不得窄于实需」的下限意图，保持不变。
+  // 🔴 属性顺序不敏感：本轮给该列加了权限门 `v-if="canEdit"`（round6 批次 3），
+  // 而原正则写死 `<el-table-column label="操作"` 会把 `v-if` 在前的情形判成「操作列不存在」——
+  // 那是把**写法**当判据，不是把**意图**当判据。改按标签名锚定，其余断言一条不放松。
+  const actionColumnTag = panelSource.match(/<el-table-column[^>]*\blabel="操作"[^>]*>/)?.[0]
   assert.ok(actionColumnTag, '配置面板应存在操作列')
-  const actionColumnWidth = Number(actionColumnTag.match(/min-width="(\d+)"/)?.[1])
+  const actionColumnWidth = Number(actionColumnTag.match(/(?<![-\w])width="(\d+)"/)?.[1])
   assert.ok(
     actionColumnWidth >= 160,
-    `操作列 min-width 须容得下「编辑 + 删除 + 行级动作」（实测 ${actionColumnWidth}px）`,
+    `操作列宽度须容得下「编辑 + 删除 + 行级动作」（实测 ${actionColumnWidth}px）`,
   )
   assert.match(actionColumnTag, /class-name="ti-action-column"/)
+  // 🔴 收紧：整列受权限门控制。只读账号若看到空「操作」表头会以为页面坏了，
+  // 详见 tests/permission-gate-contracts.test.mjs ②（该码的权威在后端 ClaimConfigProxyController）
+  assert.match(actionColumnTag, /v-if="canEdit"/)
 })
 
 test('提交时按编辑态注入主键：编辑走更新分支，新建不带主键交给后端裁决', () => {

@@ -31,9 +31,8 @@
           </template>
         </TiSearchForm>
 
-        <el-alert v-if="callbackError" :title="callbackError" type="error" show-icon :closable="false" class="table-alert" />
         <div class="table-scroll">
-          <TiTable :data="callbacks" :total="callbackPage.total" :page-num="callbackPage.pageNum" :page-size="callbackPage.pageSize" :loading="callbackLoading" :max-height="'var(--ti-table-max-height-tabbed)'" @page-change="changeCallbackPage" @size-change="changeCallbackSize">
+          <TiTable :data="callbacks" :total="callbackPage.total" :page-num="callbackPage.pageNum" :page-size="callbackPage.pageSize" :loading="callbackLoading" :max-height="'var(--ti-table-max-height-tabbed)'" :error="callbackError" @refresh="fetchCallbacks" @page-change="changeCallbackPage" @size-change="changeCallbackSize">
             <el-table-column prop="callbackId" label="回调ID" min-width="190"><template #default="{ row }"><TiCopyText :text="row.callbackId" /></template></el-table-column>
             <el-table-column prop="paymentId" label="支付订单" min-width="190"><template #default="{ row }"><TiCopyText :text="row.paymentId" /></template></el-table-column>
             <el-table-column prop="channelCode" label="渠道" width="120" />
@@ -78,9 +77,8 @@
           </template>
         </TiSearchForm>
 
-        <el-alert v-if="securityError" :title="securityError" type="error" show-icon :closable="false" class="table-alert" />
         <div class="table-scroll">
-          <TiTable :data="securityEvents" :total="securityPage.total" :page-num="securityPage.pageNum" :page-size="securityPage.pageSize" :loading="securityLoading" :max-height="'var(--ti-table-max-height-tabbed)'" @page-change="changeSecurityPage" @size-change="changeSecuritySize">
+          <TiTable :data="securityEvents" :total="securityPage.total" :page-num="securityPage.pageNum" :page-size="securityPage.pageSize" :loading="securityLoading" :max-height="'var(--ti-table-max-height-tabbed)'" :error="securityError" @refresh="fetchSecurityEvents" @page-change="changeSecurityPage" @size-change="changeSecuritySize">
             <el-table-column prop="eventId" label="事件ID" min-width="190"><template #default="{ row }"><TiCopyText :text="row.eventId" /></template></el-table-column>
             <el-table-column prop="callbackId" label="回调ID" min-width="190"><template #default="{ row }"><TiCopyText :text="row.callbackId" /></template></el-table-column>
             <el-table-column prop="paymentId" label="支付订单" min-width="190"><template #default="{ row }"><TiCopyText :text="row.paymentId" /></template></el-table-column>
@@ -114,20 +112,22 @@
           </template>
         </TiSearchForm>
 
-        <el-alert v-if="collectionError" :title="collectionError" type="error" show-icon :closable="false" class="table-alert" />
         <div class="table-scroll">
-          <TiTable :data="collections" :total="collectionPage.total" :page-num="collectionPage.pageNum" :page-size="collectionPage.pageSize" :loading="collectionLoading" :max-height="'var(--ti-table-max-height-tabbed)'" @page-change="changeCollectionPage" @size-change="changeCollectionSize">
+          <TiTable :data="collections" :total="collectionPage.total" :page-num="collectionPage.pageNum" :page-size="collectionPage.pageSize" :loading="collectionLoading" :max-height="'var(--ti-table-max-height-tabbed)'" :error="collectionError" @refresh="fetchCollections" @page-change="changeCollectionPage" @size-change="changeCollectionSize">
             <el-table-column prop="orderId" label="收款订单" min-width="190"><template #default="{ row }"><TiCopyText :text="row.orderId" /></template></el-table-column>
             <el-table-column prop="postingId" label="入账ID" min-width="190"><template #default="{ row }"><TiCopyText :text="row.postingId" /></template></el-table-column>
             <el-table-column prop="paymentId" label="支付订单" min-width="190"><template #default="{ row }"><TiCopyText :text="row.paymentId" /></template></el-table-column>
             <el-table-column label="金额" width="135" align="right"><template #default="{ row }">{{ amountText(row.amount, row.currency) }}</template></el-table-column>
             <el-table-column label="Billing状态" width="115"><template #default="{ row }"><TiStatusTag :value="row.status" :label="collectionStatusLabel(row.status)" /></template></el-table-column>
-            <el-table-column label="Payment状态" width="120"><template #default="{ row }"><TiStatusTag :value="row.paymentStatus" /></template></el-table-column>
+            <!-- 🔴 必须传 label：PAYMENT_STATUS 的字典文案是「待缴费/缴费中/缴费成功/缴费失败/缴费逾期」，
+                 与 TiStatusTag 兜底表的通用文案（待处理/处理中/…）不同 —— 不传 label 则本列靠兜底显示，
+                 在支付页把「待缴费」说成「待处理」，业务语义丢失。同类状态列一律绑定字典（见相邻列）。 -->
+            <el-table-column label="Payment状态" width="120"><template #default="{ row }"><TiStatusTag :value="row.paymentStatus" :label="paymentStatusLabel(row.paymentStatus)" /></template></el-table-column>
             <!-- 时间列统一走全局日期工具，避免直出后端 ISO 串（2026-09-18 全站实测 7 页 8 列） -->
             <el-table-column prop="updatedAt" label="更新时间" width="170">
               <template #default="{ row }">{{ formatDateTime(row.updatedAt) }}</template>
             </el-table-column>
-            <el-table-column label="操作" :fixed="isNarrowScreen ? false : 'right'" min-width="100" class-name="ti-action-column">
+            <el-table-column label="操作" :fixed="isNarrowScreen ? false : 'right'" width="120" class-name="ti-action-column">
               <template #default="{ row }">
                 <el-button v-if="row.status === 'PENDING'" v-permission="'billing:payment-operations:reconcile'" size="small" type="primary" :loading="reconcilingId === row.orderId" @click="reconcile(row)">人工对账</el-button>
               </template>
@@ -157,6 +157,7 @@ import TiStatusTag from '@/components/TiStatusTag/index.vue'
 import TiTable from '@/components/TiTable/index.vue'
 import TiDictSelect from '@/components/TiDictSelect/index.vue'
 import { useDict } from '@/composables/useDict'
+import { useTableError } from '@/composables/useTable'
 import { MEDIA_MAX_MOBILE } from '@/constants/layout'
 import { formatDateTime } from '@/utils/date'
 import { formatAmount } from '@/utils/format'
@@ -179,9 +180,12 @@ const collectionPage = reactive<{ total: number | null; pageNum: number; pageSiz
 const callbackLoading = ref(false)
 const securityLoading = ref(false)
 const collectionLoading = ref(false)
-const callbackError = ref('')
-const securityError = ref('')
-const collectionError = ref('')
+// 表级失败态（🔴 R7-13）：原先是 ref('') + 表上方 el-alert —— 与全站其余表格的失败态并非同一套，
+// 且 el-alert 之外 el-table 仍会渲染「暂无数据」，同屏出现两句互相矛盾的话。
+// 改接 TiTable 的 :error（表内失败块 + 重试按钮），全站统一。
+const { tableError: callbackError, clearTableError: clearCallbackError, setTableError: setCallbackError } = useTableError()
+const { tableError: securityError, clearTableError: clearSecurityError, setTableError: setSecurityError } = useTableError()
+const { tableError: collectionError, clearTableError: clearCollectionError, setTableError: setCollectionError } = useTableError()
 const reconcilingId = ref('')
 let securityEventsLoaded = false
 let collectionsLoaded = false
@@ -190,31 +194,31 @@ const amountText = (amount: number, currency: string) => formatAmount(amount, cu
 const { getLabel: resultLabel } = useDict('PAYMENT_CALLBACK_RESULT')
 const { getLabel: callbackStatusLabel } = useDict('PAYMENT_CALLBACK_STATUS')
 const { getLabel: collectionStatusLabel } = useDict('PAYMENT_COLLECTION_STATUS')
+const { getLabel: paymentStatusLabel } = useDict('PAYMENT_STATUS')
 const { getLabel: securityEventLabel } = useDict('PAYMENT_SECURITY_EVENT_TYPE')
 const { getLabel: securityModeLabel } = useDict('PAYMENT_SIGNATURE_MODE')
 const { getLabel: securitySeverityLabel } = useDict('SECURITY_SEVERITY')
-const errorText = (error: unknown) => error instanceof Error ? error.message : '查询失败，请稍后重试'
 
 async function fetchCallbacks() {
-  callbackLoading.value = true; callbackError.value = ''
+  callbackLoading.value = true; clearCallbackError()
   try {
     const result = await getPaymentCallbackAudits({ ...callbackQuery, occurredAtStart: callbackTimeRange.value[0], occurredAtEnd: callbackTimeRange.value[1] })
     callbacks.value = result.list || []; Object.assign(callbackPage, { total: result.total ?? null, pageNum: callbackQuery.pageNum, pageSize: callbackQuery.pageSize })
-  } catch (error) { callbacks.value = []; callbackError.value = errorText(error) } finally { callbackLoading.value = false }
+  } catch (error) { callbacks.value = []; setCallbackError(error) } finally { callbackLoading.value = false }
 }
 async function fetchCollections() {
-  collectionLoading.value = true; collectionError.value = ''
+  collectionLoading.value = true; clearCollectionError()
   try {
     const result = await getPremiumCollectionOrders({ ...collectionQuery, updatedAtStart: collectionTimeRange.value[0], updatedAtEnd: collectionTimeRange.value[1] })
     collections.value = result.list || []; Object.assign(collectionPage, { total: result.total ?? null, pageNum: collectionQuery.pageNum, pageSize: collectionQuery.pageSize }); collectionsLoaded = true
-  } catch (error) { collections.value = []; collectionError.value = errorText(error) } finally { collectionLoading.value = false }
+  } catch (error) { collections.value = []; setCollectionError(error) } finally { collectionLoading.value = false }
 }
 async function fetchSecurityEvents() {
-  securityLoading.value = true; securityError.value = ''
+  securityLoading.value = true; clearSecurityError()
   try {
     const result = await getPaymentCallbackSecurityEvents({ ...securityQuery, createdAtStart: securityTimeRange.value[0], createdAtEnd: securityTimeRange.value[1] })
     securityEvents.value = result.list || []; Object.assign(securityPage, { total: result.total ?? null, pageNum: securityQuery.pageNum, pageSize: securityQuery.pageSize }); securityEventsLoaded = true
-  } catch (error) { securityEvents.value = []; securityError.value = errorText(error) } finally { securityLoading.value = false }
+  } catch (error) { securityEvents.value = []; setSecurityError(error) } finally { securityLoading.value = false }
 }
 function searchCallbacks() { callbackQuery.pageNum = 1; void fetchCallbacks() }
 function resetCallbacks() { Object.assign(callbackQuery, { callbackId: undefined, paymentId: undefined, channelCode: undefined, keyVersion: undefined, securityMode: undefined, channelTransactionId: undefined, resultStatus: undefined, status: undefined, pageNum: 1, pageSize: 20 }); callbackTimeRange.value = []; void fetchCallbacks() }
@@ -252,7 +256,6 @@ onMounted(fetchCallbacks)
 .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 // 页面主标题统一 $font-size-xl（18px）：与详情页头及其余页面裸 h2 同档（2026-09-18 实测原为 22px，属第三档）
 h2 { margin: 0; font-size: $font-size-xl; }
-.table-alert { margin-bottom: 12px; }
 .table-scroll { min-width: 0; overflow-x: auto; }
 .table-scroll :deep(.ti-table-wrap) { min-width: 1080px; }
 @media (max-width: $breakpoint-mobile) {

@@ -26,6 +26,8 @@
       :max-height="'var(--ti-table-max-height-default)'"
       @page-change="onPageChange"
       @size-change="onSizeChange"
+      :error="tableError"
+      @refresh="retry"
     >
       <el-table-column prop="payableId" label="应付编号" min-width="190"><template #default="{ row }"><TiCopyText :text="row.payableId" /></template></el-table-column>
       <el-table-column label="佣金方案" min-width="180"><template #default="{ row }">{{ row.schemeCode }} / {{ row.schemeVersion }}</template></el-table-column>
@@ -38,7 +40,7 @@
         <!-- 时间列统一走全局日期工具，避免直出后端 ISO 串（2026-09-18 全站实测 7 页 8 列） -->
         <template #default="{ row }">{{ formatDateTime(row.updatedAt) }}</template>
       </el-table-column>
-      <el-table-column label="操作" :fixed="isNarrowScreen ? false : 'right'" min-width="320" class-name="ti-action-column">
+      <el-table-column label="操作" :fixed="isNarrowScreen ? false : 'right'" width="280" class-name="ti-action-column">
         <template #default="{ row }">
           <el-button size="small" :icon="View" @click="showDetail(row)">查看</el-button>
           <el-button v-if="canSettle(row)" size="small" type="primary" v-permission="'billing:commission:settle'" @click="openAmountAction(row, 'settle')">登记结算</el-button>
@@ -67,7 +69,7 @@
         <el-descriptions-item label="受益方">{{ beneficiaryLabel(detail) }}</el-descriptions-item>
         <el-descriptions-item label="计算基数">{{ amountText(detail.baseAmount, detail.currency) }}</el-descriptions-item>
         <el-descriptions-item label="佣金总额">{{ amountText(detail.grossCommission, detail.currency) }}</el-descriptions-item>
-        <el-descriptions-item label="分润比例">{{ rateText(detail.splitRate) }}</el-descriptions-item>
+        <el-descriptions-item label="分润比例">{{ formatRate(detail.splitRate, '***') }}</el-descriptions-item>
         <el-descriptions-item label="应付金额">{{ amountText(detail.payableAmount, detail.currency) }}</el-descriptions-item>
         <el-descriptions-item label="结算期数">{{ detail.installmentCount }}</el-descriptions-item>
         <el-descriptions-item label="回拨期限">{{ detail.clawbackMonths }} 个月</el-descriptions-item>
@@ -102,7 +104,7 @@ import { useDetailColumns } from '@/composables/useDetailColumns'
 import { useDict } from '@/composables/useDict'
 import { MEDIA_MAX_MOBILE } from '@/constants/layout'
 import { formatDateTime } from '@/utils/date'
-import { formatAmount } from '@/utils/format'
+import { formatAmount, formatRate } from '@/utils/format'
 
 const router = useRouter()
 const channels = ref<ChannelVO[]>([])
@@ -111,12 +113,11 @@ const queryParams = reactive({ status: undefined as CommissionPayableStatus | un
 const { getLabel: statusLabel } = useDict('COMMISSION_PAYABLE_STATUS')
 const { getLabel: beneficiaryTypeLabel } = useDict('COMMISSION_BENEFICIARY_TYPE')
 const amountText = (value?: number, currency?: string) => value === undefined || value === null ? '***' : formatAmount(value, currency)
-const rateText = (value?: number) => value === undefined || value === null ? '***' : `${(value * 100).toFixed(4).replace(/0+$/, '').replace(/\.$/, '')}%`
 const beneficiaryLabel = (value: unknown) => { const row = value as CommissionPayableVO; return row.beneficiaryId === '***' ? '***' : `${beneficiaryTypeLabel(row.beneficiaryType)} / ${row.beneficiaryId}` }
 const canSettle = (value: unknown) => { const row = value as CommissionPayableVO; return ['PENDING', 'PARTIALLY_SETTLED'].includes(row.status) && row.payableAmount !== undefined }
 const canClawback = (value: unknown) => { const row = value as CommissionPayableVO; return ['PARTIALLY_SETTLED', 'SETTLED'].includes(row.status) && (row.settledAmount || 0) > 0 }
 
-const { tableData, tableLoading, pagination, fetchData, handleSearch, handleReset, onPageChange, onSizeChange } = useTable<CommissionPayableVO, typeof queryParams>(
+const { tableData, tableLoading, tableError, pagination, fetchData, handleSearch, handleReset, onPageChange, onSizeChange, retry } = useTable<CommissionPayableVO, typeof queryParams>(
   (params) => getCommissionPayableList({ ...params, channelId: params.channelId || undefined, beneficiaryId: params.beneficiaryId || undefined }), queryParams,
   // 本页首屏须先取渠道下拉数据（见 onMounted），再带筛选条件查列表，故不由 useTable 自动加载
   { immediate: false },

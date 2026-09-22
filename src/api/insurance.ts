@@ -114,6 +114,51 @@ export async function getProposalDetail(id: string): Promise<ProposalVO> {
   return http.get(`/web/v1/proxy/proposals/${id}`)
 }
 
+// ==================== 出单进度（三张单据的唯一公共键 bizNo 的桥）====================
+
+/** 已产出保单（下游 IssuanceResponse.IssuedPolicy） */
+export interface IssuedPolicyVO {
+  policyId?: string
+  policyNo?: string
+  policyStatus?: string
+  lineCount?: number
+  totalPremium?: number
+}
+
+/** 出单进度视图对象 */
+export interface IssuanceProgressVO {
+  success?: boolean
+  bizNo?: string
+  issuanceMode?: string
+  issuanceStrategy?: string
+  currentStage?: string
+  proposalId?: string
+  proposalNo?: string
+  insuranceId?: string
+  insuranceNo?: string
+  policies?: IssuedPolicyVO[]
+  underwritingId?: string
+  rejectCode?: string
+  rejectReason?: string
+}
+
+/**
+ * 查询出单进度。
+ *
+ * <p>用于「意向单 → 投保单 → 保单」的跳转：三张单据在读模型里**互缺外键**
+ * （意向单视图无 insurance_id、投保单视图无 policy_id、保单视图的 insurance_id 被 VO 层丢弃），
+ * `bizNo` 是唯一公共键，出单进度表把三者记在同一行。</p>
+ *
+ * <p>🔴 返回 `null` 是**正常结果**而非错误：下游在流水号不存在时返回 204，
+ * BFF 包成成功信封的 `data: null`。调用方必须容忍，且**不得**据此弹错误提示。</p>
+ */
+export async function getIssuanceProgress(bizNo: string): Promise<IssuanceProgressVO | null> {
+  // 🔴 置 silentError：本请求是「打开详情时顺带补下游单据 ID」的**辅助请求**，
+  // 调用方已就地兜底（拿不到只意味着不显示跳转入口，页面主体照常渲染）。
+  // 不置的话，一次与用户操作无关的失败会弹全局红条，把「优雅降级」显示成「页面出错」（D-501-58）。
+  return http.get(`/web/v1/proxy/issuances/${bizNo}`, { silentError: true })
+}
+
 // 🔴 原「创建意向单」`createProposal` / 「提交意向单」`submitProposal` 两个封装已按 D-501-01 删除，勿再恢复：
 // ① 字段名与下游契约对不上（本封装 productCode/sourceChannel/expectedPremium/remark
 //    ↔ 下游 CreateProposalRequest expectedProductCode/channel/intendedPremium/无 remark），

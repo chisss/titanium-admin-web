@@ -37,7 +37,10 @@
           <el-table-column prop="coverageName" label="保障责任" min-width="180" show-overflow-tooltip>
             <template #default="{ row }">
               {{ row.coverageName }}
-              <el-tag v-if="row.isAdditional" size="small" type="warning" effect="plain" style="margin-left: 6px">附加</el-tag>
+              <!-- 🔴 分类标记不得借语义色（R9-F03 举一反三）：`warning` 是「可逆但需注意」的
+                   纠正性动作保留色，「附加」是静态分类。与 product/detail 同列（已同批修正）
+                   保持同一口径——同一概念三处渲染成两种颜色，用户会读成两种含义。 -->
+              <el-tag v-if="row.isAdditional" size="small" type="info" effect="plain" style="margin-left: 6px">附加</el-tag>
             </template>
           </el-table-column>
           <el-table-column label="责任类型" width="90">
@@ -135,9 +138,10 @@ onMounted(async () => {
     loading.value = false
   }
   // 保障责任独立加载，失败不影响主信息展示
+  // 🔴 已就地兜底就必须带 silentError：否则页面安静降级的同时，拦截器仍为同一次失败弹全局红条
   coverageLoading.value = true
   try {
-    coverages.value = (await getCoverages(id).catch(() => [])) ?? []
+    coverages.value = (await getCoverages(id, { silentError: true }).catch(() => [])) ?? []
   } finally {
     coverageLoading.value = false
   }

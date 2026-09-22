@@ -22,6 +22,8 @@
       :max-height="'var(--ti-table-max-height-lean)'"
       @page-change="onPageChange"
       @size-change="onSizeChange"
+      :error="tableError"
+      @refresh="retry"
     >
       <el-table-column prop="fileName" label="文件名" min-width="200" show-overflow-tooltip>
         <template #default="{ row }">{{ row.fileName || '-' }}</template>
@@ -50,7 +52,7 @@
         <template #default="{ row }">{{ formatDateTime(row.createTime) }}</template>
       </el-table-column>
       <!-- @vue-generic {DocumentVO} -->
-      <el-table-column label="操作" min-width="160" fixed="right" class-name="ti-action-column">
+      <el-table-column label="操作" width="200" fixed="right" class-name="ti-action-column">
         <template #default="{ row }">
           <el-button size="small" :icon="View" @click="handleView(row)">详情</el-button>
           <!-- 下载按钮仅在文件已落盘的状态可见：GENERATING 阶段文件尚未生成，点了必然 404 -->
@@ -136,7 +138,7 @@ const queryParams = reactive({
   status: undefined as string | undefined,
 })
 
-const { tableData, tableLoading, pagination, fetchData, handleSearch, handleReset, onPageChange, onSizeChange } =
+const { tableData, tableLoading, tableError, pagination, fetchData, handleSearch, handleReset, onPageChange, onSizeChange, retry } =
   useTable<DocumentVO, typeof queryParams>((params) => getDocumentList(params), queryParams)
 
 fetchData()

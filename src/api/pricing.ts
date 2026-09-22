@@ -1,5 +1,13 @@
 import http from './http'
 
+/**
+ * 费率行。
+ *
+ * 🔴 `dimensionHash` 是后端算好的**业务维度键**（维度字段的组合摘要，见下游 `RateTableRowVO`），
+ * 版本对比必须以它为匹配键：它正是为「同一维度组合」而存在的。
+ * 用 `rowId` 匹配会在两个版本间全部落空（rowId 逐版本重生成）⇒ 每一行都被报成「新增 + 删除」，
+ * 差异报告被噪声淹没，与「没有对比功能」等价。
+ */
 export interface RateTableRow {
   rowId?: string
   ageFrom?: number
@@ -10,6 +18,14 @@ export interface RateTableRow {
   rate: number
   minimumPremium?: number
   maximumPremium?: number
+  /** 职业类别（RATE_DIMENSION 的可选维度之一） */
+  occupationClass?: string
+  /** 地区 */
+  region?: string
+  /** 车型 */
+  vehicleType?: string
+  /** 业务维度键（维度字段的组合摘要，由后端计算） */
+  dimensionHash?: string
 }
 
 export interface RateTable {
